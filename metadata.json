@@ -1,0 +1,10 @@
+{
+  "name": "ĐỐI CHIẾU TỔNG HỢP TT12",
+  "description": "Công cụ chuyên nghiệp đối chiếu dữ liệu BHYT TT12 - NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "Excel Data Processing",
+    "Data Reconciliation",
+    "Healthcare Auditing"
+  ]
+}
