@@ -217,12 +217,12 @@ export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH
     const maThe = normalizeValue(item[mapping.MA_THE_BHYT]);
     const ngaySinh = parseShortDateStr(item[mapping.NGAY_SINH]);
     const ngayVao = parseDateStr(item[mapping.NGAY_VAO]);
-    const namSinh = ngaySinh.length >= 4 ? ngaySinh.substring(0, 4) : 'XXXX';
-    const maLkGenerated = `${maThe}_${namSinh}_${ngayVao}`;
+    
+    let maLk = normalizeValue(item[mapping.MA_LK]);
 
     return {
       STT: normalizeValue(item[mapping.STT] || index + 1),
-      MA_LK: maLkGenerated,
+      MA_LK: maLk,
       HO_TEN: normalizeValue(item[mapping.HO_TEN]),
       NGAY_SINH: ngaySinh,
       GIOI_TINH: normalizeValue(item[mapping.GIOI_TINH]),
@@ -252,9 +252,7 @@ export const generateKey = (row: TemplateRow): string => {
   if (row.MA_LK && row.MA_LK.trim() !== '') {
     return row.MA_LK.trim();
   }
-  const id = row.MA_THE_BHYT || 'NO_ID';
-  const inStr = row.NGAY_VAO ? row.NGAY_VAO.substring(0, 8) : 'NO_IN';
-  return `${id}_${inStr}`;
+  return `NO_LK_${row.source}_${row.STT}`;
 };
 
 export const smartMapHeaders = (headers: string[]): Partial<ColumnMapping> => {
