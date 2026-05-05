@@ -1,5 +1,6 @@
 export interface TemplateRow {
   STT: string;
+  MA_LK: string;
   HO_TEN: string;
   NGAY_SINH: string;
   GIOI_TINH: string;
@@ -10,12 +11,12 @@ export interface TemplateRow {
   NGAY_RA: string;
   SO_NGAY_DTRI: string;
   MA_LOAI_KCB: string;
-  T_TONGCHI_BV: number;
-  T_TONGCHI_BH: number;
-  T_BHTT: number;
-  T_BNCCT: number;
-  T_BNTT: number;
-  T_NGUONKHAC: number;
+  T_TONGCHI_BV: number | null;
+  T_TONGCHI_BH: number | null;
+  T_BHTT: number | null;
+  T_BNCCT: number | null;
+  T_BNTT: number | null;
+  T_NGUONKHAC: number | null;
   MA_CSKCB: string;
   NAM_QT: string;
   THANG_QT: string;
