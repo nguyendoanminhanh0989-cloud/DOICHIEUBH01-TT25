@@ -21,7 +21,9 @@ import {
   Filter,
   BarChart3,
   ShieldCheck,
-  LayoutGrid
+  LayoutGrid,
+  FileCode2,
+  Building2
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from './lib/utils';
@@ -32,6 +34,7 @@ import {
   ComparisonResult, 
   AuditSummary 
 } from './types';
+import HoSoChungTu from './components/HoSoChungTu';
 
 // Default mappings
 const DEFAULT_MAPPING: ColumnMapping = {
@@ -145,6 +148,7 @@ const TableRow21 = ({ row }: { row: TemplateRow }) => (
 );
 
 export default function App() {
+  const [mainTab, setMainTab] = useState<'DOI_SOAT' | 'CHUNG_TU'>('CHUNG_TU');
   const [bhxhData, setBhxhData] = useState<any[]>([]);
   const [hisData, setHisData] = useState<any[]>([]);
   
@@ -568,66 +572,100 @@ export default function App() {
       }}
     >
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-[1600px] mx-auto px-8 h-16 flex items-center justify-between">
-          <div 
-            className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => window.location.reload()}
-            title="Tải lại trang chủ"
-          >
-            <div className="w-10 h-10 bg-gradient-to-tr from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200">
-              <ShieldCheck className="w-6 h-6" />
+        <div className="max-w-[1600px] mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white">
+              <ShieldCheck className="w-5 h-5" />
             </div>
-            <div>
-              <h1 className="text-lg font-black tracking-tight text-slate-800 uppercase">ĐỐI CHIẾU 01 BHXH VÀ HIS</h1>
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                <span>NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG</span>
-              </div>
-            </div>
+            <h1 className="text-lg font-black tracking-tight text-slate-800 flex items-center gap-2">
+              ĐỐI CHIẾU VÀ CHỨNG TỪ <span className="bg-slate-100 text-[10px] px-2 py-0.5 rounded text-slate-500 font-bold border border-slate-200">ENTERPRISE</span>
+            </h1>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-xl">
             <button
-              onClick={() => setActiveTab('upload')}
+              onClick={() => setMainTab('DOI_SOAT')}
               className={cn(
-                "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                activeTab === 'upload' ? "bg-indigo-50 text-indigo-700 shadow-sm" : "hover:bg-slate-50 text-slate-500"
+                "px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                mainTab === 'DOI_SOAT' ? "bg-white text-slate-800 shadow-sm" : "hover:bg-slate-100 text-slate-500"
               )}
             >
-              <FileUp className="w-4 h-4" />
-              Tải file & Mẫu
+              <BarChart3 className="w-4 h-4" />
+              ĐỐI SOÁT HỒ SƠ KCB
             </button>
             <button
-              onClick={() => setActiveTab('mapping')}
+              onClick={() => setMainTab('CHUNG_TU')}
               className={cn(
-                "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                activeTab === 'mapping' ? "bg-indigo-50 text-indigo-700 shadow-sm" : "hover:bg-slate-50 text-slate-500"
+                "px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                mainTab === 'CHUNG_TU' ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-100" : "hover:bg-slate-100 text-slate-500"
               )}
             >
-              <Settings className="w-4 h-4" />
-              Cấu hình cột
+              <FileCode2 className="w-4 h-4" />
+              HỒ SƠ CHỨNG TỪ
+              <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded ml-1">TT25</span>
             </button>
+          </div>
+
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <div className="flex items-center gap-2 text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+              <Building2 className="w-4 h-4 text-blue-500" />
+              <span className="text-blue-600 font-bold">49004</span>
+              <span className="hidden md:inline">- Bệnh viện đa khoa khu vực...</span>
+            </div>
+            <div className="w-px h-6 bg-slate-200 hidden md:block"></div>
+            <div className="hidden md:flex items-center gap-2 text-slate-600">
+              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+              <span>VNPT SmartCA: <span className="font-bold text-slate-800">Sẵn sàng</span> <span className="text-slate-400 font-normal">(Phụ lục 02/TT25)</span></span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {mainTab === 'CHUNG_TU' ? (
+        <HoSoChungTu />
+      ) : (
+        <main className="max-w-[1600px] mx-auto p-8">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab('upload')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                  activeTab === 'upload' ? "bg-indigo-50 text-indigo-700 shadow-sm" : "hover:bg-slate-50 text-slate-500 bg-white"
+                )}
+              >
+                <FileUp className="w-4 h-4" />
+                Nhập File Dữ Liệu
+              </button>
+              <button
+                onClick={() => setActiveTab('mapping')}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                  activeTab === 'mapping' ? "bg-indigo-50 text-indigo-700 shadow-sm" : "hover:bg-slate-50 text-slate-500 bg-white"
+                )}
+              >
+                <Settings className="w-4 h-4" />
+                Cấu hình cột
+              </button>
+            </div>
             <button
               onClick={() => {
                 if (bhxhData.length > 0 && hisData.length > 0) runComparison();
               }}
               disabled={bhxhData.length === 0 || hisData.length === 0}
               className={cn(
-                "px-6 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-lg",
+                "px-6 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-sm",
                 (bhxhData.length > 0 && hisData.length > 0) 
-                  ? "bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200" 
-                  : "bg-slate-100 text-slate-400 cursor-not-allowed shadow-none"
+                  ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200" 
+                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
               )}
             >
               <Play className="w-4 h-4" />
               Chạy đối soát
             </button>
           </div>
-        </div>
-      </header>
-
-      <main className="max-w-[1600px] mx-auto p-8">
-        <AnimatePresence mode="wait">
-          {activeTab === 'upload' && (
+          <AnimatePresence mode="wait">
+            {activeTab === 'upload' && (
             <motion.div 
               key="upload"
               initial={{ opacity: 0, y: 10 }}
@@ -644,7 +682,10 @@ export default function App() {
                     </div>
                     <div>
                       <h2 className="text-lg font-bold">File BHXH (Từ Cổng/Excel thô)</h2>
-                      <p className="text-sm text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 21 cột</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 20 cột</p>
+                        <a href="/templates/Template_01BH_Mau_Chuan_BHXH.xlsx" download className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100 transition">Tải mẫu chuẩn 01BH</a>
+                      </div>
                     </div>
                   </div>
                   {bhxhData.length > 0 && (
@@ -665,7 +706,7 @@ export default function App() {
                 {bhxhConverted.length > 0 && (
                   <div className="mt-4 flex-1 flex flex-col min-h-[300px]">
                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-4">
-                       <LayoutGrid className="w-3 h-3" /> Xem trước định dạng 21 cột (Tổng số: {bhxhConverted.length} hồ sơ)
+                       <LayoutGrid className="w-3 h-3" /> Xem trước định dạng 20 cột (Tổng số: {bhxhConverted.length} hồ sơ)
                     </h3>
                     <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-auto max-h-[300px]">
                       <table className="w-full text-left text-[10px] border-collapse min-w-max">
@@ -696,7 +737,10 @@ export default function App() {
                     </div>
                     <div>
                       <h2 className="text-lg font-bold">File HIS (Bệnh viện)</h2>
-                      <p className="text-sm text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 21 cột</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 20 cột</p>
+                        <a href="/templates/Template_01BH_Mau_Chuan_BHXH.xlsx" download className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100 transition">Tải mẫu chuẩn 01BH</a>
+                      </div>
                     </div>
                   </div>
                   {hisData.length > 0 && (
@@ -717,7 +761,7 @@ export default function App() {
                 {hisConverted.length > 0 && (
                   <div className="mt-4 flex-1 flex flex-col min-h-[300px]">
                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-4">
-                       <LayoutGrid className="w-3 h-3" /> Xem trước định dạng 21 cột (Tổng số: {hisConverted.length} hồ sơ)
+                       <LayoutGrid className="w-3 h-3" /> Xem trước định dạng 20 cột (Tổng số: {hisConverted.length} hồ sơ)
                     </h3>
                     <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-auto max-h-[300px]">
                       <table className="w-full text-left text-[10px] border-collapse min-w-max">
@@ -968,7 +1012,15 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
+        </main>
+      )}
+
+      {/* Footer - Heading cuối trang */}
+      <footer className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-sm border-t border-slate-200 px-6 py-1.5 flex items-center justify-between text-[10px]">
+        <span className="text-slate-400 font-medium">ĐỐI CHIẾU 01 VÀ CHỨNG TỪ TT25</span>
+        <span className="text-slate-500 font-bold tracking-wide">NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG</span>
+        <span className="text-slate-400">v2.0 · egw.baohiemxahoi.gov.vn</span>
+      </footer>
     </div>
   );
 }
