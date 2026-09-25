@@ -37,7 +37,7 @@ export interface CskcbConfig {
 }
 
 interface Props {
-  onClose: () => void;
+  onClose?: () => void;
   onSave: (config: CskcbConfig) => void;
   initialConfig?: Partial<CskcbConfig>;
 }
@@ -222,9 +222,11 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
             <h2 className="text-lg font-bold text-slate-800">Thiết Lập Cơ Sở Khám Chữa Bệnh</h2>
             <p className="text-sm text-slate-500">Nhập mã CSKCB để xác định đơn vị trước khi bắt đầu</p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
-            <X className="w-5 h-5" />
-          </button>
+          {onClose && (
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Steps indicator */}
@@ -453,9 +455,13 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
         <div className="flex items-center justify-between px-6 pb-6 gap-3">
           {step === 'cskcb' ? (
             <>
-              <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition">
-                Hủy
-              </button>
+              {onClose ? (
+                <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition">
+                  Hủy
+                </button>
+              ) : (
+                <div /> // placeholder for flex-between
+              )}
               <button
                 onClick={() => setStep('account')}
                 disabled={!maKcb || (!foundCskcb && !tenManual)}

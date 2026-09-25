@@ -750,10 +750,10 @@ export default function HoSoChungTu() {
         </div>
       )}
 
-      {showFacilityModal && (
+      {(showFacilityModal || !cskcbConfig) && (
         <CskcbSetupModal
           initialConfig={cskcbConfig || undefined}
-          onClose={() => setShowFacilityModal(false)}
+          onClose={cskcbConfig ? () => setShowFacilityModal(false) : undefined}
           onSave={(cfg) => {
             setCskcbConfig(cfg);
             setShowFacilityModal(false);
