@@ -564,10 +564,10 @@ export default function App() {
 
   return (
     <div 
-      className="min-h-screen text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 bg-cover bg-center bg-fixed relative"
+      className="min-h-screen text-slate-900 font-sans selection:bg-lime-300 selection:text-lime-900 bg-cover bg-center bg-fixed relative"
       style={{ 
         backgroundImage: "url('/hinh_nen.png')",
-        backgroundColor: "rgba(248, 251, 255, 0.8)", // Fallback overlay
+        backgroundColor: "rgba(57, 255, 20, 0.15)", // Neon green overlay
         backgroundBlendMode: "overlay"
       }}
     >
