@@ -609,8 +609,8 @@ export default function App() {
           <div className="flex items-center gap-4 text-xs font-semibold">
             <div className="flex items-center gap-2 text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
               <Building2 className="w-4 h-4 text-blue-500" />
-              <span className="text-blue-600 font-bold">49004</span>
-              <span className="hidden md:inline">- Bệnh viện đa khoa khu vực...</span>
+              <span className="text-blue-600 font-bold">Ánh Kận</span>
+              <span className="hidden md:inline">- IT Đà Nẵng</span>
             </div>
             <div className="w-px h-6 bg-slate-200 hidden md:block"></div>
             <div className="hidden md:flex items-center gap-2 text-slate-600">

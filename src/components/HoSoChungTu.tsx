@@ -358,7 +358,7 @@ export default function HoSoChungTu() {
             </div>
           </div>
           <div className="text-3xl font-black text-slate-800 mb-1">{records.length}</div>
-          <div className="text-[11px] text-slate-400">Mã CSKCB: 49004</div>
+          <div className="text-[11px] text-slate-400">Mã CSKCB: {cskcbConfig?.cskcb.ma || '49004'}</div>
         </div>
         
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -664,7 +664,7 @@ export default function HoSoChungTu() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-800">Cấu Hình Đơn Vị & Liên Thông Cổng BHXH</h3>
-                  <div className="text-xs text-slate-500">Mã CSKCB: <span className="font-bold text-blue-600">49004</span> - Bệnh viện đa khoa khu vực miền núi phía Bắc Quảng Nam</div>
+                  <div className="text-xs text-slate-500">Mã CSKCB: <span className="font-bold text-blue-600">{cskcbConfig?.cskcb.ma || '49004'}</span> - {cskcbConfig?.cskcb.ten || 'Bệnh viện đa khoa khu vực miền núi phía Bắc Quảng Nam'}</div>
                 </div>
               </div>
               <button onClick={() => setShowConfigModal(false)} className="p-2 hover:bg-slate-200 rounded-lg text-slate-500">
