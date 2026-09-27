@@ -32,6 +32,23 @@ export default function HoSoChungTu() {
     try {
       const saved = sessionStorage.getItem('cskcb_config');
       if (saved) return JSON.parse(saved);
+
+      // Chưa có cskcb_config → thử lấy từ org_config đã lưu bởi ConfigModal
+      const orgRaw = sessionStorage.getItem('org_config');
+      if (orgRaw) {
+        const org = JSON.parse(orgRaw);
+        if (org.ma_cskcb) {
+          // Tạo một partial config để pre-fill màn hình thiết lập
+          return {
+            cskcb: { ma: org.ma_cskcb, ten: org.ten_cskcb || '', tuyen: '', hang: '', diaChi: '' },
+            bhxhAccount: {
+              username: org.bhxh_account?.username || '',
+              password: '',
+              passwordRaw: '',
+            }
+          } as CskcbConfig;
+        }
+      }
     } catch (e) {}
     return null;
   });
