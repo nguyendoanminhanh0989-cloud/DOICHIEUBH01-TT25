@@ -8,6 +8,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { bhxhGetToken } from '../lib/bhxhService';
 
 interface ConfigModalProps {
   onClose: () => void;
@@ -17,6 +18,40 @@ type TabType = 'facility' | 'smartca' | 'bhyt';
 
 export default function ConfigModal({ onClose }: ConfigModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('smartca');
+
+  // Form states
+  const [maCskcb, setMaCskcb] = useState('49006');
+  const [bhytUsername, setBhytUsername] = useState('49006_BV');
+  const [bhytPassword, setBhytPassword] = useState('');
+
+  // Test connection state
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{success: boolean, message: string} | null>(null);
+
+  const handleTestConnection = async () => {
+    if (activeTab !== 'bhyt') {
+      alert('Chức năng kiểm tra kết nối hiện tại chỉ áp dụng cho tab Liên thông BHYT.');
+      return;
+    }
+    if (!bhytUsername || !bhytPassword) {
+      setTestResult({ success: false, message: 'Vui lòng nhập tên đăng nhập và mật khẩu!' });
+      return;
+    }
+    
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      await bhxhGetToken({
+        ma_cskcb: maCskcb,
+        bhxh_account: { username: bhytUsername, password: bhytPassword }
+      });
+      setTestResult({ success: true, message: 'Xác thực thành công! Kết nối với Cổng BHXH hoạt động tốt.' });
+    } catch (err: any) {
+      setTestResult({ success: false, message: err.message || 'Lỗi kết nối' });
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
@@ -90,7 +125,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Mã CSKCB (5 ký tự) <span className="text-rose-500">*</span></label>
-                  <input type="text" defaultValue="49006" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="text" value={maCskcb} onChange={e => setMaCskcb(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" />
                   <p className="text-[11px] text-slate-500 mt-1">Mã 5 chữ số do BHXH Việt Nam cấp cho cơ sở KCB.</p>
                 </div>
                 <div>
@@ -172,15 +207,24 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
           {activeTab === 'bhyt' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Tên đăng nhập Cổng BHXH (chuẩn liên thông: <span className="text-blue-600">49006_BV</span>)</label>
-                <input type="text" defaultValue="49006_BV" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                <p className="text-[11px] text-slate-500 mt-1">Tài khoản được BHXH Việt Nam cấp cho cơ sở KCB để liên thông qua Cổng tiếp nhận (định dạng: <strong>49006_BV</strong>).</p>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Tên đăng nhập Cổng BHXH (chuẩn liên thông: <span className="text-blue-600">{maCskcb}_BV</span>)</label>
+                <input type="text" value={bhytUsername} onChange={e => setBhytUsername(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                <p className="text-[11px] text-slate-500 mt-1">Tài khoản được BHXH Việt Nam cấp cho cơ sở KCB để liên thông qua Cổng tiếp nhận (định dạng: <strong>{maCskcb}_BV</strong>).</p>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Mật khẩu</label>
-                <input type="password" placeholder="" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input type="password" value={bhytPassword} onChange={e => setBhytPassword(e.target.value)} placeholder="" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
+              
+              {testResult && (
+                <div className={cn("p-3 mt-4 rounded-lg text-sm font-semibold flex items-start gap-2 border", 
+                  testResult.success ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
+                )}>
+                  {testResult.success ? <ShieldCheck className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
+                  <span>{testResult.message}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -188,8 +232,13 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
         {/* Footer Actions */}
         <div className="p-4 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <button className="px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 flex items-center gap-2">
-              <RefreshCw className="w-4 h-4" /> Kiểm tra kết nối
+            <button 
+              onClick={handleTestConnection}
+              disabled={isTesting}
+              className="px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-4 h-4", isTesting && "animate-spin")} /> 
+              {isTesting ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}
             </button>
             <button className="px-4 py-2.5 text-sm font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl hover:bg-rose-100">
               Xóa cấu hình
