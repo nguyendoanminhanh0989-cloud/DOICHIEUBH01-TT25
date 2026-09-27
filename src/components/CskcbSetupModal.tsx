@@ -144,9 +144,9 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
       if (json?.maKetQua === '200') {
         setAccountValid(true);
         setAccountMsg('Xác thực thành công! Token đã được cấp.');
-        // Lưu token vào localStorage để dùng
-        localStorage.setItem('bhxh_token', json.APIKey?.access_token || '');
-        localStorage.setItem('bhxh_id_token', json.APIKey?.id_token || '');
+        // Lưu token vào sessionStorage để dùng
+        sessionStorage.setItem('bhxh_token', json.APIKey?.access_token || '');
+        sessionStorage.setItem('bhxh_id_token', json.APIKey?.id_token || '');
       } else {
         setAccountValid(false);
         const errMap: Record<string, string> = {
@@ -174,8 +174,8 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
       cskcb,
       bhxhAccount: { username, password: '', passwordRaw: password },
     };
-    // Lưu vào localStorage
-    localStorage.setItem('cskcb_config', JSON.stringify(cfg));
+    // Lưu vào sessionStorage
+    sessionStorage.setItem('cskcb_config', JSON.stringify(cfg));
     onSave(cfg);
   };
 

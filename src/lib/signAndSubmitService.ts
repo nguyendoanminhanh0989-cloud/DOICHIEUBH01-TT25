@@ -48,11 +48,11 @@ export interface HoSoRecord {
 }
 
 /**
- * Lấy cấu hình tổ chức từ localStorage
+ * Lấy cấu hình tổ chức từ sessionStorage
  */
 export const getOrgConfig = (): OrganizationConfig => {
   try {
-    const raw = localStorage.getItem('org_config');
+    const raw = sessionStorage.getItem('org_config');
     if (raw) return JSON.parse(raw);
   } catch {}
   return {
@@ -63,7 +63,7 @@ export const getOrgConfig = (): OrganizationConfig => {
 };
 
 export const saveOrgConfig = (config: OrganizationConfig) => {
-  localStorage.setItem('org_config', JSON.stringify(config));
+  sessionStorage.setItem('org_config', JSON.stringify(config));
 };
 
 /**

@@ -30,7 +30,7 @@ export default function HoSoChungTu() {
   const [showTaoHoSoModal, setShowTaoHoSoModal] = useState(false);
   const [cskcbConfig, setCskcbConfig] = useState<CskcbConfig | null>(() => {
     try {
-      const saved = localStorage.getItem('cskcb_config');
+      const saved = sessionStorage.getItem('cskcb_config');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return null;

@@ -39,7 +39,7 @@ const STORAGE_KEY = 'vnpt_smartca_config';
  */
 export const getSmartCAConfig = (): SmartCAConfig => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = sessionStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.error('Lỗi đọc cấu hình SmartCA:', e);
@@ -60,7 +60,7 @@ export const getSmartCAConfig = (): SmartCAConfig => {
  * Lưu cấu hình vào LocalStorage
  */
 export const saveSmartCAConfig = (config: SmartCAConfig): void => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(config));
 };
 
 /**
