@@ -259,22 +259,22 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">User ID</label>
-                  <input type="text" value={smartcaUserId} onChange={e => setSmartcaUserId(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="text" autoComplete="off" value={smartcaUserId} onChange={e => setSmartcaUserId(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Password</label>
-                  <input type="password" value={smartcaPassword} onChange={e => setSmartcaPassword(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="password" autoComplete="new-password" value={smartcaPassword} onChange={e => setSmartcaPassword(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Serial Number</label>
-                  <input type="text" value={smartcaSerialNumber} onChange={e => setSmartcaSerialNumber(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="text" autoComplete="off" value={smartcaSerialNumber} onChange={e => setSmartcaSerialNumber(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Secret (TOTP)</label>
-                  <input type="password" value={smartcaTotpSecret} onChange={e => setSmartcaTotpSecret(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="password" autoComplete="new-password" value={smartcaTotpSecret} onChange={e => setSmartcaTotpSecret(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>
 
@@ -304,13 +304,13 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Tên đăng nhập Cổng BHXH (chuẩn liên thông: <span className="text-blue-600">{maCskcb}_BV</span>)</label>
-                <input type="text" value={bhytUsername} onChange={e => setBhytUsername(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input type="text" autoComplete="off" value={bhytUsername} onChange={e => setBhytUsername(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 <p className="text-[11px] text-slate-500 mt-1">Tài khoản được BHXH Việt Nam cấp cho cơ sở KCB để liên thông qua Cổng tiếp nhận (định dạng: <strong>{maCskcb}_BV</strong>).</p>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Mật khẩu</label>
-                <input type="password" value={bhytPassword} onChange={e => setBhytPassword(e.target.value)} placeholder="" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input type="password" autoComplete="new-password" value={bhytPassword} onChange={e => setBhytPassword(e.target.value)} placeholder="" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               
               {testResult && activeTab === 'bhyt' && (

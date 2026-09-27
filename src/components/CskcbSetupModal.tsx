@@ -372,6 +372,7 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
                 </label>
                 <input
                   type="text"
+                  autoComplete="off"
                   value={username}
                   onChange={e => { setUsername(e.target.value); setAccountValid(null); }}
                   placeholder={`VD: ${maKcb || '49004'}_BV`}
@@ -393,6 +394,7 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
                 <div className="relative">
                   <input
                     type={showPass ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={password}
                     onChange={e => { setPassword(e.target.value); setAccountValid(null); }}
                     placeholder="Mật khẩu đăng nhập cổng BHXH..."
