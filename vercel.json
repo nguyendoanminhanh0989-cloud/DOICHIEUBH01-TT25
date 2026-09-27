@@ -2,6 +2,10 @@
   "name": "doi-chieu-01bh-tt12",
   "rewrites": [
     {
+      "source": "/api/vnpt/:match*",
+      "destination": "https://gwsca.vnpt.vn/:match*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
