@@ -36,6 +36,8 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
   const [progressList, setProgressList] = useState<ProgressEntry[]>([]);
   const [resultRecords, setResultRecords] = useState<HoSoRecord[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [isCancelled, setIsCancelled] = useState(false);
+  const cancelRef = React.useRef(false);
   const [summary, setSummary] = useState({ success: 0, error: 0, total: 0 });
 
   const signableRecords = records.filter(r => r.trangThai !== 'SUBMITTED');
@@ -50,6 +52,8 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
   const handleStart = async () => {
     setStep('progress');
     setIsRunning(true);
+    setIsCancelled(false);
+    cancelRef.current = false;
 
     const { 
       signOneRecord, submitOneRecord 
@@ -72,6 +76,15 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
     let errorCount = 0;
 
     for (let i = 0; i < signableRecords.length; i++) {
+      // Check cancel flag trước mỗi hồ sơ
+      if (cancelRef.current) {
+        // Đánh dấu tất cả hồ sơ còn lại là hủy
+        setProgressList(prev => prev.map((p, idx) =>
+          idx >= i ? { ...p, status: 'error', message: '🚫 Đã hủy bởi người dùng' } : p
+        ));
+        break;
+      }
+
       let rec = signableRecords[i];
 
       const update = (status: ProgressEntry['status'], message: string) => {
@@ -94,6 +107,7 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
 
         // === BƯỚC 2: Ký số ===
         if (mode === 'sign' || mode === 'sign_then_submit') {
+          if (cancelRef.current) { update('error', '🚫 Đã hủy'); errorCount++; break; }
           update('running', `🔐 Đang ký số bằng ${signMethod}...`);
           rec = await signOneRecord(rec, signMethod, (msg) => update('running', msg));
           update('running', '✅ Ký số thành công!');
@@ -101,6 +115,7 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
 
         // === BƯỚC 3: Đẩy cổng ===
         if (mode === 'submit' || mode === 'sign_then_submit') {
+          if (cancelRef.current) { update('error', '🚫 Đã hủy'); errorCount++; break; }
           if (rec.trangThai !== 'SIGNED') {
             update('error', '⚠️ Bỏ qua - Hồ sơ chưa được ký số!');
             updated.push({ ...rec, trangThai: 'SIGN_FAILED', errorMessage: 'Chưa ký số' });
@@ -129,6 +144,11 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
     setIsRunning(false);
   };
 
+  const handleCancel = () => {
+    cancelRef.current = true;
+    setIsCancelled(true);
+  };
+
   const handleDone = () => {
     onComplete(resultRecords);
     onClose();
@@ -154,7 +174,17 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
               <div className="text-xs text-slate-500">{records.length} hồ sơ được chọn</div>
             </div>
           </div>
-          {!isRunning && (
+          {isRunning ? (
+            <button
+              onClick={handleCancel}
+              disabled={isCancelled}
+              title="Tạm dừng / Hủy ký"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100 disabled:opacity-50 transition"
+            >
+              <X className="w-4 h-4" />
+              {isCancelled ? 'Đang dừng...' : 'Hủy / Dừng ký'}
+            </button>
+          ) : (
             <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-xl text-slate-500 transition">
               <X className="w-5 h-5" />
             </button>
@@ -255,9 +285,18 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
           {/* === BƯỚC 2: TIẾN TRÌNH === */}
           {step === 'progress' && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-sm text-slate-600 font-semibold mb-4">
-                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                Đang xử lý {signableRecords.length} hồ sơ...
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-sm text-slate-600 font-semibold">
+                  {isCancelled
+                    ? <><X className="w-4 h-4 text-rose-500" /> <span className="text-rose-600">Đang dừng...</span></>
+                    : <><Loader2 className="w-4 h-4 animate-spin text-blue-500" /> Đang xử lý {signableRecords.length} hồ sơ...</>
+                  }
+                </div>
+                {!isCancelled && (
+                  <button onClick={handleCancel} className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100 transition">
+                    <X className="w-3.5 h-3.5" /> Dừng lại
+                  </button>
+                )}
               </div>
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {progressList.map((p, i) => (
