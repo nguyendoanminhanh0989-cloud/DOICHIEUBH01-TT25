@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Building2, 
@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { bhxhGetToken } from '../lib/bhxhService';
+import { getOrgConfig, saveOrgConfig } from '../lib/signAndSubmitService';
+import { getSmartCAConfig, saveSmartCAConfig, testSmartCaConnection } from '../lib/vnptSmartCaService';
 
 interface ConfigModalProps {
   onClose: () => void;
@@ -19,38 +21,112 @@ type TabType = 'facility' | 'smartca' | 'bhyt';
 export default function ConfigModal({ onClose }: ConfigModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('smartca');
 
-  // Form states
-  const [maCskcb, setMaCskcb] = useState('49006');
-  const [bhytUsername, setBhytUsername] = useState('49006_BV');
+  // Form states - Facility
+  const [maCskcb, setMaCskcb] = useState('');
+  const [tenCskcb, setTenCskcb] = useState('');
+
+  // Form states - SmartCA
+  const [smartcaBaseUrl, setSmartcaBaseUrl] = useState('https://gwsca.vnpt.vn');
+  const [smartcaClientId, setSmartcaClientId] = useState('');
+  const [smartcaClientSecret, setSmartcaClientSecret] = useState('');
+  const [smartcaUserId, setSmartcaUserId] = useState('');
+  const [smartcaPassword, setSmartcaPassword] = useState('');
+  const [smartcaSerialNumber, setSmartcaSerialNumber] = useState('');
+  const [smartcaTotpSecret, setSmartcaTotpSecret] = useState('');
+
+  // Form states - BHYT
+  const [bhytUsername, setBhytUsername] = useState('');
   const [bhytPassword, setBhytPassword] = useState('');
 
   // Test connection state
   const [isTesting, setIsTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{success: boolean, message: string} | null>(null);
+  const [testResult, setTestResult] = useState<{success: boolean, message: string, details?: string} | null>(null);
+
+  useEffect(() => {
+    // Load config on mount
+    const orgConfig = getOrgConfig();
+    setMaCskcb(orgConfig.ma_cskcb || '49006');
+    setTenCskcb(orgConfig.ten_cskcb || 'Trung tâm Y tế khu vực Duy Xuyên');
+    setBhytUsername(orgConfig.bhxh_account?.username || '49006_BV');
+    setBhytPassword(orgConfig.bhxh_account?.password || '');
+
+    const smartCAConfig = getSmartCAConfig();
+    setSmartcaBaseUrl(smartCAConfig.baseUrl || 'https://gwsca.vnpt.vn');
+    setSmartcaClientId(smartCAConfig.clientId || '');
+    setSmartcaClientSecret(smartCAConfig.clientSecret || '');
+    setSmartcaUserId(smartCAConfig.userId || '');
+    setSmartcaPassword(smartCAConfig.password || '');
+    setSmartcaSerialNumber(smartCAConfig.serialNumber || '');
+    setSmartcaTotpSecret(smartCAConfig.totpSecret || '');
+  }, []);
 
   const handleTestConnection = async () => {
-    if (activeTab !== 'bhyt') {
-      alert('Chức năng kiểm tra kết nối hiện tại chỉ áp dụng cho tab Liên thông BHYT.');
-      return;
-    }
-    if (!bhytUsername || !bhytPassword) {
-      setTestResult({ success: false, message: 'Vui lòng nhập tên đăng nhập và mật khẩu!' });
-      return;
-    }
-    
     setIsTesting(true);
     setTestResult(null);
+
     try {
-      await bhxhGetToken({
-        ma_cskcb: maCskcb,
-        bhxh_account: { username: bhytUsername, password: bhytPassword }
-      });
-      setTestResult({ success: true, message: 'Xác thực thành công! Kết nối với Cổng BHXH hoạt động tốt.' });
+      if (activeTab === 'bhyt') {
+        if (!bhytUsername || !bhytPassword) {
+          setTestResult({ success: false, message: 'Vui lòng nhập tên đăng nhập và mật khẩu!' });
+          return;
+        }
+        await bhxhGetToken({
+          ma_cskcb: maCskcb,
+          bhxh_account: { username: bhytUsername, password: bhytPassword }
+        });
+        setTestResult({ success: true, message: 'Xác thực thành công! Kết nối với Cổng BHXH hoạt động tốt.' });
+      } 
+      else if (activeTab === 'smartca') {
+        const config = {
+          signMode: 'TOTP' as any,
+          baseUrl: smartcaBaseUrl,
+          clientId: smartcaClientId,
+          clientSecret: smartcaClientSecret,
+          userId: smartcaUserId,
+          password: smartcaPassword,
+          serialNumber: smartcaSerialNumber,
+          totpSecret: smartcaTotpSecret
+        };
+        const res = await testSmartCaConnection(config);
+        setTestResult({ 
+          success: res.status === 'success', 
+          message: res.message,
+          details: res.details
+        });
+      }
+      else {
+        alert('Tab này không có chức năng kiểm tra kết nối.');
+      }
     } catch (err: any) {
       setTestResult({ success: false, message: err.message || 'Lỗi kết nối' });
     } finally {
       setIsTesting(false);
     }
+  };
+
+  const handleSave = () => {
+    saveOrgConfig({
+      ma_cskcb: maCskcb,
+      ten_cskcb: tenCskcb,
+      bhxh_account: {
+        username: bhytUsername,
+        password: bhytPassword
+      }
+    });
+
+    saveSmartCAConfig({
+      signMode: smartcaTotpSecret ? 'TOTP' : 'APP',
+      baseUrl: smartcaBaseUrl,
+      clientId: smartcaClientId,
+      clientSecret: smartcaClientSecret,
+      userId: smartcaUserId,
+      password: smartcaPassword,
+      serialNumber: smartcaSerialNumber,
+      totpSecret: smartcaTotpSecret
+    });
+
+    alert('Đã lưu cấu hình thành công!');
+    onClose();
   };
 
   return (
@@ -66,7 +142,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
             <div>
               <h2 className="text-lg font-black text-slate-800">Cấu Hình Đơn Vị & Liên Thông Cổng BHXH</h2>
               <div className="text-xs text-slate-500 mt-0.5">
-                Mã CSKCB: <strong className="text-blue-600">49006</strong> - Trung tâm Y tế khu vực Duy Xuyên
+                Mã CSKCB: <strong className="text-blue-600">{maCskcb}</strong> - {tenCskcb}
               </div>
             </div>
           </div>
@@ -78,7 +154,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
         {/* Tabs */}
         <div className="px-6 pt-4 border-b border-slate-100 bg-white flex items-center gap-2 shrink-0">
           <button
-            onClick={() => setActiveTab('facility')}
+            onClick={() => { setActiveTab('facility'); setTestResult(null); }}
             className={cn(
               "px-4 py-2.5 rounded-t-xl text-sm font-bold flex items-center gap-2 transition-colors",
               activeTab === 'facility' 
@@ -89,7 +165,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
             <Building2 className="w-4 h-4" /> Thông tin cơ sở KCB
           </button>
           <button
-            onClick={() => setActiveTab('smartca')}
+            onClick={() => { setActiveTab('smartca'); setTestResult(null); }}
             className={cn(
               "px-4 py-2.5 rounded-t-xl text-sm font-bold flex items-center gap-2 transition-colors",
               activeTab === 'smartca' 
@@ -100,7 +176,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
             <ShieldCheck className="w-4 h-4" /> Cấu hình VNPT SmartCA
           </button>
           <button
-            onClick={() => setActiveTab('bhyt')}
+            onClick={() => { setActiveTab('bhyt'); setTestResult(null); }}
             className={cn(
               "px-4 py-2.5 rounded-t-xl text-sm font-bold flex items-center gap-2 transition-colors",
               activeTab === 'bhyt' 
@@ -130,24 +206,8 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Tên cơ sở khám chữa bệnh <span className="text-rose-500">*</span></label>
-                  <input type="text" defaultValue="Trung tâm Y tế khu vực Duy Xuyên" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="text" value={tenCskcb} onChange={e => setTenCskcb(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" />
                   <p className="text-[11px] text-slate-500 mt-1">Tên chính thức hiển thị trên tiêu đề và báo cáo.</p>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Địa chỉ đơn vị</label>
-                <input type="text" defaultValue="Địa chỉ chưa cập nhật" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Số điện thoại liên hệ</label>
-                  <input type="text" placeholder="Số điện thoại..." className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Email đơn vị</label>
-                  <input type="text" placeholder="Email liên hệ..." className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>
             </div>
@@ -158,39 +218,39 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Base URL</label>
-                <input type="text" defaultValue="https://gwsca.vnpt.vn" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                <input type="text" value={smartcaBaseUrl} onChange={e => setSmartcaBaseUrl(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Client ID (SP ID)</label>
-                  <input type="text" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="text" value={smartcaClientId} onChange={e => setSmartcaClientId(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Client Secret</label>
-                  <input type="password" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="password" value={smartcaClientSecret} onChange={e => setSmartcaClientSecret(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">User ID</label>
-                  <input type="text" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="text" value={smartcaUserId} onChange={e => setSmartcaUserId(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Password</label>
-                  <input type="password" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="password" value={smartcaPassword} onChange={e => setSmartcaPassword(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Serial Number</label>
-                  <input type="text" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="text" value={smartcaSerialNumber} onChange={e => setSmartcaSerialNumber(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Secret (TOTP)</label>
-                  <input type="password" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input type="password" value={smartcaTotpSecret} onChange={e => setSmartcaTotpSecret(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
               </div>
 
@@ -200,6 +260,18 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
                   <strong>CẢNH BÁO NGUY CƠ:</strong> Việc lưu mã Secret tại đây có thể dẫn đến rủi ro lộ khóa cá nhân nếu máy tính bị xâm nhập. Chỉ sử dụng nếu bạn hiểu rõ và chấp nhận rủi ro bảo mật.
                 </div>
               </div>
+
+              {testResult && activeTab === 'smartca' && (
+                <div className={cn("p-4 mt-4 rounded-xl text-sm flex items-start gap-3 border", 
+                  testResult.success ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-rose-50 text-rose-800 border-rose-200"
+                )}>
+                  {testResult.success ? <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />}
+                  <div>
+                    <div className="font-bold">{testResult.message}</div>
+                    {testResult.details && <pre className="mt-2 whitespace-pre-wrap font-mono text-[11px] leading-relaxed opacity-90">{testResult.details}</pre>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -217,7 +289,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
                 <input type="password" value={bhytPassword} onChange={e => setBhytPassword(e.target.value)} placeholder="" className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               </div>
               
-              {testResult && (
+              {testResult && activeTab === 'bhyt' && (
                 <div className={cn("p-3 mt-4 rounded-lg text-sm font-semibold flex items-start gap-2 border", 
                   testResult.success ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
                 )}>
@@ -234,21 +306,18 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
           <div className="flex items-center gap-3">
             <button 
               onClick={handleTestConnection}
-              disabled={isTesting}
+              disabled={isTesting || activeTab === 'facility'}
               className="px-4 py-2.5 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50"
             >
               <RefreshCw className={cn("w-4 h-4", isTesting && "animate-spin")} /> 
               {isTesting ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}
-            </button>
-            <button className="px-4 py-2.5 text-sm font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl hover:bg-rose-100">
-              Xóa cấu hình
             </button>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={onClose} className="px-6 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 bg-white rounded-xl hover:bg-slate-50">
               Hủy
             </button>
-            <button className="px-6 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-md shadow-blue-200">
+            <button onClick={handleSave} className="px-6 py-2.5 text-sm font-bold text-white bg-blue-600 rounded-xl hover:bg-blue-700 shadow-md shadow-blue-200">
               Lưu cấu hình
             </button>
           </div>
