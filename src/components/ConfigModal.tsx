@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   Building2, 
@@ -24,6 +24,10 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
   // Form states - Facility
   const [maCskcb, setMaCskcb] = useState('');
   const [tenCskcb, setTenCskcb] = useState('');
+  const [cskcbList, setCskcbList] = useState<Array<{ma: string; ten: string}>>([]);
+  const [searchResults, setSearchResults] = useState<Array<{ma: string; ten: string}>>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Form states - SmartCA
   const [smartcaBaseUrl, setSmartcaBaseUrl] = useState('https://gwsca.vnpt.vn');
@@ -61,6 +65,46 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
     setSmartcaUserId(smartCAConfig.userId || '');
     setSmartcaPassword(smartCAConfig.password || '');
     setSmartcaTotpSecret(smartCAConfig.totpSecret || '');
+  }, []);
+
+  // Load danh mục CSKCB
+  useEffect(() => {
+    import('../data/cskcb_list.json').then(data => {
+      setCskcbList(data.default as any[]);
+    }).catch(() => {});
+  }, []);
+
+  // Tự động tra cứu khi nhập mã
+  useEffect(() => {
+    const code = maCskcb.trim();
+    if (code.length < 3 || cskcbList.length === 0) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    const exact = cskcbList.find(c => c.ma === code);
+    if (exact) {
+      setTenCskcb(exact.ten);
+      setSearchResults([]);
+      setShowDropdown(false);
+    } else {
+      const partial = cskcbList.filter(c =>
+        c.ma.startsWith(code) || c.ten.toLowerCase().includes(code.toLowerCase())
+      ).slice(0, 8);
+      setSearchResults(partial);
+      setShowDropdown(partial.length > 0);
+    }
+  }, [maCskcb, cskcbList]);
+
+  // Đóng dropdown khi click ra ngoài
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   const handleTestConnection = async () => {
@@ -223,14 +267,48 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
               </div>
 
               <div className="grid grid-cols-2 gap-6">
-                <div>
+                <div ref={dropdownRef} className="relative">
                   <label className="block text-xs font-bold text-slate-700 mb-1">Mã CSKCB (5 ký tự) <span className="text-rose-500">*</span></label>
-                  <input type="text" value={maCskcb} onChange={e => setMaCskcb(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" />
-                  <p className="text-[11px] text-slate-500 mt-1">Mã 5 chữ số do BHXH Việt Nam cấp cho cơ sở KCB.</p>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    value={maCskcb}
+                    onChange={e => { setMaCskcb(e.target.value); setShowDropdown(true); }}
+                    onFocus={() => maCskcb.length >= 3 && setShowDropdown(true)}
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="VD: 49006"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">Nhập mã để tự động tra cứu tên đơn vị.</p>
+                  {/* Dropdown gợi ý */}
+                  {showDropdown && searchResults.length > 0 && (
+                    <div className="absolute z-50 top-full mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto">
+                      {searchResults.map(item => (
+                        <button
+                          key={item.ma}
+                          type="button"
+                          className="w-full px-4 py-2.5 text-left hover:bg-blue-50 transition-colors border-b border-slate-50 last:border-0"
+                          onClick={() => {
+                            setMaCskcb(item.ma);
+                            setTenCskcb(item.ten);
+                            setShowDropdown(false);
+                          }}
+                        >
+                          <span className="text-xs font-black text-blue-600 mr-2">{item.ma}</span>
+                          <span className="text-sm text-slate-700">{item.ten}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Tên cơ sở khám chữa bệnh <span className="text-rose-500">*</span></label>
-                  <input type="text" value={tenCskcb} onChange={e => setTenCskcb(e.target.value)} className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <input
+                    type="text"
+                    value={tenCskcb}
+                    onChange={e => setTenCskcb(e.target.value)}
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="Tên tự động điền khi chọn mã"
+                  />
                   <p className="text-[11px] text-slate-500 mt-1">Tên chính thức hiển thị trên tiêu đề và báo cáo.</p>
                 </div>
               </div>
