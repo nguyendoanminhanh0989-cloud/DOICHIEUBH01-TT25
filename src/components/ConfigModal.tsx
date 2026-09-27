@@ -44,19 +44,26 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
 
   useEffect(() => {
     // Load config on mount
-    const orgConfig = getOrgConfig();
-    setMaCskcb(orgConfig.ma_cskcb || '49006');
-    setTenCskcb(orgConfig.ten_cskcb || 'Trung tâm Y tế khu vực Duy Xuyên');
-    setBhytUsername(orgConfig.bhxh_account?.username || '49006_BV');
+    const orgConfig = getOrgConfig(); // from sessionStorage
+    const savedSafeOrg = localStorage.getItem('safe_org_config');
+    const safeOrg = savedSafeOrg ? JSON.parse(savedSafeOrg) : {};
+
+    setMaCskcb(orgConfig.ma_cskcb || safeOrg.ma_cskcb || '49006');
+    setTenCskcb(orgConfig.ten_cskcb || safeOrg.ten_cskcb || 'Trung tâm Y tế khu vực Duy Xuyên');
+    setBhytUsername(orgConfig.bhxh_account?.username || '');
     setBhytPassword(orgConfig.bhxh_account?.password || '');
 
-    const smartCAConfig = getSmartCAConfig();
-    setSmartcaBaseUrl(smartCAConfig.baseUrl || 'https://gwsca.vnpt.vn');
-    setSmartcaClientId(smartCAConfig.clientId || '');
-    setSmartcaClientSecret(smartCAConfig.clientSecret || '');
+    const smartCAConfig = getSmartCAConfig(); // from sessionStorage
+    const savedSafeSmartCA = localStorage.getItem('safe_smartca_config');
+    const safeSmartCA = savedSafeSmartCA ? JSON.parse(savedSafeSmartCA) : {};
+
+    setSmartcaBaseUrl(smartCAConfig.baseUrl || safeSmartCA.baseUrl || 'https://gwsca.vnpt.vn');
+    setSmartcaClientId(smartCAConfig.clientId || safeSmartCA.clientId || '');
+    setSmartcaClientSecret(smartCAConfig.clientSecret || safeSmartCA.clientSecret || '');
+    setSmartcaSerialNumber(smartCAConfig.serialNumber || safeSmartCA.serialNumber || '');
+    
     setSmartcaUserId(smartCAConfig.userId || '');
     setSmartcaPassword(smartCAConfig.password || '');
-    setSmartcaSerialNumber(smartCAConfig.serialNumber || '');
     setSmartcaTotpSecret(smartCAConfig.totpSecret || '');
   }, []);
 
@@ -105,6 +112,7 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
   };
 
   const handleSave = () => {
+    // Save to sessionStorage for app usage
     saveOrgConfig({
       ma_cskcb: maCskcb,
       ten_cskcb: tenCskcb,
@@ -125,8 +133,41 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
       totpSecret: smartcaTotpSecret
     });
 
+    // Save SAFE parts to localStorage for pre-filling next time
+    localStorage.setItem('safe_org_config', JSON.stringify({
+      ma_cskcb: maCskcb,
+      ten_cskcb: tenCskcb
+    }));
+    
+    localStorage.setItem('safe_smartca_config', JSON.stringify({
+      baseUrl: smartcaBaseUrl,
+      clientId: smartcaClientId,
+      clientSecret: smartcaClientSecret,
+      serialNumber: smartcaSerialNumber
+    }));
+
     alert('Đã lưu cấu hình thành công!');
     onClose();
+  };
+
+  const handleClearConfig = () => {
+    if (confirm('Bạn có chắc chắn muốn xóa cấu hình tài khoản (Mật khẩu, User ID, TOTP)? Các thiết lập hệ thống (Client ID, Secret, Serial) vẫn được giữ lại.')) {
+      setSmartcaUserId('');
+      setSmartcaPassword('');
+      setSmartcaTotpSecret('');
+      setBhytUsername('');
+      setBhytPassword('');
+      setTestResult(null);
+      
+      // Remove from session
+      sessionStorage.removeItem('org_config');
+      sessionStorage.removeItem('vnpt_smartca_config');
+      sessionStorage.removeItem('cskcb_config');
+      sessionStorage.removeItem('bhxh_token');
+      sessionStorage.removeItem('bhxh_id_token');
+      
+      alert('Đã xóa thông tin tài khoản!');
+    }
   };
 
   return (
@@ -311,6 +352,9 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
             >
               <RefreshCw className={cn("w-4 h-4", isTesting && "animate-spin")} /> 
               {isTesting ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}
+            </button>
+            <button onClick={handleClearConfig} className="px-4 py-2.5 text-sm font-semibold text-rose-600 bg-rose-50 border border-rose-100 rounded-xl hover:bg-rose-100">
+              Xóa cấu hình
             </button>
           </div>
           <div className="flex items-center gap-3">
