@@ -7,6 +7,7 @@
  * NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG
  */
 import React, { useState, useEffect, useRef } from 'react';
+import md5 from 'md5';
 import {
   X, Building2, Search, CheckCircle2, AlertCircle,
   FileSpreadsheet, Loader2, ShieldCheck, Eye, EyeOff
@@ -497,13 +498,9 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
   );
 }
 
-/** MD5 hash async (thông qua SubtleCrypto → SHA-256 → hex, hoặc native MD5 polyfill) */
+/** MD5 hash async */
 async function md5Async(str: string): Promise<string> {
   // BHXH yêu cầu MD5. Nếu đã là MD5 (32 hex), trả về nguyên
   if (/^[a-f0-9]{32}$/i.test(str)) return str.toLowerCase();
-  // Tạm thời dùng SHA-256 encode → trong production cần thư viện md5
-  const encoder = new TextEncoder();
-  const data = encoder.encode(str);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+  return md5(str);
 }
