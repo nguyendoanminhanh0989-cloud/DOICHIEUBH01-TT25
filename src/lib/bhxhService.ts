@@ -5,20 +5,7 @@ type Organization = {
   bhxh_account: { username: string; password: string; };
 };
 
-// Inline MD5 hash (cho trình duyệt không cần cài package)
-function md5(str: string): string {
-  // Polyfill MD5 đơn giản - trong thực tế nên dùng SubtleCrypto hoặc package md5
-  // BHXH yêu cầu MD5 của password
-  // Dùng crypto.subtle nếu có
-  function toHex(buffer: ArrayBuffer) {
-    return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-  // Fallback: trả về chuỗi gốc nếu đã là MD5 (32 hex chars)
-  if (/^[a-f0-9]{32}$/i.test(str)) return str;
-  // Trả về chuỗi và warn user để nhập mật khẩu đã hash sẵn
-  console.warn('[BHXH] MD5 polyfill: vui lòng nhập mật khẩu đã MD5 hash. Input:', str.substring(0, 3) + '***');
-  return str;
-}
+import md5 from 'md5';
 
 // Địa chỉ Cổng tiếp nhận dữ liệu Giám định BHYT của BHXH Việt Nam
 const BHXH_DIRECT_HOST = 'https://egw.baohiemxahoi.gov.vn';
