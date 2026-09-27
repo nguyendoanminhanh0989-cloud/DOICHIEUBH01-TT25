@@ -45,22 +45,18 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
   useEffect(() => {
     // Load config on mount
     const orgConfig = getOrgConfig(); // from sessionStorage
-    const savedSafeOrg = localStorage.getItem('safe_org_config');
-    const safeOrg = savedSafeOrg ? JSON.parse(savedSafeOrg) : {};
 
-    setMaCskcb(orgConfig.ma_cskcb || safeOrg.ma_cskcb || '49006');
-    setTenCskcb(orgConfig.ten_cskcb || safeOrg.ten_cskcb || 'Trung tâm Y tế khu vực Duy Xuyên');
+    setMaCskcb(orgConfig.ma_cskcb || '49006');
+    setTenCskcb(orgConfig.ten_cskcb || 'Trung tâm Y tế khu vực Duy Xuyên');
     setBhytUsername(orgConfig.bhxh_account?.username || '');
     setBhytPassword(orgConfig.bhxh_account?.password || '');
 
     const smartCAConfig = getSmartCAConfig(); // from sessionStorage
-    const savedSafeSmartCA = localStorage.getItem('safe_smartca_config');
-    const safeSmartCA = savedSafeSmartCA ? JSON.parse(savedSafeSmartCA) : {};
 
-    setSmartcaBaseUrl(smartCAConfig.baseUrl || safeSmartCA.baseUrl || 'https://gwsca.vnpt.vn');
-    setSmartcaClientId(smartCAConfig.clientId || safeSmartCA.clientId || '49d4-638684879413752914.apps.smartcaapi.com');
-    setSmartcaClientSecret(smartCAConfig.clientSecret || safeSmartCA.clientSecret || 'MzRiZTViMmY-YjM1NC00OWQ0');
-    setSmartcaSerialNumber(smartCAConfig.serialNumber || safeSmartCA.serialNumber || '');
+    setSmartcaBaseUrl(smartCAConfig.baseUrl || 'https://gwsca.vnpt.vn');
+    setSmartcaClientId(smartCAConfig.clientId || '49d4-638684879413752914.apps.smartcaapi.com');
+    setSmartcaClientSecret(smartCAConfig.clientSecret || 'MzRiZTViMmY-YjM1NC00OWQ0');
+    setSmartcaSerialNumber(smartCAConfig.serialNumber || '');
     
     setSmartcaUserId(smartCAConfig.userId || '');
     setSmartcaPassword(smartCAConfig.password || '');
@@ -132,19 +128,6 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
       serialNumber: smartcaSerialNumber,
       totpSecret: smartcaTotpSecret
     });
-
-    // Save SAFE parts to localStorage for pre-filling next time
-    localStorage.setItem('safe_org_config', JSON.stringify({
-      ma_cskcb: maCskcb,
-      ten_cskcb: tenCskcb
-    }));
-    
-    localStorage.setItem('safe_smartca_config', JSON.stringify({
-      baseUrl: smartcaBaseUrl,
-      clientId: smartcaClientId,
-      clientSecret: smartcaClientSecret,
-      serialNumber: smartcaSerialNumber
-    }));
 
     alert('Đã lưu cấu hình thành công!');
     onClose();
