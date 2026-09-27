@@ -58,8 +58,8 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
     const safeSmartCA = savedSafeSmartCA ? JSON.parse(savedSafeSmartCA) : {};
 
     setSmartcaBaseUrl(smartCAConfig.baseUrl || safeSmartCA.baseUrl || 'https://gwsca.vnpt.vn');
-    setSmartcaClientId(smartCAConfig.clientId || safeSmartCA.clientId || '');
-    setSmartcaClientSecret(smartCAConfig.clientSecret || safeSmartCA.clientSecret || '');
+    setSmartcaClientId(smartCAConfig.clientId || safeSmartCA.clientId || '49d4-638684879413752914.apps.smartcaapi.com');
+    setSmartcaClientSecret(smartCAConfig.clientSecret || safeSmartCA.clientSecret || 'MzRiZTViMmY-YjM1NC00OWQ0');
     setSmartcaSerialNumber(smartCAConfig.serialNumber || safeSmartCA.serialNumber || '');
     
     setSmartcaUserId(smartCAConfig.userId || '');
