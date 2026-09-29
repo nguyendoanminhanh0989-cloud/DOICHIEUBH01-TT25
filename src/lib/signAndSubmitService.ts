@@ -30,6 +30,7 @@ export interface HoSoRecord {
   maBhyt: string;
   cccd: string;
   maBhxh: string;
+  /** @deprecated dùng displayFields.khoaPrimary */
   khoa: string;
   ngayVao: string;
   ngayRa: string;
@@ -39,6 +40,15 @@ export interface HoSoRecord {
   cchn: string;
   trangThai: SignStatus;
   rawData: Record<string, string>;
+  /** Các trường hiển thị đã được map đúng theo loại CT */
+  displayFields?: {
+    khoaPrimary: string;
+    khoaSecondary: string;
+    chanDoanPrimary: string;
+    chanDoanSecondary: string;
+    nguoiKyPrimary: string;
+    nguoiKySecondary: string;
+  };
   xmlContent?: string;        // XML đã generate
   signatureBase64?: string;   // Chữ ký số
   certBase64?: string;        // Chứng thư số

@@ -1,0 +1,193 @@
+/**
+ * IMPORT MAPPER - Ánh x? c?t Excel ? HoSoRecord cho t?ng lo?i m?u BHXH
+ *
+ * M?i lo?i CT có c?u trúc c?t khác nhau t? HIS/ph?n m?m xu?t ra.
+ * File này chu?n hóa vi?c d?c và hi?n th? dúng theo t?ng lo?i.
+ *
+ * Tên ph?n m?m: Ð?I CHI?U H? SO VÀ CH?NG T? TT25
+ * NGUY?N ÐOÀN MINH ÁNH - IT Y T? - ÐÀ N?NG
+ */
+
+import type { DocType } from './xmlBuilder';
+
+export type HoSoType = DocType;
+
+export interface ColumnDisplayConfig {
+  khoaLabel: string;
+  chanDoanLabel: string;
+  nguoiKyLabel: string;
+  dinhDanhLabel: string;
+}
+
+export const COLUMN_DISPLAY: Record<string, ColumnDisplayConfig> = {
+  CT03: { khoaLabel: 'KHOA / TH?I GIAN', chanDoanLabel: 'CH?N ÐOÁN (ICD-10)', nguoiKyLabel: 'TRU?NG KHOA / CCHN', dinhDanhLabel: 'CCCD / BHYT' },
+  CT04: { khoaLabel: 'TH?I GIAN N?M VI?N', chanDoanLabel: 'CH?N ÐOÁN VÀO / RA', nguoiKyLabel: 'NGU?I Ð?I DI?N', dinhDanhLabel: 'CCCD / BHYT' },
+  CT05: { khoaLabel: 'NGÀY SINH CON', chanDoanLabel: 'THÔNG TIN CON', nguoiKyLabel: 'NGU?I Ð? Ð? / KÝ', dinhDanhLabel: 'CMND / BHYT M?' },
+  CT06: { khoaLabel: 'TH?I GIAN NGH?', chanDoanLabel: 'CH?N ÐOÁN / THAI K?', nguoiKyLabel: 'BÁC SI / CCHN', dinhDanhLabel: 'CCCD / BHYT' },
+  CT07: { khoaLabel: 'TH?I GIAN NGH? VI?C', chanDoanLabel: 'CH?N ÐOÁN ICD-10', nguoiKyLabel: 'BÁC SI / CCHN', dinhDanhLabel: 'CCCD / BHXH' },
+};
+
+export function detectDocType(fileNameLower: string, firstRow: Record<string, any>): HoSoType {
+  if (fileNameLower.includes('ct03') || fileNameLower.includes('giayravien') || fileNameLower.includes('dsgrav')) return 'CT03';
+  if (fileNameLower.includes('ct04') || fileNameLower.includes('tomtathosobenhan') || fileNameLower.includes('tomtathoso')) return 'CT04';
+  if (fileNameLower.includes('ct05') || fileNameLower.includes('chungsinh') || fileNameLower.includes('dschungsinh')) return 'CT05';
+  if (fileNameLower.includes('ct06') || fileNameLower.includes('nghiduongthai') || fileNameLower.includes('giayxacnhan')) return 'CT06';
+  if (fileNameLower.includes('ct07') || fileNameLower.includes('nghiviec') || fileNameLower.includes('nghiviechuong')) return 'CT07';
+
+  const maCtRaw = (firstRow['MA_CT'] || firstRow['MAU_SO'] || '').toString().toLowerCase().trim();
+  if (maCtRaw === 'ct03') return 'CT03';
+  if (maCtRaw === 'ct04') return 'CT04';
+  if (maCtRaw === 'ct05') return 'CT05';
+  if (maCtRaw === 'ct06') return 'CT06';
+  if (maCtRaw === 'ct07') return 'CT07';
+
+  const cols = Object.keys(firstRow).map(k => k.toUpperCase());
+  if (cols.includes('HOTEN_NND') || cols.includes('MA_SOBHXH_ME') || cols.includes('HO_TEN_ME')) return 'CT05';
+  if (cols.includes('CHANDOAN_DIEUTRI') && cols.includes('TU_NGAY') && cols.includes('TEN_BSY')) return 'CT07';
+  if (cols.includes('TU_NGAY') && cols.includes('TEN_BS') && cols.includes('MA_BS') && !cols.includes('TEN_BSY')) return 'CT06';
+  if (cols.includes('CHAN_DOAN_VAO') && cols.includes('QT_BENHLY')) return 'CT04';
+  if (cols.includes('NGAY_RA') && cols.includes('THU_TRUONG_DVI')) return 'CT03';
+
+  return 'CT03';
+}
+
+export interface MappedDisplayFields {
+  hoTen: string;
+  maBhyt: string;
+  maBhxh: string;
+  cccd: string;
+  khoaPrimary: string;
+  khoaSecondary: string;
+  chanDoanPrimary: string;
+  chanDoanSecondary: string;
+  nguoiKyPrimary: string;
+  nguoiKySecondary: string;
+}
+
+export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): MappedDisplayFields {
+  const s = (k: string) => String(row[k] ?? '').trim();
+  const su = (k: string) => String(row[k.toUpperCase()] ?? row[k] ?? '').trim();
+
+  switch (type) {
+    case 'CT03': return {
+      hoTen: s('HO_TEN'),
+      maBhyt: s('MA_THE'),
+      maBhxh: s('MA_BHXH'),
+      cccd: s('SO_CCCD'),
+      khoaPrimary: s('MA_KHOA') || s('MA_YTE'),
+      khoaSecondary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' ? '),
+      chanDoanPrimary: s('BENHICD10_ID') || s('BENH_ICD10_ID'),
+      chanDoanSecondary: s('CHAN_DOAN'),
+      nguoiKyPrimary: s('TEN_TRUONGKHOA') || s('THU_TRUONG_DVI'),
+      nguoiKySecondary: s('MA_CCHN_TRUONGKHOA') || s('MA_CCHN') || s('MA_TRUONGKHOA'),
+    };
+    case 'CT04': return {
+      hoTen: s('HO_TEN'),
+      maBhyt: s('MA_THE'),
+      maBhxh: s('MA_BHXH'),
+      cccd: s('SO_CCCD'),
+      khoaPrimary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' ? '),
+      khoaSecondary: s('TT_RAVIEN') ? `Ra vi?n: ${s('TT_RAVIEN')}` : '',
+      chanDoanPrimary: s('BENHICD10') || s('CHAN_DOAN_RA'),
+      chanDoanSecondary: s('TENBENHICD10') || s('CHAN_DOAN_VAO'),
+      nguoiKyPrimary: s('NGUOI_DAI_DIEN'),
+      nguoiKySecondary: s('MA_CCHN') || '',
+    };
+    case 'CT05': return {
+      hoTen: s('HO_TEN_ME') || s('HOTEN_NND'),
+      maBhyt: s('MA_THE') || s('MA_THE_NND'),
+      maBhxh: s('MA_SOBHXH_ME') || s('MA_BHXH_NND') || s('MA_SOBHXH'),
+      cccd: s('CMND') || s('SO_CMND_NND'),
+      khoaPrimary: s('NGAY_SINHCON') || s('NGAY_SINH_CON'),
+      khoaSecondary: [
+        s('TEN_CON') ? `Con: ${s('TEN_CON')}` : '',
+        s('CAN_NANG_CON') ? `${s('CAN_NANG_CON')}g` : '',
+        s('GIOI_TINH_CON') === '1' ? 'Nam' : s('GIOI_TINH_CON') === '2' ? 'N?' : '',
+      ].filter(Boolean).join(' | '),
+      chanDoanPrimary: s('TINH_TRANG_CON') ? `Tình tr?ng: ${s('TINH_TRANG_CON')}` : '',
+      chanDoanSecondary: [s('SINHCON_PHAUTHUAT') === '1' ? 'Ph?u thu?t' : '', s('SINHCON_DUOI32TUAN') === '1' ? '<32 tu?n' : ''].filter(Boolean).join(', '),
+      nguoiKyPrimary: s('NGUOI_DAI_DIEN') || s('THU_TRUONG_DVI'),
+      nguoiKySecondary: s('NGUOI_DO_DE') ? `Ð? d?: ${s('NGUOI_DO_DE')}` : '',
+    };
+    case 'CT06': return {
+      hoTen: s('HO_TEN'),
+      maBhyt: s('MA_THE'),
+      maBhxh: s('MA_BHXH'),
+      cccd: s('SO_CCCD'),
+      khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' ? '),
+      khoaSecondary: s('TUOI_THAI') ? `Thai ${s('TUOI_THAI')} tu?n` : '',
+      chanDoanPrimary: s('BENHICD10') || s('CHAN_DOAN'),
+      chanDoanSecondary: s('TENBENHICD10') || '',
+      nguoiKyPrimary: s('TEN_BS'),
+      nguoiKySecondary: s('MA_BS'),
+    };
+    case 'CT07': return {
+      hoTen: s('HO_TEN'),
+      maBhyt: s('MA_THE'),
+      maBhxh: s('MA_SOBHXH') || s('MA_BHXH'),
+      cccd: s('SO_CCCD'),
+      khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' ? '),
+      khoaSecondary: s('SO_NGAY') ? `${s('SO_NGAY')} ngày ngh?` : '',
+      chanDoanPrimary: s('BENHICD10') || s('CHANDOAN_DIEUTRI'),
+      chanDoanSecondary: s('TENBENHICD10') || '',
+      nguoiKyPrimary: s('TEN_BSY') || s('NGUOI_DAI_DIEN'),
+      nguoiKySecondary: s('MA_BS') || s('MA_CCHN'),
+    };
+    default: return {
+      hoTen: s('HO_TEN'),
+      maBhyt: s('MA_THE'),
+      maBhxh: s('MA_BHXH') || s('MA_SOBHXH'),
+      cccd: s('SO_CCCD'),
+      khoaPrimary: s('MA_KHOA'),
+      khoaSecondary: '',
+      chanDoanPrimary: s('BENHICD10_ID') || s('BENH_ICD10_ID'),
+      chanDoanSecondary: s('CHAN_DOAN') || s('CHANDOAN_DIEUTRI'),
+      nguoiKyPrimary: s('THU_TRUONG_DVI') || s('THU_TRUONG_DV') || s('NGUOI_DAI_DIEN'),
+      nguoiKySecondary: s('MA_CCHN_TRUONGKHOA') || s('MA_CCHN') || s('MA_BS'),
+    };
+  }
+}
+
+export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Record<string, string> {
+  const raw: Record<string, string> = {};
+  Object.entries(row).forEach(([k, v]) => { raw[k.toUpperCase()] = String(v ?? '').trim(); });
+
+  if (!raw['MA_BHXH'] && raw['MA_SOBHXH']) raw['MA_BHXH'] = raw['MA_SOBHXH'];
+
+  switch (type) {
+    case 'CT03':
+      if (!raw['MA_KHOA'] && raw['MA_YTE']) raw['MA_KHOA'] = raw['MA_YTE'];
+      if (!raw['MA_CCHN_TRUONGKHOA'] && raw['MA_TRUONGKHOA']) raw['MA_CCHN_TRUONGKHOA'] = raw['MA_TRUONGKHOA'];
+      break;
+    case 'CT04':
+      break;
+    case 'CT05':
+      if (!raw['HOTEN_NND'] && raw['HO_TEN_ME']) raw['HOTEN_NND'] = raw['HO_TEN_ME'];
+      if (!raw['MA_BHXH_NND'] && raw['MA_SOBHXH_ME']) raw['MA_BHXH_NND'] = raw['MA_SOBHXH_ME'];
+      if (!raw['SO_CMND_NND'] && raw['CMND']) raw['SO_CMND_NND'] = raw['CMND'];
+      if (!raw['NGAYCAP_CMND_NND'] && raw['NGAY_CAP_CMND']) raw['NGAYCAP_CMND_NND'] = raw['NGAY_CAP_CMND'];
+      if (!raw['NOICAP_CMND_NND'] && raw['NOI_CAP_CMND']) raw['NOICAP_CMND_NND'] = raw['NOI_CAP_CMND'];
+      if (!raw['MA_DANTOC_NND'] && raw['DAN_TOC']) raw['MA_DANTOC_NND'] = raw['DAN_TOC'];
+      if (!raw['NOI_DK_THUONGTRU_NND'] && raw['DIA_CHI']) raw['NOI_DK_THUONGTRU_NND'] = raw['DIA_CHI'];
+      if (!raw['NGAY_SINH_CON'] && raw['NGAY_SINHCON']) raw['NGAY_SINH_CON'] = raw['NGAY_SINHCON'];
+      if (!raw['THU_TRUONG_DVI'] && raw['NGUOI_DAI_DIEN']) raw['THU_TRUONG_DVI'] = raw['NGUOI_DAI_DIEN'];
+      if (!raw['SO_SERI'] && raw['SO']) raw['SO_SERI'] = raw['SO'];
+      if (!raw['NGAYSINH_NND'] && raw['NGAY_SINH']) raw['NGAYSINH_NND'] = raw['NGAY_SINH'];
+      if (!raw['MA_THE_NND'] && raw['MA_THE']) raw['MA_THE_NND'] = raw['MA_THE'];
+      break;
+    case 'CT06':
+      if (!raw['MA_CT']) raw['MA_CT'] = 'CT06';
+      break;
+    case 'CT07':
+      if (!raw['BENH_ICD10_ID'] && raw['BENHICD10']) raw['BENH_ICD10_ID'] = raw['BENHICD10'];
+      if (!raw['TEN_NGUOI_HANH_NGHE'] && raw['TEN_BSY']) raw['TEN_NGUOI_HANH_NGHE'] = raw['TEN_BSY'];
+      if (!raw['MA_CCHN'] && raw['MA_BS']) raw['MA_CCHN'] = raw['MA_BS'];
+      if (!raw['CHANDOAN_DIEUTRI'] && raw['PP_DIEUTRI']) raw['CHANDOAN_DIEUTRI'] = raw['PP_DIEUTRI'];
+      if (!raw['THU_TRUONG_DV'] && raw['NGUOI_DAI_DIEN']) raw['THU_TRUONG_DV'] = raw['NGUOI_DAI_DIEN'];
+      if (!raw['SO_KCB'] && raw['SERI']) raw['SO_KCB'] = raw['SERI'];
+      if (!raw['NGAY_CHUNG_TU'] && raw['NGAY_CT']) raw['NGAY_CHUNG_TU'] = raw['NGAY_CT'];
+      if (!raw['MAU_SO']) raw['MAU_SO'] = 'CT07';
+      break;
+  }
+  return raw;
+}

@@ -102,38 +102,22 @@ export default function HoSoChungTu() {
       const data = await file.arrayBuffer();
       const workbook = read(data);
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = utils.sheet_to_json(firstSheet);
-      
+      const jsonData = utils.sheet_to_json(firstSheet) as Record<string, any>[];
+      if (!jsonData.length) { alert('File Excel không có dữ liệu!'); return; }
+
       const { buildXml } = await import('../lib/xmlBuilder');
       const { getOrgConfig } = await import('../lib/signAndSubmitService');
+      const { detectDocType, mapRowToDisplay, mapRowToRawData } = await import('../lib/importMapper');
       const org = getOrgConfig();
-
       const fileNameLower = file.name.toLowerCase();
 
-      const mappedRecords: HoSoRecord[] = jsonData.map((item: any, index) => {
-        const detectType = () => {
-          if (fileNameLower.includes('giayravien') || fileNameLower.includes('ct03')) return 'CT03';
-          if (fileNameLower.includes('tomtathosobenhan') || fileNameLower.includes('ct04')) return 'CT04';
-          if (fileNameLower.includes('chungsinh') || fileNameLower.includes('ct05')) return 'CT05';
-          if (fileNameLower.includes('nghiduongthai') || fileNameLower.includes('ct06')) return 'CT06';
-          if (fileNameLower.includes('nghiviechuongbhxh') || fileNameLower.includes('ct07')) return 'CT07';
+      // Nhận dạng loại CT từ dòng đầu tiên
+      const detectedType = detectDocType(fileNameLower, jsonData[0]) as HoSoRecord['type'];
 
-          const ma = (item['MA_CT'] || item['MAU_SO'] || '').toString().toUpperCase();
-          if (ma.includes('CT04')) return 'CT04';
-          if (ma.includes('CT05')) return 'CT05';
-          if (ma.includes('CT06')) return 'CT06';
-          if (ma.includes('CT07')) return 'CT07';
-          return 'CT03';
-        };
-        const type = detectType() as HoSoRecord['type'];
-
-        const rawData: Record<string, string> = {};
-        Object.entries(item).forEach(([k, v]) => { rawData[k] = String(v ?? ''); });
-        
-        // HIS Mapping
-        if (!rawData['MA_BHXH'] && rawData['MA_SOBHXH']) rawData['MA_BHXH'] = rawData['MA_SOBHXH'];
-        if (!rawData['MA_CCHN_TRUONGKHOA'] && rawData['MA_TRUONGKHOA']) rawData['MA_CCHN_TRUONGKHOA'] = rawData['MA_TRUONGKHOA'];
-        if (!rawData['MA_CCHN'] && rawData['MA_TRUONGKHOA']) rawData['MA_CCHN'] = rawData['MA_TRUONGKHOA'];
+      const mappedRecords: HoSoRecord[] = jsonData.map((item, index) => {
+        const type = detectedType;
+        const rawData = mapRowToRawData(type, item);
+        const display = mapRowToDisplay(type, item);
 
         let xmlContent: string | undefined;
         try { xmlContent = buildXml(type, rawData, org.ma_cskcb); } catch {}
@@ -141,30 +125,49 @@ export default function HoSoChungTu() {
         return {
           id: `${Date.now()}_${index}`,
           type,
-          hoTen: item['HO_TEN'] || item['HOTEN_NND'] || item['Họ và tên'] || 'Không rõ',
-          maBhyt: item['MA_THE'] || item['MA_THE_NND'] || '',
-          maBhxh: item['MA_BHXH'] || item['MA_SOBHXH'] || item['MA_BHXH_NND'] || '',
-          cccd: item['SO_CCCD'] || item['SO_CMND_NND'] || '',
-          khoa: item['MA_KHOA'] || 'K01',
-          ngayVao: item['NGAY_VAO'] || item['NGAY_VAO_VIEN'] || '',
-          ngayRa: item['NGAY_RA'] || item['NGAY_RA_VIEN'] || '',
-          icd: item['BENHICD10_ID'] || item['BENH_ICD10_ID'] || item['BENHICD10'] || '',
-          chanDoan: item['CHAN_DOAN'] || item['CHANDOAN_DIEUTRI'] || item['CHAN_DOAN_RA'] || item['TENBENHICD10'] || '',
-          nguoiKy: item['THU_TRUONG_DVI'] || item['THU_TRUONG_DV'] || item['TEN_NGUOI_HANH_NGHE'] || item['TEN_TRUONGKHOA'] || item['TEN_BS'] || item['TEN_BSY'] || item['NGUOI_DAI_DIEN'] || '',
-          cchn: item['MA_CCHN_TRUONGKHOA'] || item['MA_CCHN'] || item['MA_TRUONGKHOA'] || item['MA_BS'] || '',
+          hoTen: display.hoTen || 'Không rõ',
+          maBhyt: display.maBhyt,
+          maBhxh: display.maBhxh,
+          cccd: display.cccd,
+          // legacy fields
+          khoa: display.khoaPrimary,
+          ngayVao: '',
+          ngayRa: '',
+          icd: display.chanDoanPrimary,
+          chanDoan: display.chanDoanSecondary,
+          nguoiKy: display.nguoiKyPrimary,
+          cchn: display.nguoiKySecondary,
+          // display fields đúng theo loại
+          displayFields: {
+            khoaPrimary: display.khoaPrimary,
+            khoaSecondary: display.khoaSecondary,
+            chanDoanPrimary: display.chanDoanPrimary,
+            chanDoanSecondary: display.chanDoanSecondary,
+            nguoiKyPrimary: display.nguoiKyPrimary,
+            nguoiKySecondary: display.nguoiKySecondary,
+          },
           trangThai: 'UNSIGNED' as HoSoRecord['trangThai'],
           rawData,
           xmlContent,
         };
       });
+
       setRecords(prev => [...mappedRecords, ...prev]);
-      
       if (fileInputRef.current) fileInputRef.current.value = '';
+
+      // Thông báo kết quả nhận dạng
+      const typeNames: Record<string, string> = {
+        CT03: 'Giấy ra viện (CT03)', CT04: 'Tóm tắt HSBA (CT04)',
+        CT05: 'Giấy chứng sinh (CT05)', CT06: 'Nghỉ dưỡng thai (CT06)', CT07: 'Nghỉ việc BHXH (CT07)',
+      };
+      console.info(`✅ Đã nhập ${mappedRecords.length} hồ sơ loại: ${typeNames[detectedType] || detectedType}`);
+
     } catch (error) {
       console.error('Error parsing excel:', error);
       alert('Có lỗi xảy ra khi đọc file Excel!');
     }
   };
+
 
   const handleExportExcel = async () => {
     if (records.length === 0) {
@@ -531,46 +534,49 @@ export default function HoSoChungTu() {
           </div>
         </div>
 
-        {/* Table Headers */}
-        <div className="bg-slate-50 border-b border-slate-200 grid grid-cols-[40px_1fr_2fr_1.5fr_1.5fr_1.5fr_1fr_140px] px-4 py-3 text-xs font-bold text-slate-600 uppercase tracking-wider">
-          <div><input type="checkbox" className="rounded border-slate-300" onChange={toggleSelectAll} checked={records.length > 0 && selectedIds.size === records.length} /></div>
-          <div>LOẠI HS</div>
-          <div>HỌ VÀ TÊN / ĐỊNH DANH</div>
-          <div>KHOA / THỜI GIAN KCB</div>
-          <div>CHẨN ĐOÁN (ICD-10)</div>
-          <div>NGƯỜI KÝ / CCHN</div>
-          <div>TRẠNG THÁI</div>
-          <div className="text-center">THAO TÁC</div>
-        </div>
-
-        {filteredRecords.length === 0 ? (
-          /* Empty State */
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-12">
-            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mb-4">
-              <FileCode2 className="w-8 h-8" />
-            </div>
-            <h3 className="text-base font-bold text-slate-700 mb-1">Chưa có hồ sơ chứng từ nào</h3>
-            <p className="text-sm text-slate-500 max-w-sm mb-6">Bạn có thể Tạo hồ sơ mới, Nhập Excel từ mẫu của BHXH, hoặc Nhúng XML.</p>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-2"
-              >
-                <FileSpreadsheet className="w-4 h-4" /> Nhập Excel ngay
-              </button>
-              <button 
-                onClick={() => setShowTaoHoSoModal(true)}
-                className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
-              >
-                + Tạo mới
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 overflow-auto bg-white">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
-              <tbody className="divide-y divide-slate-100">
-                {filteredRecords.map(r => (
+        <div className="flex-1 overflow-auto bg-white">
+          <table className="w-full text-left border-collapse min-w-[1000px]">
+            <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider sticky top-0 z-10">
+              <tr>
+                <th className="px-4 py-3 w-[40px]"><input type="checkbox" className="rounded border-slate-300" onChange={toggleSelectAll} checked={records.length > 0 && selectedIds.size === records.length} /></th>
+                <th className="px-4 py-3 w-[80px]">LOẠI HS</th>
+                <th className="px-4 py-3 w-[230px]">HỌ VÀ TÊN / ĐỊNH DANH</th>
+                <th className="px-4 py-3 w-[160px]">KHOA / THỜI GIAN</th>
+                <th className="px-4 py-3 w-[200px]">CHẨN ĐOÁN / THÔNG TIN</th>
+                <th className="px-4 py-3 w-[180px]">NGƯỜI KÝ / CCHN</th>
+                <th className="px-4 py-3 w-[130px]">TRẠNG THÁI</th>
+                <th className="px-4 py-3 w-[120px] text-center">THAO TÁC</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-12 text-center">
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mb-4">
+                        <FileCode2 className="w-8 h-8" />
+                      </div>
+                      <h3 className="text-base font-bold text-slate-700 mb-1">Chưa có hồ sơ chứng từ nào</h3>
+                      <p className="text-sm text-slate-500 max-w-sm mb-6">Bạn có thể Tạo hồ sơ mới, Nhập Excel từ mẫu của BHXH, hoặc Nhúng XML.</p>
+                      <div className="flex items-center justify-center gap-3">
+                        <button 
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-2"
+                        >
+                          <FileSpreadsheet className="w-4 h-4" /> Nhập Excel ngay
+                        </button>
+                        <button 
+                          onClick={() => setShowTaoHoSoModal(true)}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
+                        >
+                          + Tạo mới
+                        </button>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredRecords.map(r => (
                   <tr key={r.id} className={cn(
                     "hover:bg-slate-50 transition-colors",
                     selectedIds.has(r.id) && 'bg-blue-50/50'
@@ -583,22 +589,45 @@ export default function HoSoChungTu() {
                         onChange={() => toggleSelect(r.id)}
                       />
                     </td>
-                    <td className="px-4 py-3 align-top text-sm font-black text-indigo-700">{r.type}</td>
                     <td className="px-4 py-3 align-top">
-                      <div className="text-sm font-bold text-slate-800">{r.hoTen}</div>
-                      <div className="text-[11px] font-semibold text-slate-500">{r.maBhyt || r.maBhxh} • {r.cccd}</div>
+                      <span className="text-sm font-black text-indigo-700">{r.type}</span>
                     </td>
-                    <td className="px-4 py-3 align-top text-xs text-slate-600">
-                      <div><span className="font-bold text-slate-700">{r.khoa}</span></div>
-                      <div className="text-[11px] text-slate-500">{r.ngayVao} {r.ngayRa ? `- ${r.ngayRa}` : ''}</div>
+                    <td className="px-4 py-3 align-top">
+                      <div className="text-sm font-bold text-slate-800 truncate max-w-[220px]" title={r.hoTen}>{r.hoTen}</div>
+                      <div className="text-[11px] font-semibold text-slate-500">{r.maBhyt || r.maBhxh}{r.cccd ? ` • ${r.cccd}` : ''}</div>
                     </td>
+                    {/* Cột KHOA/THỜI GIAN - map đúng theo loại CT */}
                     <td className="px-4 py-3 align-top text-xs text-slate-600">
-                      <div><span className="font-bold text-slate-700">{r.icd}</span></div>
-                      <div className="text-[11px] text-slate-500 truncate max-w-[200px]" title={r.chanDoan}>{r.chanDoan}</div>
+                      <div className="font-bold text-slate-700 truncate max-w-[150px]" title={r.displayFields?.khoaPrimary || r.khoa}>
+                        {r.displayFields?.khoaPrimary || r.khoa}
+                      </div>
+                      {(r.displayFields?.khoaSecondary) && (
+                        <div className="text-[11px] text-slate-500 truncate max-w-[150px]" title={r.displayFields.khoaSecondary}>
+                          {r.displayFields.khoaSecondary}
+                        </div>
+                      )}
                     </td>
+                    {/* Cột CHẨN ĐOÁN - map đúng theo loại CT */}
                     <td className="px-4 py-3 align-top text-xs text-slate-600">
-                      <div><span className="font-bold text-slate-700">{r.nguoiKy}</span></div>
-                      <div className="text-[11px] text-slate-500">{r.cchn}</div>
+                      <div className="font-bold text-slate-700 truncate max-w-[190px]" title={r.displayFields?.chanDoanPrimary || r.icd}>
+                        {r.displayFields?.chanDoanPrimary || r.icd}
+                      </div>
+                      {(r.displayFields?.chanDoanSecondary || r.chanDoan) && (
+                        <div className="text-[11px] text-slate-500 truncate max-w-[190px]" title={r.displayFields?.chanDoanSecondary || r.chanDoan}>
+                          {r.displayFields?.chanDoanSecondary || r.chanDoan}
+                        </div>
+                      )}
+                    </td>
+                    {/* Cột NGƯỜI KÝ - map đúng theo loại CT */}
+                    <td className="px-4 py-3 align-top text-xs text-slate-600">
+                      <div className="font-bold text-slate-700 truncate max-w-[170px]" title={r.displayFields?.nguoiKyPrimary || r.nguoiKy}>
+                        {r.displayFields?.nguoiKyPrimary || r.nguoiKy}
+                      </div>
+                      {(r.displayFields?.nguoiKySecondary || r.cchn) && (
+                        <div className="text-[11px] text-slate-500 truncate max-w-[170px]" title={r.displayFields?.nguoiKySecondary || r.cchn}>
+                          {r.displayFields?.nguoiKySecondary || r.cchn}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 align-top">
                       <span className={cn(
@@ -654,11 +683,11 @@ export default function HoSoChungTu() {
                       </div>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Modals */}
