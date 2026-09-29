@@ -1,11 +1,11 @@
 /**
- * IMPORT MAPPER - �nh x? c?t Excel ? HoSoRecord cho t?ng lo?i m?u BHXH
+ * IMPORT MAPPER - Ánh xạ cột Excel -> HoSoRecord cho từng loại mẫu BHXH
  *
- * M?i lo?i CT c� c?u tr�c c?t kh�c nhau t? HIS/ph?n m?m xu?t ra.
- * File n�y chu?n h�a vi?c d?c v� hi?n th? d�ng theo t?ng lo?i.
+ * Mỗi loại CT có cấu trúc cột khác nhau từ HIS/phần mềm xuất ra.
+ * File này chuẩn hóa việc đọc và hiển thị đúng theo từng loại.
  *
- * T�n ph?n m?m: �?I CHI?U H? SO V� CH?NG T? TT25
- * NGUY?N �O�N MINH �NH - IT Y T? - �� N?NG
+ * Tên phần mềm: ĐỐI CHIẾU HỒ SƠ VÀ CHỨNG TỪ TT25
+ * NGUYỄN ĐOÀN MINH ANH - IT Y TẾ - ĐÀ NẴNG
  */
 
 import type { DocType } from './xmlBuilder';
@@ -20,11 +20,11 @@ export interface ColumnDisplayConfig {
 }
 
 export const COLUMN_DISPLAY: Record<string, ColumnDisplayConfig> = {
-  CT03: { khoaLabel: 'KHOA / TH?I GIAN', chanDoanLabel: 'CH?N �O�N (ICD-10)', nguoiKyLabel: 'TRU?NG KHOA / CCHN', dinhDanhLabel: 'CCCD / BHYT' },
-  CT04: { khoaLabel: 'TH?I GIAN N?M VI?N', chanDoanLabel: 'CH?N �O�N V�O / RA', nguoiKyLabel: 'NGU?I �?I DI?N', dinhDanhLabel: 'CCCD / BHYT' },
-  CT05: { khoaLabel: 'NG�Y SINH CON', chanDoanLabel: 'TH�NG TIN CON', nguoiKyLabel: 'NGU?I �? �? / K�', dinhDanhLabel: 'CMND / BHYT M?' },
-  CT06: { khoaLabel: 'TH?I GIAN NGH?', chanDoanLabel: 'CH?N �O�N / THAI K?', nguoiKyLabel: 'B�C SI / CCHN', dinhDanhLabel: 'CCCD / BHYT' },
-  CT07: { khoaLabel: 'TH?I GIAN NGH? VI?C', chanDoanLabel: 'CH?N �O�N ICD-10', nguoiKyLabel: 'B�C SI / CCHN', dinhDanhLabel: 'CCCD / BHXH' },
+  CT03: { khoaLabel: 'KHOA / THỜI GIAN', chanDoanLabel: 'CHẨN ĐOÁN (ICD-10)', nguoiKyLabel: 'TRƯỞNG KHOA / CCHN', dinhDanhLabel: 'CCCD / BHYT' },
+  CT04: { khoaLabel: 'THỜI GIAN NẰM VIỆN', chanDoanLabel: 'CHẨN ĐOÁN VÀO / RA', nguoiKyLabel: 'NGƯỜI ĐẠI DIỆN', dinhDanhLabel: 'CCCD / BHYT' },
+  CT05: { khoaLabel: 'NGÀY SINH CON', chanDoanLabel: 'THÔNG TIN CON', nguoiKyLabel: 'NGƯỜI ĐỠ ĐẺ / KÝ', dinhDanhLabel: 'CMND / BHYT MẸ' },
+  CT06: { khoaLabel: 'THỜI GIAN NGHỈ', chanDoanLabel: 'CHẨN ĐOÁN / THAI KỲ', nguoiKyLabel: 'BÁC SĨ / CCHN', dinhDanhLabel: 'CCCD / BHYT' },
+  CT07: { khoaLabel: 'THỜI GIAN NGHỈ VIỆC', chanDoanLabel: 'CHẨN ĐOÁN ICD-10', nguoiKyLabel: 'BÁC SĨ / CCHN', dinhDanhLabel: 'CCCD / BHXH' },
 };
 
 export function detectDocType(fileNameLower: string, firstRow: Record<string, any>): HoSoType {
@@ -75,7 +75,7 @@ export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): Mappe
       maBhxh: s('MA_BHXH'),
       cccd: s('SO_CCCD'),
       khoaPrimary: s('MA_KHOA') || s('MA_YTE'),
-      khoaSecondary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' ? '),
+      khoaSecondary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' → '),
       chanDoanPrimary: s('BENHICD10_ID') || s('BENH_ICD10_ID'),
       chanDoanSecondary: s('CHAN_DOAN'),
       nguoiKyPrimary: s('TEN_TRUONGKHOA') || s('THU_TRUONG_DVI'),
@@ -86,8 +86,8 @@ export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): Mappe
       maBhyt: s('MA_THE'),
       maBhxh: s('MA_BHXH'),
       cccd: s('SO_CCCD'),
-      khoaPrimary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' ? '),
-      khoaSecondary: s('TT_RAVIEN') ? `Ra vi?n: ${s('TT_RAVIEN')}` : '',
+      khoaPrimary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' → '),
+      khoaSecondary: s('TT_RAVIEN') ? `Ra viện: ${s('TT_RAVIEN')}` : '',
       chanDoanPrimary: s('BENHICD10') || s('CHAN_DOAN_RA'),
       chanDoanSecondary: s('TENBENHICD10') || s('CHAN_DOAN_VAO'),
       nguoiKyPrimary: s('NGUOI_DAI_DIEN'),
@@ -102,20 +102,20 @@ export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): Mappe
       khoaSecondary: [
         s('TEN_CON') ? `Con: ${s('TEN_CON')}` : '',
         s('CAN_NANG_CON') ? `${s('CAN_NANG_CON')}g` : '',
-        s('GIOI_TINH_CON') === '1' ? 'Nam' : s('GIOI_TINH_CON') === '2' ? 'N?' : '',
+        s('GIOI_TINH_CON') === '1' ? 'Nam' : s('GIOI_TINH_CON') === '2' ? 'Nữ' : '',
       ].filter(Boolean).join(' | '),
-      chanDoanPrimary: s('TINH_TRANG_CON') ? `T�nh tr?ng: ${s('TINH_TRANG_CON')}` : '',
-      chanDoanSecondary: [s('SINHCON_PHAUTHUAT') === '1' ? 'Ph?u thu?t' : '', s('SINHCON_DUOI32TUAN') === '1' ? '<32 tu?n' : ''].filter(Boolean).join(', '),
+      chanDoanPrimary: s('TINH_TRANG_CON') ? `Tình trạng: ${s('TINH_TRANG_CON')}` : '',
+      chanDoanSecondary: [s('SINHCON_PHAUTHUAT') === '1' ? 'Phẫu thuật' : '', s('SINHCON_DUOI32TUAN') === '1' ? '<32 tuần' : ''].filter(Boolean).join(', '),
       nguoiKyPrimary: s('NGUOI_DAI_DIEN') || s('THU_TRUONG_DVI'),
-      nguoiKySecondary: s('NGUOI_DO_DE') ? `�? d?: ${s('NGUOI_DO_DE')}` : '',
+      nguoiKySecondary: s('NGUOI_DO_DE') ? `Đỡ đẻ: ${s('NGUOI_DO_DE')}` : '',
     };
     case 'CT06': return {
       hoTen: s('HO_TEN'),
       maBhyt: s('MA_THE'),
       maBhxh: s('MA_BHXH'),
       cccd: s('SO_CCCD'),
-      khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' ? '),
-      khoaSecondary: s('TUOI_THAI') ? `Thai ${s('TUOI_THAI')} tu?n` : '',
+      khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' → '),
+      khoaSecondary: s('TUOI_THAI') ? `Thai ${s('TUOI_THAI')} tuần` : '',
       chanDoanPrimary: s('BENHICD10') || s('CHAN_DOAN'),
       chanDoanSecondary: s('TENBENHICD10') || '',
       nguoiKyPrimary: s('TEN_BS'),
@@ -126,8 +126,8 @@ export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): Mappe
       maBhyt: s('MA_THE'),
       maBhxh: s('MA_SOBHXH') || s('MA_BHXH'),
       cccd: s('SO_CCCD'),
-      khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' ? '),
-      khoaSecondary: s('SO_NGAY') ? `${s('SO_NGAY')} ng�y ngh?` : '',
+      khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' → '),
+      khoaSecondary: s('SO_NGAY') ? `${s('SO_NGAY')} ngày nghỉ` : '',
       chanDoanPrimary: s('BENHICD10') || s('CHANDOAN_DIEUTRI'),
       chanDoanSecondary: s('TENBENHICD10') || '',
       nguoiKyPrimary: s('TEN_BSY') || s('NGUOI_DAI_DIEN'),

@@ -22,6 +22,7 @@ import ConfigModal from './ConfigModal';
 import KySoModal from './KySoModal';
 import CskcbSetupModal, { CskcbConfig } from './CskcbSetupModal';
 import type { HoSoRecord } from '../lib/signAndSubmitService';
+import { COLUMN_DISPLAY } from '../lib/importMapper';
 
 export default function HoSoChungTu() {
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -540,10 +541,10 @@ export default function HoSoChungTu() {
               <tr>
                 <th className="px-4 py-3 w-[40px]"><input type="checkbox" className="rounded border-slate-300" onChange={toggleSelectAll} checked={records.length > 0 && selectedIds.size === records.length} /></th>
                 <th className="px-4 py-3 w-[80px]">LOẠI HS</th>
-                <th className="px-4 py-3 w-[230px]">HỌ VÀ TÊN / ĐỊNH DANH</th>
-                <th className="px-4 py-3 w-[160px]">KHOA / THỜI GIAN</th>
-                <th className="px-4 py-3 w-[200px]">CHẨN ĐOÁN / THÔNG TIN</th>
-                <th className="px-4 py-3 w-[180px]">NGƯỜI KÝ / CCHN</th>
+                <th className="px-4 py-3 w-[230px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.dinhDanhLabel || 'HỌ VÀ TÊN / ĐỊNH DANH' : 'HỌ VÀ TÊN / ĐỊNH DANH'}</th>
+                <th className="px-4 py-3 w-[160px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.khoaLabel || 'KHOA / THỜI GIAN' : 'KHOA / THỜI GIAN'}</th>
+                <th className="px-4 py-3 w-[200px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.chanDoanLabel || 'CHẨN ĐOÁN / THÔNG TIN' : 'CHẨN ĐOÁN / THÔNG TIN'}</th>
+                <th className="px-4 py-3 w-[180px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.nguoiKyLabel || 'NGƯỜI KÝ / CCHN' : 'NGƯỜI KÝ / CCHN'}</th>
                 <th className="px-4 py-3 w-[130px]">TRẠNG THÁI</th>
                 <th className="px-4 py-3 w-[120px] text-center">THAO TÁC</th>
               </tr>
