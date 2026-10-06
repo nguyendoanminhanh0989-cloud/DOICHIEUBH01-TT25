@@ -190,6 +190,34 @@ export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Recor
       if (!raw['MAU_SO']) raw['MAU_SO'] = 'CT07';
       break;
   }
+
+  // Chuẩn hóa giới tính: 1 Nam, 2 Nữ, 3 Không xác định
+  const normalizeGender = (val: string) => {
+    const v = val.toLowerCase().trim();
+    if (v === '1' || v === 'nam') return '1';
+    if (v === '2' || v === 'nữ' || v === 'nu') return '2';
+    if (v === '3' || v.includes('không')) return '3';
+    return val;
+  };
+  if (raw['GIOI_TINH']) raw['GIOI_TINH'] = normalizeGender(raw['GIOI_TINH']);
+  if (raw['GIOI_TINH_CON']) raw['GIOI_TINH_CON'] = normalizeGender(raw['GIOI_TINH_CON']);
+
+  // Chuẩn hóa định dạng thời gian
+  const timeFields = ['NGAY_VAO', 'NGAY_RA', 'NGAY_SINH_CON'];
+  const dateFields = [
+    'NGAY_CHUNG_TU', 'NGOAITRU_TUNGAY', 'NGOAITRU_DENNGAY', 
+    'NGAY_SINH', 'NGAYCAP_CCCD', 'TU_NGAY', 'DEN_NGAY', 
+    'NGAY_CAP_CMND', 'NGAYCAP_CMND_NND', 'NGAYSINH_NND'
+  ];
+
+  timeFields.forEach(f => {
+    if (raw[f]) raw[f] = parseDateStr(raw[f]) || raw[f];
+  });
+  
+  dateFields.forEach(f => {
+    if (raw[f]) raw[f] = parseShortDateStr(raw[f]) || raw[f];
+  });
+
   return raw;
 }
 
@@ -208,10 +236,18 @@ export function validateRecord(type: HoSoType, raw: Record<string, string>): str
     }
   };
 
+  const checkMaThe = (field: string, name: string) => {
+    if (raw[field] && raw[field].length !== 15 && raw[field].length !== 17) {
+      errors.push(`Sai độ dài: ${name} (Cột ${field}) phải là 15 hoặc 17 ký tự`);
+    }
+  };
+
   if (type === 'CT05') {
     req('HOTEN_NND', 'Họ tên mẹ/sản phụ');
+    checkMaThe('MA_THE_NND', 'Mã thẻ BHYT mẹ');
   } else {
     req('HO_TEN', 'Họ tên');
+    checkMaThe('MA_THE', 'Mã thẻ BHYT');
   }
 
   if (type === 'CT03') {
