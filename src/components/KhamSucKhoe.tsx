@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   FileUp, Settings, Play, Download, CheckCircle2, AlertCircle, XCircle, Search, Home, Building2, FileCode2,
-  Trash2, FileText, Send, User, Check, ShieldCheck, Cpu
+  Trash2, FileText, Send, User, Check, ShieldCheck, Cpu, FileSpreadsheet
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { buildKskXml } from '../lib/kskXmlBuilder';
@@ -96,6 +96,59 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const handleExportExcel = () => {
+    if (records.length === 0) return;
+    const selectedRecords = records.filter(r => selectedIds.has(r.id));
+    if (selectedRecords.length === 0) {
+      alert('Vui lòng chọn ít nhất 1 bản ghi để xuất Excel');
+      return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    const grouped = {
+      'Adult': selectedRecords.filter(r => r.kskType === 'Adult'),
+      'Minor': selectedRecords.filter(r => r.kskType === 'Minor'),
+      'ChildUnder': selectedRecords.filter(r => r.kskType === 'ChildUnder'),
+    };
+
+    const processGroup = (groupRecords: HoSoRecord[], sheetName: string) => {
+      if (groupRecords.length === 0) return;
+      
+      const allKeysSet = new Set<string>();
+      groupRecords.forEach(r => {
+        Object.keys(r.rawData).forEach(k => {
+          if (!k.startsWith('_')) allKeysSet.add(k);
+        });
+      });
+      const keys = Array.from(allKeysSet);
+
+      const aoa: any[][] = [];
+      aoa.push(keys); // Header row 1 
+      aoa.push(keys); // Header row 2 (actual keys)
+
+      groupRecords.forEach(r => {
+        const row = keys.map(k => {
+          let val = r.rawData[k] ?? '';
+          if (Array.isArray(val) || typeof val === 'object') {
+            val = JSON.stringify(val); // fallback for complex objects
+          }
+          return val;
+        });
+        aoa.push(row);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    };
+
+    processGroup(grouped.Adult, 'Tren 18');
+    processGroup(grouped.Minor, '6>Duoi 18');
+    processGroup(grouped.ChildUnder, 'Duoi 6');
+
+    XLSX.writeFile(wb, `Export_KSK_${new Date().getTime()}.xlsx`);
   };
 
   const handleKySoComplete = (updated: HoSoRecord[]) => {
@@ -260,6 +313,14 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
                 >
                   <Download className="w-4 h-4" />
                   Xuất XML
+                </button>
+                <button
+                  onClick={handleExportExcel}
+                  disabled={selectedIds.size === 0}
+                  className="px-4 py-2 bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg font-bold text-sm hover:bg-emerald-200 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  Xuất Excel
                 </button>
                 <button
                   onClick={() => setKySoMode('sign')}
