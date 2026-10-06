@@ -39,7 +39,7 @@ export interface HoSoRecord {
   nguoiKy: string;
   cchn: string;
   trangThai: SignStatus;
-  rawData: Record<string, string>;
+  rawData: Record<string, any>;
   /** Các trường hiển thị đã được map đúng theo loại CT */
   displayFields?: {
     khoaPrimary: string;

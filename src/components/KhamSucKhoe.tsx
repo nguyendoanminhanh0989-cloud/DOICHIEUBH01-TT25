@@ -7,111 +7,14 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { buildKskXml } from '../lib/kskXmlBuilder';
+import { createKskHoSoRecord } from '../lib/kskRecord';
+import type { KskType } from '../lib/kskSchemas';
 import KskConfigModal, { KskConfig } from './KskConfigModal';
 import KySoModal from './KySoModal';
+import KskDynamicForm from './forms/KskDynamicForm';
 import type { HoSoRecord } from '../lib/signAndSubmitService';
 
 
-function validateAndFixRecord(obj: any) {
-  const errors: string[] = [];
-
-  // Thiếu Họ Tên
-  if (!obj.HO_TEN) {
-    errors.push("Thiếu Họ tên");
-  }
-
-  // Giới tính
-  let gt = String(obj.GIOI_TINH || '').trim().toLowerCase();
-  if (gt === 'nam') gt = '1';
-  else if (gt === 'nữ' || gt === 'nu') gt = '2';
-  else if (gt === '1' || gt === '2' || gt === '3') gt = gt;
-  else if (gt) gt = '3';
-  
-  if (!gt) errors.push("Thiếu Giới tính");
-  else obj.GIOI_TINH = gt;
-
-  const parseExcelDate = (val: any) => {
-    let dateObj: Date | null = null;
-    if (typeof val === 'number') {
-       const utc_days  = Math.floor(val - 25569);
-       const utc_value = utc_days * 86400;                                        
-       const date_info = new Date(utc_value * 1000);
-       const fractional_day = val - Math.floor(val) + 0.0000001;
-       let total_seconds = Math.floor(86400 * fractional_day);
-       const seconds = total_seconds % 60;
-       total_seconds -= seconds;
-       const hours = Math.floor(total_seconds / (60 * 60));
-       const minutes = Math.floor(total_seconds / 60) % 60;
-       dateObj = new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
-    } else {
-       const str = String(val).trim();
-       let m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
-       if (m) {
-         dateObj = new Date(Number(m[3]), Number(m[2])-1, Number(m[1]), Number(m[4]||0), Number(m[5]||0));
-       } else {
-         m = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?/);
-         if (m) {
-           dateObj = new Date(Number(m[1]), Number(m[2])-1, Number(m[3]), Number(m[4]||0), Number(m[5]||0));
-         }
-       }
-    }
-    return dateObj;
-  };
-
-  // Ngày vào, ngày ra: yyyymmddhhmm
-  const fixDate12 = (val: any, fieldName: string) => {
-    if (!val) return;
-    const str = String(val).trim();
-    if (/^\d{12}$/.test(str)) {
-      obj[fieldName] = str;
-      return;
-    }
-    const dateObj = parseExcelDate(val);
-    if (dateObj && !isNaN(dateObj.getTime())) {
-      const yyyy = dateObj.getFullYear();
-      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const dd = String(dateObj.getDate()).padStart(2, '0');
-      const hh = String(dateObj.getHours()).padStart(2, '0');
-      const min = String(dateObj.getMinutes()).padStart(2, '0');
-      obj[fieldName] = `${yyyy}${mm}${dd}${hh}${min}`;
-    } else {
-      errors.push(`Định dạng ${fieldName} không hợp lệ (Cần yyyymmddhhmm)`);
-    }
-  };
-
-  // Ngày sinh, Ngày cấp: yyyymmdd
-  const fixDate8 = (val: any, fieldName: string) => {
-    if (!val) return;
-    const str = String(val).trim();
-    if (/^\d{8}$/.test(str)) {
-      obj[fieldName] = str;
-      return;
-    }
-    const dateObj = parseExcelDate(val);
-    if (dateObj && !isNaN(dateObj.getTime())) {
-      const yyyy = dateObj.getFullYear();
-      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const dd = String(dateObj.getDate()).padStart(2, '0');
-      obj[fieldName] = `${yyyy}${mm}${dd}`;
-    } else {
-      errors.push(`Định dạng ${fieldName} không hợp lệ (Cần yyyymmdd)`);
-    }
-  };
-
-  if (obj.NGAY_VAO) fixDate12(obj.NGAY_VAO, 'NGAY_VAO');
-  if (obj.NGAY_RA) fixDate12(obj.NGAY_RA, 'NGAY_RA');
-  
-  if (obj.NGAY_SINH) fixDate8(obj.NGAY_SINH, 'NGAY_SINH');
-  if (obj.NGAYCAP_CCCD) fixDate8(obj.NGAYCAP_CCCD, 'NGAYCAP_CCCD');
-
-  // Thẻ nhận diện
-  const the = String(obj.MA_THE_BHYT || obj.MA_THE || '').trim();
-  if (the && the.length !== 15 && the.length !== 17) {
-    errors.push("Mã thẻ nhận diện phải 15 hoặc 17 ký tự");
-  }
-
-  return errors;
-}
 
 export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
   const [records, setRecords] = useState<HoSoRecord[]>([]);
@@ -122,6 +25,8 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [kySoMode, setKySoMode] = useState<'sign' | 'submit' | 'sign_then_submit' | null>(null);
+  
+  const [showKskForm, setShowKskForm] = useState<KskType | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('ksk_config');
@@ -150,36 +55,18 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
         if (rawData.length > 2) {
           const keys = rawData[1];
           const dataRows = rawData.slice(2).filter(row => row.some(cell => cell !== ''));
+          
+          let kskType: KskType = 'Adult';
+          if (templateLabel === 'Từ 6-18') kskType = 'Minor';
+          if (templateLabel === 'Dưới 6') kskType = 'ChildUnder';
+
           const parsedRecords: HoSoRecord[] = dataRows.map((row, index) => {
             const obj: any = {};
             keys.forEach((k: string, i: number) => {
               if (k) obj[k] = row[i];
             });
-            const errors = validateAndFixRecord(obj);
-            // Pre-build XML for each record
-            const xmlContent = buildKskXml([obj], obj.MA_CSKCB || '00000');
-            return {
-              id: `${Date.now()}_${index}`,
-              type: 'KHAM_SUC_KHOE',
-              hoTen: obj.HO_TEN || 'Không rõ',
-              maBhyt: '',
-              maBhxh: '',
-              cccd: obj.SO_CCCD || '',
-              khoa: '',
-              ngayVao: '',
-              ngayRa: '',
-              icd: '',
-              chanDoan: '',
-              nguoiKy: '',
-              cchn: '',
-              trangThai: 'UNSIGNED',
-              kskErrors: errors,
-              rawData: obj,
-              xmlContent,
-              displayFields: {
-                khoaPrimary: '', khoaSecondary: '', chanDoanPrimary: '', chanDoanSecondary: '', nguoiKyPrimary: '', nguoiKySecondary: ''
-              }
-            };
+            
+            return createKskHoSoRecord(obj, kskType, { id: `${Date.now()}_${index}`, source: 'excel' });
           });
           setRecords(parsedRecords);
           setActiveTab('preview');
@@ -289,6 +176,32 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
           >
             Dữ liệu & Xử lý
           </button>
+          
+          <div className="flex-1" />
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowKskForm('Adult')}
+              className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-2"
+            >
+              <FileText className="w-4 h-4" />
+              Nhập KSK (Trên 18 tuổi)
+            </button>
+            <button
+              onClick={() => setShowKskForm('Minor')}
+              className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-2"
+            >
+              <FileText className="w-4 h-4" />
+              Nhập KSK (6 - 18 tuổi)
+            </button>
+            <button
+              onClick={() => setShowKskForm('ChildUnder')}
+              className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
+            >
+              <FileText className="w-4 h-4" />
+              Nhập KSK (Dưới 6 tuổi)
+            </button>
+          </div>
         </div>
 
         {activeTab === 'upload' && (
@@ -467,6 +380,20 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
           mode={kySoMode}
           onClose={() => setKySoMode(null)}
           onComplete={handleKySoComplete}
+        />
+      )}
+
+      {showKskForm && (
+        <KskDynamicForm
+          type={showKskForm}
+          onClose={() => setShowKskForm(null)}
+          onSave={(data) => {
+            const newRecord = createKskHoSoRecord(data, showKskForm, { source: 'manual' });
+            setRecords(prev => [newRecord, ...prev]);
+            setSelectedIds(prev => new Set([...Array.from(prev), newRecord.id]));
+            setShowKskForm(null);
+            setActiveTab('preview');
+          }}
         />
       )}
     </div>

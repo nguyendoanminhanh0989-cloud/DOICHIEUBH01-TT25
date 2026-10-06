@@ -1,0 +1,78 @@
+TÀI LIỆU HƯỚNG DẪN ĐỒNG BỘ DỮ LIỆU
+Hướng dẫn thay đổi thông tin của cơ sở khám, chữa bệnh vào postman
+Bước 1: Import file postman khung mà mỗi CSKCB được cấp vào Postman.
+Bước 2: Vào project, rồi chọn Varibles để thay đổi lại thông tin tài khoản CSKCB của mình được cấp.
+Lưu ý: Trong phần Varibles người dùng sẽ cần thay đổi các trường thông tin CSKCB của mình bao gồm như: “ username, password, sender-id, msg-id,..”. Bao gồm cả cặp Private key và Public key. Để lấy được cặp Private key và Public key này người dùng cần login tài khoản quản trị của CSKCB mình trên trang admin của hệ thống EMRHUB rồi click vào mục Thông tin cá nhân trên thanh navigation.
+Phần thông tin cá nhân này có hiển thị cặp Public key và Private key của CSKCB, người dùng chỉ cần copy lại rồi thay lại vào phần Varibles trên postman là xong.
+Hướng sử dụng api 
+Bước 1: Call API Login để lấy token phục vụ cho việc call API liên thông (tài khoản của các CSKCB sẽ được cấp bởi SYT và gửi qua gmail kích hoạt).
+Trường hợp 1: Nếu call API thành công hệ thống sẽ trả về status code là 200 kèm theo repsonse mô tả dưới đây.
+Trường hợp 2: Nếu call API thành công hệ thống sẽ trả về status code là 400 kèm theo repsonse mô tả dưới đây (lúc này người dùng cần check lại thông tin tài khoản liên thông của mình xem đã đúng chưa).
+Bước 2: Sau khi call thành công xong API Login để lấy token, người dùng tiếp tục chuyển qua call API SYNC_CHECK_UP như ở dưới ảnh mô tả sau đây:
+Lưu ý: Trước khi thực hiện call API SYNC_CHECK_UP, người dùng cần phải thay đổi các trường thông tin trong body truyền đúng với thông tin của viện mình vào. Sau đây là mô tả các trường chi tiết trong body mà người dùng cần lưu ý điền chính xác mới có thể thực hiện việc đồng bộ dữ liệu:
+TT
+Tên trường
+Kiểu dữ liệu
+Bắt buộc
+Mô tả
+1
+header
+Object
+x
+JSON Object để lưu thông tin header. 
+1.1
+version
+String
+x
+Phiên bản hiện tại của Hệ thống Trục dữ liệu Bộ Y tế.
+1.2
+sender_id
+String
+x
+Mã định danh của bên phát tin (ví dụ: G18/DMSA).
+1.3
+receiver_id
+String
+x
+Mã của bên nhận tin (ví dụ: TDLBYT).
+1.4
+txn_type
+String
+x
+Loại giao dịch truyền vào:
+- sync_facility: Đồng bộ dữ liệu từ bên CỤC KHÁM CHỮA BỆNH (CKCB) về các cơ sở y tế đã đăng ký.
+1.5
+msg_id
+String
+x
+Mã giao dịch gồm : sender_id + YY (2 ký tự năm) + MM (2 ký tự tháng) + DD (2 ký tự ngày) + UUIDv4 không gạch.
+1.6
+msg_type
+String
+x
+Dữ liệu bên phát tin đồng bộ với Hệ thống Trục dữ liệu Bộ Y tế. 
+- 101: Thông điệp phát tin đồng bộ với Hệ thống Trục dữ liệu Bộ Y tế.
+1.7
+data_type
+String
+x
+Định dạng file cần đồng bộ theo các tiêu chuẩn như sau:
+- xml/base64: Dữ liệu file XML được format theo dạng Base64.
+- json/base64: Dữ liệu file JSON được format theo dạng Base64.
+1.8
+send_datetime
+Long
+x
+Thời điểm đẩy dữ liệu theo format Unix timestamp 13 số.
+2
+data
+Object
+File dữ liệu (XML/JSON) đã encode Base64.
+3
+signature
+String
+Chữ ký sử dụng cho checksum (RSASHA256) giữa header và data tạo bởi bên phát tin.
+Trường hợp 1: Nếu call API thành công hệ thống sẽ trả về status code là 200 kèm theo repsonse mô tả dưới đây.
+Trường hợp 2: Nếu call API thành công hệ thống sẽ trả về status code là 400 kèm theo repsonse mô tả dưới đây (lúc này người dùng cần check lại thông tin tài khoản liên thông của mình xem đã đúng chưa).
+Bước 3: Kiểm tra dữ liệu đã đẩy tại địa chỉ https://admin.csdlksk.vn/ 
+Xem video hướng dẫn tại : https://drive.google.com/drive/folders/1La6D9FrpbEtkR61QeCxRH5AXDg6vAsHx?hl=vi
