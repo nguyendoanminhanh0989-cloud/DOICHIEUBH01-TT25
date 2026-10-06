@@ -21,6 +21,9 @@
       ]
     },
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
     "noEmit": true
-  }
+  },
+  "exclude": ["TAILIEU"]
 }

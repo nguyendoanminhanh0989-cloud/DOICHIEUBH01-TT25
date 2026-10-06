@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { 
-  Building2, 
-  Settings, 
-  RefreshCw, 
-  FileCode2, 
-  FileSpreadsheet, 
-  Download, 
+import {
+  Building2,
+  Settings,
+  RefreshCw,
+  FileCode2,
+  FileSpreadsheet,
+  Download,
   Plus,
   CheckCircle2,
   ShieldCheck,
@@ -51,12 +51,12 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           } as CskcbConfig;
         }
       }
-    } catch (e) {}
+    } catch (e) { }
     return null;
   });
   const [kySoMode, setKySoMode] = useState<'sign' | 'submit' | 'sign_then_submit' | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -158,7 +158,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
         const errors = validateRecord(type, rawData);
 
         let xmlContent: string | undefined;
-        try { xmlContent = buildXml(type, rawData, org.ma_cskcb); } catch {}
+        try { xmlContent = buildXml(type, rawData, org.ma_cskcb); } catch { }
 
         return {
           id: `${Date.now()}_${index}`,
@@ -219,21 +219,21 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
 
       // Gom nhóm theo loại chứng từ để xuất ra các sheet riêng biệt
       const types = Array.from(new Set(records.map(r => r.type)));
-      
+
       types.forEach(type => {
         const recordsOfType = records.filter(r => r.type === type);
         const exportData = recordsOfType.map(r => {
           // Xuất đúng định dạng cột chuẩn từ rawData
           const data: any = { ...r.rawData };
-          
+
           // Thêm các cột trạng thái để dễ theo dõi
-          data['TRANG_THAI_KY_SO'] = r.trangThai === 'SUBMITTED' ? 'Đã gửi Cổng' : 
-                                     r.trangThai === 'SIGNED' ? 'Đã ký số' : 
-                                     r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng' : 'Chưa ký';
-          
+          data['TRANG_THAI_KY_SO'] = r.trangThai === 'SUBMITTED' ? 'Đã gửi Cổng' :
+            r.trangThai === 'SIGNED' ? 'Đã ký số' :
+              r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng' : 'Chưa ký';
+
           if (r.maGD) data['MA_GIAO_DICH'] = r.maGD;
           if (r.errors && r.errors.length > 0) data['CHI_TIET_LOI'] = r.errors.join('; ');
-          
+
           return data;
         });
 
@@ -271,7 +271,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
 
   return (
     <div className="max-w-[1600px] mx-auto p-6 md:p-8 space-y-6">
-      
+
       {/* Facility Info Card */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
@@ -296,16 +296,16 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded">MÃ: {cskcbConfig?.cskcb.ma || '49006'}</span>
               </div>
               <h2 className="text-xl font-bold text-slate-800 mb-4">{cskcbConfig?.cskcb.ten || 'Trung tâm Y tế khu vực Duy Xuyên'}</h2>
-              
+
               <div className="flex items-center gap-2">
-                <button 
+                <button
                   onClick={() => setShowConfigModal(true)}
                   className="px-4 py-1.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition"
                 >
                   <Settings className="w-4 h-4" />
                   Cấu hình
                 </button>
-                <button 
+                <button
                   onClick={() => setShowFacilityModal(true)}
                   className="px-4 py-1.5 bg-blue-50 text-blue-700 text-sm font-semibold rounded-lg flex items-center gap-2 hover:bg-blue-100 transition"
                 >
@@ -318,29 +318,29 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
               </div>
             </div>
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-2">
             <button className="px-4 py-2 bg-white text-slate-700 text-sm font-semibold rounded-lg border border-slate-200 flex items-center gap-2 hover:bg-slate-50 transition">
               <FileCode2 className="w-4 h-4 text-slate-400" />
               Nhúng XML
             </button>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
-              accept=".xlsx,.xls" 
-              onChange={handleImportExcel} 
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
+              accept=".xlsx,.xls"
+              onChange={handleImportExcel}
             />
-            <button 
+            <button
               onClick={() => fileInputRef.current?.click()}
               className="px-4 py-2 bg-white text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 flex items-center gap-2 hover:bg-emerald-50 transition"
             >
               <FileSpreadsheet className="w-4 h-4" />
               Nhập Excel
             </button>
-            
+
             <div className="relative">
-              <button 
+              <button
                 onClick={() => setShowTemplateMenu(!showTemplateMenu)}
                 className="px-4 py-2 bg-white text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 flex items-center gap-2 hover:bg-emerald-50 transition"
               >
@@ -348,7 +348,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 Mẫu Excel
                 <ChevronDown className="w-4 h-4" />
               </button>
-              
+
               {showTemplateMenu && (
                 <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
                   <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 mb-1">
@@ -373,8 +373,8 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 </div>
               )}
             </div>
-            
-            <button 
+
+            <button
               onClick={() => setShowTaoHoSoModal(true)}
               className="px-5 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-md shadow-blue-200 transition"
             >
@@ -383,11 +383,11 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             </button>
           </div>
         </div>
-        
+
         {/* Progress Flow */}
         <div className="mt-8 pt-6 border-t border-slate-100 flex flex-wrap items-center gap-2 md:gap-4 text-xs font-semibold text-slate-500">
           <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mr-2">QUY TRÌNH LIÊN THÔNG:</span>
-          
+
           <div className="flex items-center gap-2">
             <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">1</span>
             Nhập hồ sơ (Excel / XML)
@@ -427,7 +427,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           <div className="text-3xl font-black text-slate-800 mb-1">{records.length}</div>
           <div className="text-[11px] text-slate-400">Mã CSKCB: {cskcbConfig?.cskcb.ma || '49004'}</div>
         </div>
-        
+
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
           <div className="flex justify-between items-start mb-2">
             <span className="text-xs font-bold text-slate-500">Đã gửi thành công</span>
@@ -491,7 +491,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           <div className="flex-1">
             <div className="font-bold text-amber-800 text-sm mb-1">⚠️ CẢNH BÁO: Lệch Mã CSKCB — Có thể nhầm đơn vị!</div>
             <div className="text-amber-700 text-sm">
-              File Excel đang có mã CSKCB <span className="font-black bg-amber-200 px-1.5 py-0.5 rounded text-amber-900">{cskcbMismatch.excelMa}</span>, 
+              File Excel đang có mã CSKCB <span className="font-black bg-amber-200 px-1.5 py-0.5 rounded text-amber-900">{cskcbMismatch.excelMa}</span>,
               trong khi hệ thống đang cấu hình cho đơn vị <span className="font-black bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">{cskcbMismatch.configMa}</span>.
             </div>
             <div className="text-amber-600 text-xs mt-1 font-medium">Vui lòng kiểm tra lại file Excel hoặc đổi CSKCB trong cấu hình trước khi tiếp tục ký số / gửi cổng.</div>
@@ -513,17 +513,17 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           <div className="flex items-center gap-3 flex-1">
             <div className="relative max-w-sm w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                placeholder="Tìm họ tên, CCCD, thẻ BHYT, mã..." 
+                placeholder="Tìm họ tên, CCCD, thẻ BHYT, mã..."
                 className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            
+
             <div className="relative">
-              <select 
+              <select
                 value={filterType}
                 onChange={e => setFilterType(e.target.value)}
                 className="appearance-none bg-white border border-slate-200 rounded-lg pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
@@ -539,7 +539,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             </div>
 
             <div className="relative">
-              <select 
+              <select
                 value={filterStatus}
                 onChange={e => setFilterStatus(e.target.value)}
                 className="appearance-none bg-white border border-slate-200 rounded-lg pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
@@ -553,18 +553,18 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2">
             {selectedIds.size > 0 ? (
               <>
-                <button 
+                <button
                   onClick={() => setKySoMode('sign')}
                   className="px-4 py-2 text-blue-700 text-sm font-bold flex items-center gap-2 border border-blue-200 rounded-lg bg-blue-50 hover:bg-blue-100 transition"
                 >
                   <ShieldCheck className="w-4 h-4" />
                   Ký số ({selectedIds.size})
                 </button>
-                <button 
+                <button
                   onClick={() => setKySoMode('submit')}
                   className={cn(
                     "px-4 py-2 text-sm font-bold flex items-center gap-2 border rounded-lg transition",
@@ -576,13 +576,13 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                   <CheckCircle2 className="w-4 h-4" />
                   Gửi BHXH ({selectedRecords.filter(r => r.trangThai === 'SIGNED').length})
                 </button>
-                <button 
+                <button
                   onClick={() => setKySoMode('sign_then_submit')}
                   className="px-4 py-2 text-indigo-700 text-sm font-bold flex items-center gap-2 border border-indigo-200 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition"
                 >
                   <ShieldCheck className="w-4 h-4" /> Ký & Gửi ({selectedIds.size})
                 </button>
-                <button 
+                <button
                   onClick={handleDeleteSelected}
                   className="px-4 py-2 text-rose-700 text-sm font-bold flex items-center gap-2 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition"
                 >
@@ -602,7 +602,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
               </>
             )}
             {records.length > 0 && selectedIds.size === 0 && (
-              <button 
+              <button
                 onClick={handleDeleteAll}
                 className="px-4 py-2 text-rose-600 text-sm font-semibold flex items-center gap-2 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition"
               >
@@ -610,7 +610,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 Xóa tất cả
               </button>
             )}
-            <button 
+            <button
               onClick={handleExportExcel}
               className="px-4 py-2 text-slate-600 text-sm font-semibold flex items-center gap-2 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition"
             >
@@ -645,13 +645,13 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                       <h3 className="text-base font-bold text-slate-700 mb-1">Chưa có hồ sơ chứng từ nào</h3>
                       <p className="text-sm text-slate-500 max-w-sm mb-6">Bạn có thể Tạo hồ sơ mới, Nhập Excel từ mẫu của BHXH, hoặc Nhúng XML.</p>
                       <div className="flex items-center justify-center gap-3">
-                        <button 
+                        <button
                           onClick={() => fileInputRef.current?.click()}
                           className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-2"
                         >
                           <FileSpreadsheet className="w-4 h-4" /> Nhập Excel ngay
                         </button>
-                        <button 
+                        <button
                           onClick={() => setShowTaoHoSoModal(true)}
                           className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
                         >
@@ -669,9 +669,9 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                     r.trangThai === 'INVALID_FORMAT' && 'bg-rose-50/60'
                   )}>
                     <td className="px-4 py-3 align-top">
-                      <input 
-                        type="checkbox" 
-                        className="rounded border-slate-300 mt-1" 
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 mt-1"
                         checked={selectedIds.has(r.id)}
                         onChange={() => toggleSelect(r.id)}
                       />
@@ -726,11 +726,11 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                         r.trangThai === 'SIGNING' && 'bg-blue-50 text-blue-600 border-blue-100 animate-pulse',
                       )}>
                         {r.trangThai === 'SUBMITTED' ? '✅ Đã gửi Cổng' :
-                         r.trangThai === 'SIGNED' ? '🔒 Đã ký số' :
-                         r.trangThai === 'INVALID_FORMAT' ? '❌ Lỗi định dạng' :
-                         r.trangThai === 'SIGN_FAILED' ? '❌ Lỗi ký' :
-                         r.trangThai === 'SUBMIT_FAILED' ? '❌ Lỗi gửi' :
-                         r.trangThai === 'SIGNING' ? '⏳ Đang ký...' : '⚠️ Chưa ký số'}
+                          r.trangThai === 'SIGNED' ? '🔒 Đã ký số' :
+                            r.trangThai === 'INVALID_FORMAT' ? '❌ Lỗi định dạng' :
+                              r.trangThai === 'SIGN_FAILED' ? '❌ Lỗi ký' :
+                                r.trangThai === 'SUBMIT_FAILED' ? '❌ Lỗi gửi' :
+                                  r.trangThai === 'SIGNING' ? '⏳ Đang ký...' : '⚠️ Chưa ký số'}
                       </span>
                       {r.errors && r.errors.length > 0 && (
                         <details className="mt-1 relative group cursor-pointer text-[10px] w-full">
@@ -742,7 +742,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                           </summary>
                           <div className="absolute z-50 left-0 top-full mt-1 min-w-[200px] bg-white border border-rose-200 shadow-xl rounded-lg p-2 text-rose-700 font-medium space-y-1 text-left">
                             {r.errors.map((err, i) => (
-                               <div key={i}>- {err}</div>
+                              <div key={i}>- {err}</div>
                             ))}
                           </div>
                         </details>
@@ -758,30 +758,30 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                         ) : (
                           <>
                             {r.trangThai === 'SIGNED' ? (
-                              <button 
+                              <button
                                 onClick={() => { toggleSelect(r.id); setKySoMode('submit'); }}
                                 title="Đã ký số. Nhấn để gửi BHXH"
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition border border-blue-100 bg-white" 
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition border border-blue-100 bg-white"
                               >
                                 <ShieldCheck className="w-4 h-4" />
                               </button>
                             ) : r.trangThai === 'INVALID_FORMAT' ? (
-                              <button 
+                              <button
                                 title={r.errors?.join('\n') || 'Lỗi định dạng'}
-                                className="p-1.5 text-rose-400 hover:bg-rose-50 rounded-lg transition border border-rose-100 bg-white cursor-not-allowed" 
+                                className="p-1.5 text-rose-400 hover:bg-rose-50 rounded-lg transition border border-rose-100 bg-white cursor-not-allowed"
                               >
                                 <AlertCircle className="w-4 h-4" />
                               </button>
                             ) : (
-                              <button 
+                              <button
                                 onClick={() => { toggleSelect(r.id); setKySoMode('sign'); }}
                                 title="Chưa ký. Nhấn để ký số"
-                                className="p-1.5 text-amber-500 hover:bg-amber-50 rounded-lg transition border border-amber-100 bg-white" 
+                                className="p-1.5 text-amber-500 hover:bg-amber-50 rounded-lg transition border border-amber-100 bg-white"
                               >
                                 <ShieldCheck className="w-4 h-4" />
                               </button>
                             )}
-                            <button 
+                            <button
                               onClick={() => { if (r.trangThai !== 'INVALID_FORMAT') { toggleSelect(r.id); setKySoMode('sign_then_submit'); } }}
                               title={r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng không thể ký' : 'Ký & Gửi BHXH'}
                               className={cn(
@@ -837,7 +837,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
+
             <div className="p-6">
               <div className="flex items-center gap-1 border-b border-slate-200 mb-6">
                 <button className="px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700">Thông tin cơ sở KCB</button>
@@ -853,7 +853,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                   <label className="block text-xs font-bold text-slate-600 mb-1">Base URL</label>
                   <input type="text" defaultValue="https://gwsca.vnpt.vn" className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-600 mb-1">Client ID (SP ID)</label>

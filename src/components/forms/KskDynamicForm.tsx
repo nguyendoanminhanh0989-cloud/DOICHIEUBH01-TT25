@@ -3,6 +3,7 @@ import { Upload, Save, PenTool, Printer, X, FileUp, Plus, Search, Trash2 } from 
 import { cn } from '../../lib/utils';
 import { KskType, KSK_SCHEMAS, KskField } from '../../lib/kskSchemas';
 import { COMMUNES_BY_PROVINCE } from '../../lib/diaPhuong';
+import SearchableSelect from '../SearchableSelect';
 
 interface KskDynamicFormProps {
   type: KskType;
@@ -81,16 +82,11 @@ export default function KskDynamicForm({ type, onClose, onSave, initialData = {}
             optionsToRender = maTinh && COMMUNES_BY_PROVINCE[maTinh] ? COMMUNES_BY_PROVINCE[maTinh] : [];
           }
           return (
-            <select
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+            <SearchableSelect
+              options={optionsToRender || []}
               value={val}
-              onChange={(e) => handleInputChange(field.key, e.target.value)}
-            >
-              <option value="">-- Chọn --</option>
-              {optionsToRender?.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+              onChange={(value) => handleInputChange(field.key, value)}
+            />
           );
         })()}
         
@@ -113,36 +109,55 @@ export default function KskDynamicForm({ type, onClose, onSave, initialData = {}
         )}
 
         {field.kind === 'signature' && (
-          <div 
-            onClick={() => {
-              const input = document.createElement('input');
-              input.type = 'file';
-              input.accept = 'image/*';
-              input.onchange = (e: any) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onloadend = () => handleInputChange(field.key, reader.result);
-                  reader.readAsDataURL(file);
-                }
-              };
-              input.click();
-            }}
-            className="flex flex-col h-[38px] justify-center items-center border border-dashed border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer overflow-hidden relative group"
-          >
-            {val ? (
-              <>
-                <img src={val} alt="Chữ ký" className="h-full object-contain mix-blend-multiply" />
-                <div className="absolute inset-0 bg-black/40 hidden group-hover:flex items-center justify-center">
-                  <span className="text-xs text-white">Đổi ảnh</span>
+          <div className="flex gap-2 h-[38px]">
+            <div 
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = (e: any) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => handleInputChange(field.key, reader.result);
+                    reader.readAsDataURL(file);
+                  }
+                };
+                input.click();
+              }}
+              className="flex-1 flex flex-col justify-center items-center border border-dashed border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer overflow-hidden relative group bg-white"
+              title="Tải ảnh chữ ký hiển thị"
+            >
+              {val ? (
+                <>
+                  <img src={val} alt="Chữ ký" className="h-full object-contain mix-blend-multiply" />
+                  <div className="absolute inset-0 bg-black/40 hidden group-hover:flex items-center justify-center">
+                    <span className="text-xs text-white font-medium">Đổi ảnh</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-slate-500 group-hover:text-emerald-600">
+                  <Upload className="w-4 h-4" />
+                  <span className="text-xs font-medium">Tải Ảnh</span>
                 </div>
-              </>
-            ) : (
-              <div className="flex items-center gap-2 text-slate-500 hover:text-emerald-600">
-                <Upload className="w-4 h-4" />
-                <span className="text-xs font-medium">Tải Ảnh chữ ký</span>
-              </div>
-            )}
+              )}
+            </div>
+            
+            <button
+              onClick={() => {
+                const isConfirmed = window.confirm('Gửi yêu cầu ký số SmartCA/Token đến thiết bị cho phần khám này?');
+                if (isConfirmed) {
+                  // Giả lập thành công
+                  setTimeout(() => {
+                    handleInputChange(field.key, 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjAiIGhlaWdodD0iMzAiPjx0ZXh0IHk9IjIwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IiMwaGE3NDciIGZvbnQtd2VpZ2h0PSJib2xkIj5Lw60gYsBvIEjDoG5oPC90ZXh0Pjwvc3ZnPg==');
+                  }, 1500);
+                }
+              }}
+              className="flex-shrink-0 px-3 flex items-center justify-center bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors"
+              title="Ký số bằng SmartCA / Token"
+            >
+              <ShieldCheck className="w-4 h-4" />
+            </button>
           </div>
         )}
         
