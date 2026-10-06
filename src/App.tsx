@@ -36,6 +36,7 @@ import {
   AuditSummary 
 } from './types';
 import HoSoChungTu from './components/HoSoChungTu';
+import KhamSucKhoe from './components/KhamSucKhoe';
 import QuickLinksSidebar from './components/QuickLinksSidebar';
 
 // Default mappings
@@ -150,7 +151,7 @@ const TableRow21 = ({ row }: { row: TemplateRow }) => (
 );
 
 export default function App() {
-  const [mainTab, setMainTab] = useState<'HOME' | 'DOI_SOAT' | 'CHUNG_TU'>('HOME');
+  const [mainTab, setMainTab] = useState<'HOME' | 'DOI_SOAT' | 'CHUNG_TU' | 'KHAM_SUC_KHOE'>('HOME');
   const [bhxhData, setBhxhData] = useState<any[]>([]);
   const [hisData, setHisData] = useState<any[]>([]);
   
@@ -682,12 +683,22 @@ export default function App() {
                 HỒ SƠ CHỨNG TỪ
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">TT25</span>
               </button>
+              <button
+                onClick={() => setMainTab('KHAM_SUC_KHOE')}
+                className="flex items-center gap-2 bg-emerald-600/90 hover:bg-emerald-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm"
+              >
+                <FileCode2 className="w-5 h-5" />
+                KHÁM SỨC KHỎE
+                <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">API</span>
+              </button>
             </div>
             <p className="text-white/50 text-xs mt-2 font-medium">Ánh Kận · IT Đà Nẵng · VNPT SmartCA</p>
           </div>
         </motion.div>
       ) : mainTab === 'CHUNG_TU' ? (
         <HoSoChungTu onGoHome={() => setMainTab('HOME')} />
+      ) : mainTab === 'KHAM_SUC_KHOE' ? (
+        <KhamSucKhoe onGoHome={() => setMainTab('HOME')} />
       ) : (
         <main className="max-w-[1600px] mx-auto p-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
