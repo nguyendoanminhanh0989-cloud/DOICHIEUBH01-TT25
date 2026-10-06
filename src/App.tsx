@@ -23,7 +23,8 @@ import {
   ShieldCheck,
   LayoutGrid,
   FileCode2,
-  Building2
+  Building2,
+  Home
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from './lib/utils';
@@ -35,6 +36,7 @@ import {
   AuditSummary 
 } from './types';
 import HoSoChungTu from './components/HoSoChungTu';
+import QuickLinksSidebar from './components/QuickLinksSidebar';
 
 // Default mappings
 const DEFAULT_MAPPING: ColumnMapping = {
@@ -148,7 +150,7 @@ const TableRow21 = ({ row }: { row: TemplateRow }) => (
 );
 
 export default function App() {
-  const [mainTab, setMainTab] = useState<'DOI_SOAT' | 'CHUNG_TU'>('CHUNG_TU');
+  const [mainTab, setMainTab] = useState<'HOME' | 'DOI_SOAT' | 'CHUNG_TU'>('HOME');
   const [bhxhData, setBhxhData] = useState<any[]>([]);
   const [hisData, setHisData] = useState<any[]>([]);
   
@@ -571,17 +573,32 @@ export default function App() {
         backgroundBlendMode: "overlay"
       }}
     >
+      {/* Sidebar liên kết nhanh - chỉ hiện trên trang HOME */}
+      {mainTab === 'HOME' && <QuickLinksSidebar />}
+
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
         <div className="max-w-[1600px] mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white">
-              <ShieldCheck className="w-5 h-5" />
+          {/* Logo + Home button */}
+          <button
+            onClick={() => setMainTab('HOME')}
+            className={cn(
+              "flex items-center gap-2 group transition-all rounded-xl px-2 py-1 -ml-2",
+              mainTab === 'HOME' ? "bg-blue-50" : "hover:bg-slate-50"
+            )}
+            title="Trang chủ"
+          >
+            <div className={cn(
+              "w-8 h-8 rounded flex items-center justify-center text-white transition-all",
+              mainTab === 'HOME' ? "bg-blue-700" : "bg-blue-600 group-hover:bg-blue-700"
+            )}>
+              <Home className="w-4 h-4" />
             </div>
             <h1 className="text-lg font-black tracking-tight text-slate-800 flex items-center gap-2">
               ĐỐI CHIẾU VÀ CHỨNG TỪ <span className="bg-slate-100 text-[10px] px-2 py-0.5 rounded text-slate-500 font-bold border border-slate-200">ENTERPRISE</span>
             </h1>
-          </div>
+          </button>
           
+          {mainTab !== 'HOME' && (
           <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-xl">
             <button
               onClick={() => setMainTab('DOI_SOAT')}
@@ -591,7 +608,7 @@ export default function App() {
               )}
             >
               <BarChart3 className="w-4 h-4" />
-              ĐỐI SOÁT HỒ SƠ KCB
+              ĐỐI CHIẾU BH01
             </button>
             <button
               onClick={() => setMainTab('CHUNG_TU')}
@@ -605,6 +622,7 @@ export default function App() {
               <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded ml-1">TT25</span>
             </button>
           </div>
+          )}
 
           <div className="flex items-center gap-4 text-xs font-semibold">
             <div className="flex items-center gap-2 text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -621,8 +639,55 @@ export default function App() {
         </div>
       </header>
 
-      {mainTab === 'CHUNG_TU' ? (
-        <HoSoChungTu />
+      {mainTab === 'HOME' ? (
+        <motion.div
+          key="home"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 flex flex-col items-center justify-center z-40"
+          style={{
+            backgroundImage: "url('/hinh_nen.png')",
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat',
+          }}
+        >
+          {/* Overlay tối nhẹ để text dễ đọc */}
+          <div className="absolute inset-0 bg-black/20" />
+          {/* Nội dung trung tâm */}
+          <div className="relative z-10 flex flex-col items-center gap-6 text-center px-8">
+            <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/20 shadow-2xl">
+              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
+                <ShieldCheck className="w-7 h-7" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-3xl font-black text-white tracking-tight drop-shadow-lg">ĐỐI CHIẾU VÀ CHỨNG TỪ</h1>
+                <p className="text-white/70 text-sm font-semibold tracking-widest">BHYT · TT25 · ENTERPRISE</p>
+              </div>
+            </div>
+            <div className="flex gap-4 mt-4">
+              <button
+                onClick={() => setMainTab('DOI_SOAT')}
+                className="flex items-center gap-2 bg-white/90 hover:bg-white text-slate-800 font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm"
+              >
+                <BarChart3 className="w-5 h-5 text-indigo-600" />
+                ĐỐI CHIẾU BH01
+              </button>
+              <button
+                onClick={() => setMainTab('CHUNG_TU')}
+                className="flex items-center gap-2 bg-blue-600/90 hover:bg-blue-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm"
+              >
+                <FileCode2 className="w-5 h-5" />
+                HỒ SƠ CHỨNG TỪ
+                <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">TT25</span>
+              </button>
+            </div>
+            <p className="text-white/50 text-xs mt-2 font-medium">Ánh Kận · IT Đà Nẵng · VNPT SmartCA</p>
+          </div>
+        </motion.div>
+      ) : mainTab === 'CHUNG_TU' ? (
+        <HoSoChungTu onGoHome={() => setMainTab('HOME')} />
       ) : (
         <main className="max-w-[1600px] mx-auto p-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">

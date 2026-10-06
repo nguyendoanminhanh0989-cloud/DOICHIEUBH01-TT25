@@ -21,7 +21,7 @@ export interface OrganizationConfig {
 }
 
 export type SignMethod = 'SMARTCA_TOTP' | 'SMARTCA_APP' | 'USB_TOKEN';
-export type SignStatus = 'UNSIGNED' | 'SIGNING' | 'SIGNED' | 'SIGN_FAILED' | 'SUBMITTING' | 'SUBMITTED' | 'SUBMIT_FAILED' | 'DRAFT';
+export type SignStatus = 'UNSIGNED' | 'SIGNING' | 'SIGNED' | 'SIGN_FAILED' | 'SUBMITTING' | 'SUBMITTED' | 'SUBMIT_FAILED' | 'DRAFT' | 'INVALID_FORMAT';
 
 export interface HoSoRecord {
   id: string;
@@ -55,6 +55,7 @@ export interface HoSoRecord {
   maGD?: string;              // Mã giao dịch sau khi đẩy cổng
   thoiGianTiepNhan?: string;  // Thời gian cổng BHXH tiếp nhận
   errorMessage?: string;
+  errors?: string[];          // Lỗi validate dữ liệu
 }
 
 /**

@@ -9,6 +9,7 @@
  */
 
 import type { DocType } from './xmlBuilder';
+import { parseDateStr, parseShortDateStr } from './data-utils';
 
 export type HoSoType = DocType;
 
@@ -190,4 +191,49 @@ export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Recor
       break;
   }
   return raw;
+}
+
+export function validateRecord(type: HoSoType, raw: Record<string, string>): string[] {
+  const errors: string[] = [];
+  const req = (field: string, name: string) => {
+    if (!raw[field]) errors.push(`Thiếu: ${name}`);
+  };
+
+  const checkDate = (field: string, name: string, isTime = false) => {
+    if (raw[field]) {
+      const parsed = isTime ? parseDateStr(raw[field]) : parseShortDateStr(raw[field]);
+      if (!parsed || (isTime && parsed.length !== 12) || (!isTime && parsed.length !== 8)) {
+        errors.push(`Sai định dạng thời gian: ${name} (Cột ${field})`);
+      }
+    }
+  };
+
+  req('HO_TEN', 'Họ tên');
+  
+  if (type === 'CT03') {
+    req('NGAY_VAO', 'Ngày vào');
+    req('NGAY_RA', 'Ngày ra');
+    checkDate('NGAY_VAO', 'Ngày vào', true);
+    checkDate('NGAY_RA', 'Ngày ra', true);
+  } else if (type === 'CT04') {
+    req('NGAY_VAO', 'Ngày vào');
+    req('NGAY_RA', 'Ngày ra');
+    checkDate('NGAY_VAO', 'Ngày vào', true);
+    checkDate('NGAY_RA', 'Ngày ra', true);
+  } else if (type === 'CT05') {
+    req('NGAY_SINH_CON', 'Ngày sinh con');
+    checkDate('NGAY_SINH_CON', 'Ngày sinh con', true);
+  } else if (type === 'CT06') {
+    req('TU_NGAY', 'Từ ngày');
+    req('DEN_NGAY', 'Đến ngày');
+    checkDate('TU_NGAY', 'Từ ngày', true);
+    checkDate('DEN_NGAY', 'Đến ngày', true);
+  } else if (type === 'CT07') {
+    req('TU_NGAY', 'Từ ngày');
+    req('DEN_NGAY', 'Đến ngày');
+    checkDate('TU_NGAY', 'Từ ngày', true);
+    checkDate('DEN_NGAY', 'Đến ngày', true);
+  }
+
+  return errors;
 }

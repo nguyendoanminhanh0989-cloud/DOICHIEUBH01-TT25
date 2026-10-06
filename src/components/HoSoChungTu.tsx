@@ -14,7 +14,8 @@ import {
   Search,
   ChevronDown,
   X,
-  Building
+  Building,
+  Trash2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import TaoHoSoModal from './TaoHoSoModal';
@@ -24,7 +25,7 @@ import CskcbSetupModal, { CskcbConfig } from './CskcbSetupModal';
 import type { HoSoRecord } from '../lib/signAndSubmitService';
 import { COLUMN_DISPLAY } from '../lib/importMapper';
 
-export default function HoSoChungTu() {
+export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showFacilityModal, setShowFacilityModal] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
@@ -62,12 +63,13 @@ export default function HoSoChungTu() {
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [records, setRecords] = useState<HoSoRecord[]>([]);
+  const [cskcbMismatch, setCskcbMismatch] = useState<{ excelMa: string; configMa: string } | null>(null);
 
   const selectedRecords = records.filter(r => selectedIds.has(r.id));
   const signedCount = records.filter(r => r.trangThai === 'SIGNED').length;
   const submittedCount = records.filter(r => r.trangThai === 'SUBMITTED').length;
   const draftCount = records.filter(r => r.trangThai === 'DRAFT' || r.trangThai === 'UNSIGNED').length;
-  const errorCount = records.filter(r => r.trangThai === 'SIGN_FAILED' || r.trangThai === 'SUBMIT_FAILED').length;
+  const errorCount = records.filter(r => r.trangThai === 'SIGN_FAILED' || r.trangThai === 'SUBMIT_FAILED' || r.trangThai === 'INVALID_FORMAT').length;
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -83,6 +85,28 @@ export default function HoSoChungTu() {
     } else {
       setSelectedIds(new Set(records.map(r => r.id)));
     }
+  };
+
+  const handleDeleteSelected = () => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.size} hồ sơ đã chọn?`)) return;
+    setRecords(prev => prev.filter(r => !selectedIds.has(r.id)));
+    setSelectedIds(new Set());
+  };
+
+  const handleDeleteAll = () => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa TẤT CẢ hồ sơ trong danh sách?')) return;
+    setRecords([]);
+    setSelectedIds(new Set());
+  };
+
+  const handleDeleteRecord = (id: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa hồ sơ này?')) return;
+    setRecords(prev => prev.filter(r => r.id !== id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
   const handleKySoComplete = (updated: HoSoRecord[]) => {
@@ -108,17 +132,30 @@ export default function HoSoChungTu() {
 
       const { buildXml } = await import('../lib/xmlBuilder');
       const { getOrgConfig } = await import('../lib/signAndSubmitService');
-      const { detectDocType, mapRowToDisplay, mapRowToRawData } = await import('../lib/importMapper');
+      const { detectDocType, mapRowToDisplay, mapRowToRawData, validateRecord } = await import('../lib/importMapper');
       const org = getOrgConfig();
       const fileNameLower = file.name.toLowerCase();
 
       // Nhận dạng loại CT từ dòng đầu tiên
       const detectedType = detectDocType(fileNameLower, jsonData[0]) as HoSoRecord['type'];
 
+      // Kiểm tra đối chiếu mã CSKCB
+      const firstRow = jsonData[0];
+      const maCskcbExcel = String(
+        firstRow['MA_CSKCB'] ?? firstRow['Ma_CSKCB'] ?? firstRow['ma_cskcb'] ?? ''
+      ).trim();
+      const maCskcbConfig = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '').trim();
+      if (maCskcbExcel && maCskcbConfig && maCskcbExcel !== maCskcbConfig) {
+        setCskcbMismatch({ excelMa: maCskcbExcel, configMa: maCskcbConfig });
+      } else {
+        setCskcbMismatch(null);
+      }
+
       const mappedRecords: HoSoRecord[] = jsonData.map((item, index) => {
         const type = detectedType;
         const rawData = mapRowToRawData(type, item);
         const display = mapRowToDisplay(type, item);
+        const errors = validateRecord(type, rawData);
 
         let xmlContent: string | undefined;
         try { xmlContent = buildXml(type, rawData, org.ma_cskcb); } catch {}
@@ -147,7 +184,8 @@ export default function HoSoChungTu() {
             nguoiKyPrimary: display.nguoiKyPrimary,
             nguoiKySecondary: display.nguoiKySecondary,
           },
-          trangThai: 'UNSIGNED' as HoSoRecord['trangThai'],
+          trangThai: errors.length > 0 ? 'INVALID_FORMAT' as HoSoRecord['trangThai'] : 'UNSIGNED' as HoSoRecord['trangThai'],
+          errors,
           rawData,
           xmlContent,
         };
@@ -177,25 +215,33 @@ export default function HoSoChungTu() {
     }
     try {
       const { utils, writeFile } = await import('xlsx');
-      const exportData = records.map(r => ({
-        'Loại HS': r.type,
-        'Họ và tên': r.hoTen,
-        'Mã BHYT': r.maBhyt,
-        'Mã BHXH': r.maBhxh,
-        'CCCD': r.cccd,
-        'Khoa': r.khoa,
-        'Ngày vào': r.ngayVao,
-        'Ngày ra': r.ngayRa,
-        'Mã Bệnh ICD10': r.icd,
-        'Chẩn đoán': r.chanDoan,
-        'Người ký': r.nguoiKy,
-        'Mã CCHN': r.cchn,
-        'Trạng thái': r.trangThai === 'SUBMITTED' ? 'Đã gửi Cổng' : r.trangThai === 'SIGNED' ? 'Đã ký số' : 'Chưa ký số'
-      }));
-      const ws = utils.json_to_sheet(exportData);
       const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws, "DanhSachHoSo");
-      writeFile(wb, `DanhSachHoSo_XuatExcel_${Date.now()}.xlsx`);
+
+      // Gom nhóm theo loại chứng từ để xuất ra các sheet riêng biệt
+      const types = Array.from(new Set(records.map(r => r.type)));
+      
+      types.forEach(type => {
+        const recordsOfType = records.filter(r => r.type === type);
+        const exportData = recordsOfType.map(r => {
+          // Xuất đúng định dạng cột chuẩn từ rawData
+          const data: any = { ...r.rawData };
+          
+          // Thêm các cột trạng thái để dễ theo dõi
+          data['TRANG_THAI_KY_SO'] = r.trangThai === 'SUBMITTED' ? 'Đã gửi Cổng' : 
+                                     r.trangThai === 'SIGNED' ? 'Đã ký số' : 
+                                     r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng' : 'Chưa ký';
+          
+          if (r.maGD) data['MA_GIAO_DICH'] = r.maGD;
+          if (r.errors && r.errors.length > 0) data['CHI_TIET_LOI'] = r.errors.join('; ');
+          
+          return data;
+        });
+
+        const ws = utils.json_to_sheet(exportData);
+        utils.book_append_sheet(wb, ws, `Mẫu_${type}`);
+      });
+
+      writeFile(wb, `DanhSachChungTu_${Date.now()}.xlsx`);
     } catch (err) {
       console.error('Export error', err);
       alert('Lỗi xuất Excel');
@@ -218,7 +264,7 @@ export default function HoSoChungTu() {
       if (filterStatus === 'SUBMITTED' && r.trangThai !== 'SUBMITTED') return false;
       if (filterStatus === 'SIGNED' && r.trangThai !== 'SIGNED') return false;
       if (filterStatus === 'UNSIGNED' && r.trangThai !== 'UNSIGNED' && r.trangThai !== 'DRAFT') return false;
-      if (filterStatus === 'ERROR' && r.trangThai !== 'SIGN_FAILED' && r.trangThai !== 'SUBMIT_FAILED') return false;
+      if (filterStatus === 'ERROR' && r.trangThai !== 'SIGN_FAILED' && r.trangThai !== 'SUBMIT_FAILED' && r.trangThai !== 'INVALID_FORMAT') return false;
     }
     return true;
   });
@@ -436,6 +482,30 @@ export default function HoSoChungTu() {
         </div>
       </div>
 
+      {/* CSKCB Mismatch Warning Banner */}
+      {cskcbMismatch && (
+        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl px-5 py-4 flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+            <AlertCircle className="w-6 h-6 text-amber-600" />
+          </div>
+          <div className="flex-1">
+            <div className="font-bold text-amber-800 text-sm mb-1">⚠️ CẢNH BÁO: Lệch Mã CSKCB — Có thể nhầm đơn vị!</div>
+            <div className="text-amber-700 text-sm">
+              File Excel đang có mã CSKCB <span className="font-black bg-amber-200 px-1.5 py-0.5 rounded text-amber-900">{cskcbMismatch.excelMa}</span>, 
+              trong khi hệ thống đang cấu hình cho đơn vị <span className="font-black bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">{cskcbMismatch.configMa}</span>.
+            </div>
+            <div className="text-amber-600 text-xs mt-1 font-medium">Vui lòng kiểm tra lại file Excel hoặc đổi CSKCB trong cấu hình trước khi tiếp tục ký số / gửi cổng.</div>
+          </div>
+          <button
+            onClick={() => setCskcbMismatch(null)}
+            className="p-1.5 hover:bg-amber-200 rounded-lg text-amber-500 transition shrink-0"
+            title="Đóng cảnh báo"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Table Section */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
         {/* Filters */}
@@ -512,6 +582,12 @@ export default function HoSoChungTu() {
                 >
                   <ShieldCheck className="w-4 h-4" /> Ký & Gửi ({selectedIds.size})
                 </button>
+                <button 
+                  onClick={handleDeleteSelected}
+                  className="px-4 py-2 text-rose-700 text-sm font-bold flex items-center gap-2 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition"
+                >
+                  <Trash2 className="w-4 h-4" /> Xóa ({selectedIds.size})
+                </button>
               </>
             ) : (
               <>
@@ -524,6 +600,15 @@ export default function HoSoChungTu() {
                   Đã gửi ({submittedCount})
                 </button>
               </>
+            )}
+            {records.length > 0 && selectedIds.size === 0 && (
+              <button 
+                onClick={handleDeleteAll}
+                className="px-4 py-2 text-rose-600 text-sm font-semibold flex items-center gap-2 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition"
+              >
+                <Trash2 className="w-4 h-4" />
+                Xóa tất cả
+              </button>
             )}
             <button 
               onClick={handleExportExcel}
@@ -580,7 +665,8 @@ export default function HoSoChungTu() {
                 filteredRecords.map(r => (
                   <tr key={r.id} className={cn(
                     "hover:bg-slate-50 transition-colors",
-                    selectedIds.has(r.id) && 'bg-blue-50/50'
+                    selectedIds.has(r.id) && 'bg-blue-50/50',
+                    r.trangThai === 'INVALID_FORMAT' && 'bg-rose-50/60'
                   )}>
                     <td className="px-4 py-3 align-top">
                       <input 
@@ -636,15 +722,21 @@ export default function HoSoChungTu() {
                         r.trangThai === 'SUBMITTED' && 'bg-emerald-100 text-emerald-700 border-emerald-200',
                         r.trangThai === 'SIGNED' && 'bg-blue-100 text-blue-700 border-blue-200',
                         (r.trangThai === 'UNSIGNED' || r.trangThai === 'DRAFT') && 'bg-amber-50 text-amber-700 border-amber-200',
-                        (r.trangThai === 'SIGN_FAILED' || r.trangThai === 'SUBMIT_FAILED') && 'bg-rose-100 text-rose-700 border-rose-200',
+                        (r.trangThai === 'SIGN_FAILED' || r.trangThai === 'SUBMIT_FAILED' || r.trangThai === 'INVALID_FORMAT') && 'bg-rose-100 text-rose-700 border-rose-200',
                         r.trangThai === 'SIGNING' && 'bg-blue-50 text-blue-600 border-blue-100 animate-pulse',
                       )}>
                         {r.trangThai === 'SUBMITTED' ? '✅ Đã gửi Cổng' :
                          r.trangThai === 'SIGNED' ? '🔒 Đã ký số' :
+                         r.trangThai === 'INVALID_FORMAT' ? '❌ Lỗi định dạng' :
                          r.trangThai === 'SIGN_FAILED' ? '❌ Lỗi ký' :
                          r.trangThai === 'SUBMIT_FAILED' ? '❌ Lỗi gửi' :
                          r.trangThai === 'SIGNING' ? '⏳ Đang ký...' : '⚠️ Chưa ký số'}
                       </span>
+                      {r.errors && r.errors.length > 0 && (
+                        <div className="text-[9px] text-rose-600 font-semibold mt-1 leading-tight max-w-[120px] truncate" title={r.errors.join('\n')}>
+                          {r.errors[0]} {r.errors.length > 1 && `(+${r.errors.length - 1} lỗi)`}
+                        </div>
+                      )}
                       {r.maGD && <div className="text-[9px] text-emerald-600 font-bold mt-1">Mã GD: {r.maGD}</div>}
                     </td>
                     <td className="px-4 py-3 align-top text-center">
@@ -663,24 +755,41 @@ export default function HoSoChungTu() {
                               >
                                 <ShieldCheck className="w-4 h-4" />
                               </button>
+                            ) : r.trangThai === 'INVALID_FORMAT' ? (
+                              <button 
+                                title={r.errors?.join('\n') || 'Lỗi định dạng'}
+                                className="p-1.5 text-rose-400 hover:bg-rose-50 rounded-lg transition border border-rose-100 bg-white cursor-not-allowed" 
+                              >
+                                <AlertCircle className="w-4 h-4" />
+                              </button>
                             ) : (
                               <button 
                                 onClick={() => { toggleSelect(r.id); setKySoMode('sign'); }}
                                 title="Chưa ký. Nhấn để ký số"
-                                className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition border border-rose-100 bg-white" 
+                                className="p-1.5 text-amber-500 hover:bg-amber-50 rounded-lg transition border border-amber-100 bg-white" 
                               >
-                                <X className="w-4 h-4" />
+                                <ShieldCheck className="w-4 h-4" />
                               </button>
                             )}
                             <button 
-                              onClick={() => { toggleSelect(r.id); setKySoMode('sign_then_submit'); }}
-                              title="Ký & Gửi BHXH"
-                              className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition"
+                              onClick={() => { if (r.trangThai !== 'INVALID_FORMAT') { toggleSelect(r.id); setKySoMode('sign_then_submit'); } }}
+                              title={r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng không thể ký' : 'Ký & Gửi BHXH'}
+                              className={cn(
+                                "p-1.5 rounded-lg transition",
+                                r.trangThai === 'INVALID_FORMAT' ? "text-slate-300 cursor-not-allowed" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
+                              )}
                             >
                               <CheckCircle2 className="w-4 h-4" />
                             </button>
                           </>
                         )}
+                        <button
+                          onClick={() => handleDeleteRecord(r.id)}
+                          title="Xóa hồ sơ"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -800,7 +909,7 @@ export default function HoSoChungTu() {
       {(showFacilityModal || !cskcbConfig) && (
         <CskcbSetupModal
           initialConfig={cskcbConfig || undefined}
-          onClose={cskcbConfig ? () => setShowFacilityModal(false) : undefined}
+          onClose={cskcbConfig ? () => setShowFacilityModal(false) : onGoHome}
           onSave={(cfg) => {
             setCskcbConfig(cfg);
             setShowFacilityModal(false);

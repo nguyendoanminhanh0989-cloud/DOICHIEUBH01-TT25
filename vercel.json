@@ -1,5 +1,4 @@
 {
-  "name": "doi-chieu-01bh-tt12",
   "rewrites": [
     {
       "source": "/api/vnpt/:match*",

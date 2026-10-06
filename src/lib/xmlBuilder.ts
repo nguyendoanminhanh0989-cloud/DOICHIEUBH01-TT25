@@ -22,6 +22,8 @@
  * NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG
  */
 
+import { parseDateStr, parseShortDateStr } from './data-utils';
+
 export type DocType = 'CT03' | 'CT04' | 'CT05' | 'CT06' | 'CT07' | 'GIAYDIEUTRINOITRU' | 'GIAYDIEUTRIVOSINH' | 'GIAYSUCKHOEME';
 
 /** Mã loaiHs để đẩy API cổng BHXH */
@@ -47,22 +49,10 @@ function genId(): string {
   });
 }
 
-/** Format ngày theo chuẩn BHXH: YYYYMMDD */
-function fmtDate(d: string): string {
+/** Format ngày theo chuẩn BHXH: YYYYMMDDHHmm hoặc YYYYMMDD */
+function fmtDate(d: string, isTime = false): string {
   if (!d) return '';
-  // Thử parse dd/MM/yyyy
-  const parts = d.split('/');
-  if (parts.length === 3) return `${parts[2]}${parts[1].padStart(2,'0')}${parts[0].padStart(2,'0')}`;
-  // Excel serial number
-  if (/^\d+$/.test(d)) {
-    const dt = new Date((parseInt(d) - 25569) * 86400 * 1000);
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth() + 1).padStart(2, '0');
-    const day = String(dt.getDate()).padStart(2, '0');
-    return `${y}${m}${day}`;
-  }
-  // yyyy-MM-dd
-  return d.replace(/-/g, '').substring(0, 8);
+  return isTime ? parseDateStr(d) : parseShortDateStr(d);
 }
 
 /** ===========================
@@ -85,8 +75,8 @@ export function buildCT03Content(data: Record<string, string>): string {
   <SO_LUU_TRU>${esc(data.SO_LUU_TRU)}</SO_LUU_TRU>
   <MA_YTE>${esc(data.MA_YTE)}</MA_YTE>
   <MA_KHOA>${esc(data.MA_KHOA)}</MA_KHOA>
-  <NGAY_VAO>${fmtDate(data.NGAY_VAO)}</NGAY_VAO>
-  <NGAY_RA>${fmtDate(data.NGAY_RA)}</NGAY_RA>
+  <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
+  <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
   <DINH_CHI_THAI_NGHEN>${esc(data.DINH_CHI_THAI_NGHEN || '0')}</DINH_CHI_THAI_NGHEN>
   <TUOI_THAI>${esc(data.TUOI_THAI)}</TUOI_THAI>
   <BENHICD10_ID>${esc(data.BENHICD10_ID)}</BENHICD10_ID>
@@ -96,12 +86,12 @@ export function buildCT03Content(data: Record<string, string>): string {
   <HO_TEN_CHA>${esc(data.HO_TEN_CHA)}</HO_TEN_CHA>
   <HO_TEN_ME>${esc(data.HO_TEN_ME)}</HO_TEN_ME>
   <TEKT>${esc(data.TEKT || '0')}</TEKT>
-  <NGOAITRU_TUNGAY>${fmtDate(data.NGOAITRU_TUNGAY)}</NGOAITRU_TUNGAY>
-  <NGOAITRU_DENNGAY>${fmtDate(data.NGOAITRU_DENNGAY)}</NGOAITRU_DENNGAY>
+  <NGOAITRU_TUNGAY>${fmtDate(data.NGOAITRU_TUNGAY, true)}</NGOAITRU_TUNGAY>
+  <NGOAITRU_DENNGAY>${fmtDate(data.NGOAITRU_DENNGAY, true)}</NGOAITRU_DENNGAY>
   <THU_TRUONG_DVI>${esc(data.THU_TRUONG_DVI)}</THU_TRUONG_DVI>
   <MA_CCHN_TRUONGKHOA>${esc(data.MA_CCHN_TRUONGKHOA)}</MA_CCHN_TRUONGKHOA>
   <TEN_TRUONGKHOA>${esc(data.TEN_TRUONGKHOA)}</TEN_TRUONGKHOA>
-  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU)}</NGAY_CHUNG_TU>
+  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU, true)}</NGAY_CHUNG_TU>
 </GRV>`;
 }
 
@@ -122,16 +112,16 @@ export function buildCT04Content(data: Record<string, string>): string {
   <HO_TEN_ME>${esc(data.HO_TEN_ME)}</HO_TEN_ME>
   <TEN_DONVI>${esc(data.TEN_DONVI)}</TEN_DONVI>
   <NGUOI_DAI_DIEN>${esc(data.NGUOI_DAI_DIEN)}</NGUOI_DAI_DIEN>
-  <NGAY_CT>${fmtDate(data.NGAY_CT)}</NGAY_CT>
-  <NGAY_VAO>${fmtDate(data.NGAY_VAO)}</NGAY_VAO>
-  <NGAY_RA>${fmtDate(data.NGAY_RA)}</NGAY_RA>
+  <NGAY_CT>${fmtDate(data.NGAY_CT, true)}</NGAY_CT>
+  <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
+  <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
   <CHAN_DOAN_VAO>${esc(data.CHAN_DOAN_VAO)}</CHAN_DOAN_VAO>
   <CHAN_DOAN_RA>${esc(data.CHAN_DOAN_RA)}</CHAN_DOAN_RA>
   <QT_BENHLY>${esc(data.QT_BENHLY)}</QT_BENHLY>
   <TOMTAT_KQ>${esc(data.TOMTAT_KQ)}</TOMTAT_KQ>
   <PP_DIEUTRI>${esc(data.PP_DIEUTRI)}</PP_DIEUTRI>
-  <NGAY_SINHCON>${fmtDate(data.NGAY_SINHCON)}</NGAY_SINHCON>
-  <NGAY_CHETCON>${fmtDate(data.NGAY_CHETCON)}</NGAY_CHETCON>
+  <NGAY_SINHCON>${fmtDate(data.NGAY_SINHCON, true)}</NGAY_SINHCON>
+  <NGAY_CHETCON>${fmtDate(data.NGAY_CHETCON, true)}</NGAY_CHETCON>
   <SO_CONCHET>${esc(data.SO_CONCHET || '0')}</SO_CONCHET>
   <TT_RAVIEN>${esc(data.TT_RAVIEN)}</TT_RAVIEN>
   <TEKT>${esc(data.TEKT || '0')}</TEKT>
@@ -159,14 +149,14 @@ export function buildCT05Content(data: Record<string, string>): string {
   <GIOI_TINH_CON>${esc(data.GIOI_TINH_CON)}</GIOI_TINH_CON>
   <SO_CON>${esc(data.SO_CON || '1')}</SO_CON>
   <CAN_NANG_CON>${esc(data.CAN_NANG_CON)}</CAN_NANG_CON>
-  <NGAY_SINH_CON>${fmtDate(data.NGAY_SINH_CON)}</NGAY_SINH_CON>
+  <NGAY_SINH_CON>${fmtDate(data.NGAY_SINH_CON, true)}</NGAY_SINH_CON>
   <TINH_TRANG_CON>${esc(data.TINH_TRANG_CON)}</TINH_TRANG_CON>
   <SINHCON_PHAUTHUAT>${esc(data.SINHCON_PHAUTHUAT || '0')}</SINHCON_PHAUTHUAT>
   <SINHCON_DUOI32TUAN>${esc(data.SINHCON_DUOI32TUAN || '0')}</SINHCON_DUOI32TUAN>
   <NGUOI_DO_DE>${esc(data.NGUOI_DO_DE)}</NGUOI_DO_DE>
   <NGUOI_GHI_PHIEU>${esc(data.NGUOI_GHI_PHIEU)}</NGUOI_GHI_PHIEU>
   <THU_TRUONG_DVI>${esc(data.THU_TRUONG_DVI)}</THU_TRUONG_DVI>
-  <NGAY_CT>${fmtDate(data.NGAY_CT)}</NGAY_CT>
+  <NGAY_CT>${fmtDate(data.NGAY_CT, true)}</NGAY_CT>
 </GIAYCHUNGSINH>`;
 }
 
@@ -181,15 +171,15 @@ export function buildCT06Content(data: Record<string, string>): string {
   <MA_THE>${esc(data.MA_THE)}</MA_THE>
   <HO_TEN>${esc(data.HO_TEN)}</HO_TEN>
   <NGAY_SINH>${fmtDate(data.NGAY_SINH)}</NGAY_SINH>
-  <NGAY_VAO>${fmtDate(data.NGAY_VAO)}</NGAY_VAO>
-  <NGAY_RA>${fmtDate(data.NGAY_RA)}</NGAY_RA>
+  <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
+  <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
   <CHAN_DOAN>${esc(data.CHAN_DOAN)}</CHAN_DOAN>
   <NGUOI_DAI_DIEN>${esc(data.NGUOI_DAI_DIEN)}</NGUOI_DAI_DIEN>
   <MA_BS>${esc(data.MA_BS)}</MA_BS>
   <TEN_BS>${esc(data.TEN_BS)}</TEN_BS>
   <TEN_DVI>${esc(data.TEN_DVI)}</TEN_DVI>
   <SO_KCB>${esc(data.SO_KCB)}</SO_KCB>
-  <NGAY_CT>${fmtDate(data.NGAY_CT)}</NGAY_CT>
+  <NGAY_CT>${fmtDate(data.NGAY_CT, true)}</NGAY_CT>
   <MA_CT>${esc(data.MA_CT || 'CT06')}</MA_CT>
 </GIAYXACNHANNGHIDUONGTHAI>`;
 }
@@ -203,7 +193,7 @@ export function buildCT07Content(data: Record<string, string>): string {
   <MAU_SO>${esc(data.MAU_SO || 'CT07')}</MAU_SO>
   <SO_SERI>${esc(data.SO_SERI)}</SO_SERI>
   <SO_KCB>${esc(data.SO_KCB)}</SO_KCB>
-  <NGAY_KCB>${fmtDate(data.NGAY_KCB)}</NGAY_KCB>
+  <NGAY_KCB>${fmtDate(data.NGAY_KCB, true)}</NGAY_KCB>
   <MA_BHXH>${esc(data.MA_BHXH)}</MA_BHXH>
   <MA_THE>${esc(data.MA_THE)}</MA_THE>
   <HO_TEN>${esc(data.HO_TEN)}</HO_TEN>
@@ -211,8 +201,8 @@ export function buildCT07Content(data: Record<string, string>): string {
   <GIOI_TINH>${esc(data.GIOI_TINH)}</GIOI_TINH>
   <DON_VI>${esc(data.DON_VI)}</DON_VI>
   <CHANDOAN_DIEUTRI>${esc(data.CHANDOAN_DIEUTRI)}</CHANDOAN_DIEUTRI>
-  <TU_NGAY>${fmtDate(data.TU_NGAY)}</TU_NGAY>
-  <DEN_NGAY>${fmtDate(data.DEN_NGAY)}</DEN_NGAY>
+  <TU_NGAY>${fmtDate(data.TU_NGAY, true)}</TU_NGAY>
+  <DEN_NGAY>${fmtDate(data.DEN_NGAY, true)}</DEN_NGAY>
   <HO_TEN_CHA>${esc(data.HO_TEN_CHA)}</HO_TEN_CHA>
   <HO_TEN_ME>${esc(data.HO_TEN_ME)}</HO_TEN_ME>
   <TEKT>${esc(data.TEKT || '0')}</TEKT>
@@ -223,7 +213,7 @@ export function buildCT07Content(data: Record<string, string>): string {
   <THU_TRUONG_DV>${esc(data.THU_TRUONG_DV)}</THU_TRUONG_DV>
   <MA_CCHN>${esc(data.MA_CCHN)}</MA_CCHN>
   <TEN_NGUOI_HANH_NGHE>${esc(data.TEN_NGUOI_HANH_NGHE)}</TEN_NGUOI_HANH_NGHE>
-  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU)}</NGAY_CHUNG_TU>
+  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU, true)}</NGAY_CHUNG_TU>
 </GIAYCHUNGNHANNGHIVIEC>`;
 }
 
