@@ -24,7 +24,7 @@
 
 import { parseDateStr, parseShortDateStr } from './data-utils';
 
-export type DocType = 'CT03' | 'CT04' | 'CT05' | 'CT06' | 'CT07' | 'GIAYDIEUTRINOITRU' | 'GIAYDIEUTRIVOSINH' | 'GIAYSUCKHOEME';
+export type DocType = 'CT03' | 'CT04' | 'CT05' | 'CT06' | 'CT07' | 'GIAYDIEUTRINOITRU' | 'GIAYDIEUTRIVOSINH' | 'GIAYSUCKHOEME' | 'KHAM_SUC_KHOE';
 
 /** Mã loaiHs để đẩy API cổng BHXH */
 export const LOAI_HS_MAP: Record<string, string> = {
@@ -301,11 +301,17 @@ export function embedSignatureInXml(xmlString: string, signatureBase64: string, 
     </Signature>
   </CHUKYDONVI>`;
 
-  // Thay thế <CHUKYDONVI/> rỗng hoặc thêm vào trước đóng </HSCHUNGTU>
+  // Thay thế <CHUKYDONVI/> rỗng hoặc thêm vào trước thẻ đóng tương ứng
   if (xmlString.includes('<CHUKYDONVI/>')) {
     return xmlString.replace('<CHUKYDONVI/>', sigBlock);
   }
-  return xmlString.replace('</HSCHUNGTU>', sigBlock + '\n</HSCHUNGTU>');
+  if (xmlString.includes('</HSCHUNGTU>')) {
+    return xmlString.replace('</HSCHUNGTU>', sigBlock + '\n</HSCHUNGTU>');
+  }
+  if (xmlString.includes('</DU_LIEU_KHAM_SUC_KHOE>')) {
+    return xmlString.replace('</DU_LIEU_KHAM_SUC_KHOE>', sigBlock + '\n</DU_LIEU_KHAM_SUC_KHOE>');
+  }
+  return xmlString + sigBlock;
 }
 
 /**

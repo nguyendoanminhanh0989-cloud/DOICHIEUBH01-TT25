@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -8,13 +8,18 @@ import {
 import { cn } from '../lib/utils';
 import { buildKskXml } from '../lib/kskXmlBuilder';
 import KskConfigModal, { KskConfig } from './KskConfigModal';
+import KySoModal from './KySoModal';
+import type { HoSoRecord } from '../lib/signAndSubmitService';
 
 export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
-  const [records, setRecords] = useState<any[]>([]);
+  const [records, setRecords] = useState<HoSoRecord[]>([]);
   const [fileName, setFileName] = useState('');
   const [activeTab, setActiveTab] = useState<'upload' | 'preview'>('upload');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [config, setConfig] = useState<KskConfig | null>(null);
+  
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [kySoMode, setKySoMode] = useState<'sign' | 'submit' | 'sign_then_submit' | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('ksk_config');
@@ -43,15 +48,38 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
         if (rawData.length > 2) {
           const keys = rawData[1];
           const dataRows = rawData.slice(2).filter(row => row.some(cell => cell !== ''));
-          const parsedRecords = dataRows.map(row => {
+          const parsedRecords: HoSoRecord[] = dataRows.map((row, index) => {
             const obj: any = {};
             keys.forEach((k: string, i: number) => {
               if (k) obj[k] = row[i];
             });
-            return obj;
+            // Pre-build XML for each record
+            const xmlContent = buildKskXml([obj], obj.MA_CSKCB || '00000');
+            return {
+              id: `${Date.now()}_${index}`,
+              type: 'KHAM_SUC_KHOE',
+              hoTen: obj.HO_TEN || 'Không rõ',
+              maBhyt: '',
+              maBhxh: '',
+              cccd: obj.SO_CCCD || '',
+              khoa: '',
+              ngayVao: '',
+              ngayRa: '',
+              icd: '',
+              chanDoan: '',
+              nguoiKy: '',
+              cchn: '',
+              trangThai: 'UNSIGNED',
+              rawData: obj,
+              xmlContent,
+              displayFields: {
+                khoaPrimary: '', khoaSecondary: '', chanDoanPrimary: '', chanDoanSecondary: '', nguoiKyPrimary: '', nguoiKySecondary: ''
+              }
+            };
           });
           setRecords(parsedRecords);
           setActiveTab('preview');
+          setSelectedIds(new Set(parsedRecords.map(r => r.id))); // select all by default
         }
       } else {
         alert('Không tìm thấy sheet dữ liệu Khám sức khỏe hợp lệ (Trên 18, 6>Duoi 18, Duoi 6)');
@@ -62,16 +90,49 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
 
   const handleExportXML = () => {
     if (records.length === 0) return;
-    const xmlStr = buildKskXml(records, records[0]?.MA_CSKCB || '00000');
+    const selectedRecords = records.filter(r => selectedIds.has(r.id));
+    if (selectedRecords.length === 0) {
+      alert('Vui lòng chọn ít nhất 1 bản ghi để xuất XML');
+      return;
+    }
+    const rawDataArray = selectedRecords.map(r => r.rawData);
+    const xmlStr = buildKskXml(rawDataArray, rawDataArray[0]?.MA_CSKCB || '00000');
     const blob = new Blob([xmlStr], { type: 'application/xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `KSK_${records[0]?.MA_CSKCB || 'XML'}_${new Date().getTime()}.xml`;
+    a.download = `KSK_${rawDataArray[0]?.MA_CSKCB || 'XML'}_${new Date().getTime()}.xml`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
   };
+
+  const handleKySoComplete = (updated: HoSoRecord[]) => {
+    setRecords(prev => {
+      const map = new Map(prev.map(r => [r.id, r]));
+      updated.forEach(r => map.set(r.id, r));
+      return Array.from(map.values());
+    });
+    setKySoMode(null);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === records.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(records.map(r => r.id)));
+    }
+  };
+
+  const selectedRecords = records.filter(r => selectedIds.has(r.id));
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-emerald-200">
@@ -122,7 +183,7 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
             disabled={records.length === 0}
             className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", activeTab === 'preview' ? "bg-emerald-100 text-emerald-800" : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200", records.length === 0 && "opacity-50 cursor-not-allowed")}
           >
-            Dữ liệu & Xuất XML
+            Dữ liệu & Xử lý
           </button>
         </div>
 
@@ -147,14 +208,26 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
         {activeTab === 'preview' && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-[calc(100vh-200px)]">
             <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-              <h3 className="font-bold">Danh sách bản ghi ({records.length})</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="font-bold">Danh sách bản ghi ({records.length})</h3>
+                <span className="text-xs font-bold text-slate-500 bg-slate-200 px-2 py-1 rounded-md">Đã chọn: {selectedIds.size}</span>
+              </div>
               <div className="flex gap-2">
                 <button
                   onClick={handleExportXML}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 flex items-center gap-2"
+                  disabled={selectedIds.size === 0}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 border border-slate-300 rounded-lg font-bold text-sm hover:bg-slate-200 flex items-center gap-2 disabled:opacity-50"
                 >
                   <Download className="w-4 h-4" />
                   Xuất XML
+                </button>
+                <button
+                  onClick={() => setKySoMode('sign')}
+                  disabled={selectedIds.size === 0}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  Ký số Token/SmartCA
                 </button>
                 <button
                   onClick={() => {
@@ -163,34 +236,71 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
                       setIsConfigOpen(true);
                       return;
                     }
-                    alert('Chức năng ký số và đẩy API đang được hoàn thiện.');
+                    alert('Chức năng đẩy trực tiếp lên EMRHUB đang hoàn thiện. Hiện tại bạn có thể xuất XML đã ký để xử lý.');
                   }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 flex items-center gap-2"
+                  disabled={selectedIds.size === 0}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm hover:bg-emerald-700 flex items-center gap-2 disabled:opacity-50"
                 >
                   <Send className="w-4 h-4" />
-                  Đẩy lên Cổng
+                  Đẩy lên Cổng EMRHUB
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-0">
               <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="bg-slate-100">
-                    <th className="p-2 border font-semibold">Mã CSKCB</th>
-                    <th className="p-2 border font-semibold">Họ tên</th>
-                    <th className="p-2 border font-semibold">CCCD</th>
-                    <th className="p-2 border font-semibold">Ngày sinh</th>
-                    <th className="p-2 border font-semibold">Giới tính</th>
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-slate-100 shadow-sm">
+                    <th className="p-3 border-b border-r w-10 text-center">
+                      <input 
+                        type="checkbox" 
+                        className="rounded border-slate-300 w-4 h-4 text-emerald-600"
+                        checked={selectedIds.size === records.length && records.length > 0}
+                        onChange={toggleSelectAll}
+                      />
+                    </th>
+                    <th className="p-3 border-b border-r font-semibold">Trạng thái</th>
+                    <th className="p-3 border-b border-r font-semibold">Mã CSKCB</th>
+                    <th className="p-3 border-b border-r font-semibold">Họ tên</th>
+                    <th className="p-3 border-b border-r font-semibold">CCCD</th>
+                    <th className="p-3 border-b border-r font-semibold">Ngày sinh</th>
+                    <th className="p-3 border-b font-semibold">Giới tính</th>
                   </tr>
                 </thead>
                 <tbody>
                   {records.map((r, i) => (
-                    <tr key={i} className="hover:bg-slate-50">
-                      <td className="p-2 border">{r.MA_CSKCB}</td>
-                      <td className="p-2 border">{r.HO_TEN}</td>
-                      <td className="p-2 border">{r.SO_CCCD}</td>
-                      <td className="p-2 border">{r.NGAY_SINH}</td>
-                      <td className="p-2 border">{r.GIOI_TINH}</td>
+                    <tr 
+                      key={r.id} 
+                      className={cn("hover:bg-slate-50 cursor-pointer", selectedIds.has(r.id) && "bg-emerald-50/50")}
+                      onClick={() => toggleSelect(r.id)}
+                    >
+                      <td className="p-3 border-b border-r text-center" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-slate-300 w-4 h-4 text-emerald-600"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelect(r.id)}
+                        />
+                      </td>
+                      <td className="p-3 border-b border-r">
+                        {r.trangThai === 'SIGNED' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 text-xs font-bold border border-emerald-200">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Đã ký số
+                          </span>
+                        ) : r.trangThai === 'SIGN_FAILED' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-100 text-rose-700 text-xs font-bold border border-rose-200">
+                            <XCircle className="w-3.5 h-3.5" /> Lỗi ký
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
+                            <FileText className="w-3.5 h-3.5" /> Chưa ký
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 border-b border-r">{r.rawData.MA_CSKCB}</td>
+                      <td className="p-3 border-b border-r font-medium text-slate-900">{r.rawData.HO_TEN}</td>
+                      <td className="p-3 border-b border-r">{r.rawData.SO_CCCD}</td>
+                      <td className="p-3 border-b border-r">{r.rawData.NGAY_SINH}</td>
+                      <td className="p-3 border-b">{r.rawData.GIOI_TINH}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -205,6 +315,15 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
         onClose={() => setIsConfigOpen(false)} 
         onSave={(newConfig) => setConfig(newConfig)} 
       />
+
+      {kySoMode && (
+        <KySoModal
+          records={selectedRecords}
+          mode={kySoMode}
+          onClose={() => setKySoMode(null)}
+          onComplete={handleKySoComplete}
+        />
+      )}
     </div>
   );
 }
