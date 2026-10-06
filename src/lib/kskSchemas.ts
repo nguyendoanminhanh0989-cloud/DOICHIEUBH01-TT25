@@ -9,6 +9,8 @@
  * Excel và xuất XML dùng chung một bộ key, không cần ánh xạ trung gian.
  */
 
+import { PROVINCES } from './diaPhuong';
+
 export type KskType = 'ChildUnder' | 'Minor' | 'Adult';
 
 export type KskFieldKind =
@@ -200,6 +202,11 @@ export const OPT_NHOM_MAU: KskOption[] = [
   { value: 'O', label: 'O' },
 ];
 
+export const OPT_TINH: KskOption[] = Object.entries(PROVINCES).map(([value, label]) => ({
+  value,
+  label
+}));
+
 export const OPT_MA_LOAI_KCB: KskOption[] = [
   { value: '01', label: '01 - Khám bệnh' },
   { value: '02', label: '02 - Điều trị ngoại trú' },
@@ -285,8 +292,8 @@ const lanKham = (): KskSection => ({
 });
 
 const diaChi = (): KskField[] => [
-  t('MATINH_CU_TRU', 'Mã tỉnh/thành phố nơi ở hiện tại', { span: 4, placeholder: 'VD: 01' }),
-  t('MAXA_CU_TRU', 'Mã xã/phường nơi ở hiện tại', { span: 4, placeholder: 'VD: 00004' }),
+  sel('MATINH_CU_TRU', 'Tỉnh/Thành phố', OPT_TINH, { span: 4 }),
+  sel('MAXA_CU_TRU', 'Phường/Xã', [], { span: 4 }),
   sel('NHOM_MAU', 'Nhóm máu', OPT_NHOM_MAU),
   t('DIA_CHI', 'Địa chỉ hiện tại (số nhà, thôn, xóm...)', { span: 12 }),
 ];

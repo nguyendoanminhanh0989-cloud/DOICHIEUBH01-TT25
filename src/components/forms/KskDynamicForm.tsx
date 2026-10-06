@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Upload, Save, PenTool, Printer, X, FileUp, Plus, Search, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { KskType, KSK_SCHEMAS, KskField } from '../../lib/kskSchemas';
+import { COMMUNES_BY_PROVINCE } from '../../lib/diaPhuong';
 
 interface KskDynamicFormProps {
   type: KskType;
@@ -16,7 +17,13 @@ export default function KskDynamicForm({ type, onClose, onSave, initialData = {}
   const [formData, setFormData] = useState<any>(initialData);
 
   const handleInputChange = (field: string, value: any) => {
-    setFormData((prev: any) => ({ ...prev, [field]: value }));
+    setFormData((prev: any) => {
+      const newData = { ...prev, [field]: value };
+      if (field === 'MATINH_CU_TRU') {
+        newData['MAXA_CU_TRU'] = '';
+      }
+      return newData;
+    });
   };
 
   const renderField = (field: KskField) => {
@@ -67,18 +74,25 @@ export default function KskDynamicForm({ type, onClose, onSave, initialData = {}
           />
         )}
         
-        {(field.kind === 'select' || field.kind === 'phanloai') && (
-          <select
-            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
-            value={val}
-            onChange={(e) => handleInputChange(field.key, e.target.value)}
-          >
-            <option value="">-- Chọn --</option>
-            {field.options?.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        )}
+        {(field.kind === 'select' || field.kind === 'phanloai') && (() => {
+          let optionsToRender = field.options;
+          if (field.key === 'MAXA_CU_TRU') {
+            const maTinh = formData['MATINH_CU_TRU'];
+            optionsToRender = maTinh && COMMUNES_BY_PROVINCE[maTinh] ? COMMUNES_BY_PROVINCE[maTinh] : [];
+          }
+          return (
+            <select
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+              value={val}
+              onChange={(e) => handleInputChange(field.key, e.target.value)}
+            >
+              <option value="">-- Chọn --</option>
+              {optionsToRender?.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          );
+        })()}
         
         {field.kind === 'yesno' && (
           <div className="flex items-center gap-4 mt-2">
