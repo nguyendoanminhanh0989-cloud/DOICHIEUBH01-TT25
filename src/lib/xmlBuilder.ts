@@ -286,6 +286,16 @@ export async function computeXmlHashBase64(xmlString: string): Promise<string> {
  * Nhúng chữ ký số vào XML wrapper - đúng chuẩn XMLDSig
  */
 export function embedSignatureInXml(xmlString: string, signatureBase64: string, certBase64?: string): string {
+  if (xmlString.includes('<KHAMSUCKHOE')) {
+    const kskSigBlock = `
+  <CHUKYDONVI>
+    <CKS_NGUOI_KET_LUAN>${signatureBase64}</CKS_NGUOI_KET_LUAN>
+    <CKS_BENH_VIEN>${signatureBase64}</CKS_BENH_VIEN>
+  </CHUKYDONVI>`;
+    return xmlString.replace('</KHAMSUCKHOE>', kskSigBlock + '\n</KHAMSUCKHOE>');
+  }
+
+  // Định dạng chữ ký chuẩn XMLDSig cho BHXH
   const sigBlock = `
   <CHUKYDONVI>
     <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
