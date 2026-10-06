@@ -733,9 +733,19 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                          r.trangThai === 'SIGNING' ? '⏳ Đang ký...' : '⚠️ Chưa ký số'}
                       </span>
                       {r.errors && r.errors.length > 0 && (
-                        <div className="text-[9px] text-rose-600 font-semibold mt-1 leading-tight max-w-[120px] truncate" title={r.errors.join('\n')}>
-                          {r.errors[0]} {r.errors.length > 1 && `(+${r.errors.length - 1} lỗi)`}
-                        </div>
+                        <details className="mt-1 relative group cursor-pointer text-[10px] w-full">
+                          <summary className="text-rose-600 font-semibold leading-tight list-none outline-none select-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
+                            <span className="truncate max-w-[100px] border-b border-dashed border-rose-300">
+                              {r.errors[0]} {r.errors.length > 1 && `(+${r.errors.length - 1} lỗi)`}
+                            </span>
+                            <ChevronDown className="w-3 h-3 text-rose-400 group-open:rotate-180 transition-transform" />
+                          </summary>
+                          <div className="absolute z-50 left-0 top-full mt-1 min-w-[200px] bg-white border border-rose-200 shadow-xl rounded-lg p-2 text-rose-700 font-medium space-y-1 text-left">
+                            {r.errors.map((err, i) => (
+                               <div key={i}>- {err}</div>
+                            ))}
+                          </div>
+                        </details>
                       )}
                       {r.maGD && <div className="text-[9px] text-emerald-600 font-bold mt-1">Mã GD: {r.maGD}</div>}
                     </td>

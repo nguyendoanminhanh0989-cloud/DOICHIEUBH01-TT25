@@ -208,11 +208,16 @@ export function validateRecord(type: HoSoType, raw: Record<string, string>): str
     }
   };
 
-  req('HO_TEN', 'Họ tên');
-  
+  if (type === 'CT05') {
+    req('HOTEN_NND', 'Họ tên mẹ/sản phụ');
+  } else {
+    req('HO_TEN', 'Họ tên');
+  }
+
   if (type === 'CT03') {
     req('NGAY_VAO', 'Ngày vào');
     req('NGAY_RA', 'Ngày ra');
+    req('MA_KHOA', 'Mã khoa');
     checkDate('NGAY_VAO', 'Ngày vào', true);
     checkDate('NGAY_RA', 'Ngày ra', true);
   } else if (type === 'CT04') {
