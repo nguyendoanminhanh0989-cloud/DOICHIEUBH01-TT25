@@ -33,7 +33,8 @@ export default function SearchableSelect({ options, value, onChange, placeholder
   const selectedOption = options.find(o => o.value === value);
   
   const filteredOptions = options.filter(o => 
-    o.label.toLowerCase().includes(searchTerm.toLowerCase()) || o.value.toLowerCase().includes(searchTerm.toLowerCase())
+    (o.label ? String(o.label).toLowerCase() : '').includes((searchTerm || '').toLowerCase()) || 
+    (o.value ? String(o.value).toLowerCase() : '').includes((searchTerm || '').toLowerCase())
   );
 
   return (

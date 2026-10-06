@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Upload, Save, PenTool, Printer, X, FileUp, Plus, Search, Trash2 } from 'lucide-react';
+import { Upload, Save, PenTool, Printer, X, FileUp, Plus, Search, Trash2, ShieldCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { KskType, KSK_SCHEMAS, KskField } from '../../lib/kskSchemas';
 import { COMMUNES_BY_PROVINCE } from '../../lib/diaPhuong';
