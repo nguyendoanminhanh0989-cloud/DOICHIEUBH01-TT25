@@ -26,7 +26,7 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [kySoMode, setKySoMode] = useState<'sign' | 'submit' | 'sign_then_submit' | null>(null);
   
-  const [showKskForm, setShowKskForm] = useState<KskType | null>(null);
+  const [showKskForm, setShowKskForm] = useState<{ type: KskType; recordId?: string; initialData?: any } | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('ksk_config');
@@ -181,21 +181,21 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
           
           <div className="flex gap-2">
             <button
-              onClick={() => setShowKskForm('Adult')}
+              onClick={() => setShowKskForm({ type: 'Adult' })}
               className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-2"
             >
               <FileText className="w-4 h-4" />
               Nhập KSK (Trên 18 tuổi)
             </button>
             <button
-              onClick={() => setShowKskForm('Minor')}
+              onClick={() => setShowKskForm({ type: 'Minor' })}
               className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-indigo-600 text-white hover:bg-indigo-700 flex items-center gap-2"
             >
               <FileText className="w-4 h-4" />
               Nhập KSK (6 - 18 tuổi)
             </button>
             <button
-              onClick={() => setShowKskForm('ChildUnder')}
+              onClick={() => setShowKskForm({ type: 'ChildUnder' })}
               className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
             >
               <FileText className="w-4 h-4" />
@@ -298,6 +298,7 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
                         onChange={toggleSelectAll}
                       />
                     </th>
+                    <th className="p-3 border-b border-r font-semibold w-24">Thao tác</th>
                     <th className="p-3 border-b border-r font-semibold">Trạng thái</th>
                     <th className="p-3 border-b border-r font-semibold">Mã CSKCB</th>
                     <th className="p-3 border-b border-r font-semibold">Họ tên</th>
@@ -323,6 +324,14 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
                           checked={selectedIds.has(r.id)}
                           onChange={() => toggleSelect(r.id)}
                         />
+                      </td>
+                      <td className="p-3 border-b border-r text-center" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setShowKskForm({ type: (r as any).kskType || (r.rawData.TYPE as KskType) || 'Adult', recordId: r.id, initialData: r.rawData })}
+                          className="px-2 py-1 bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-700 rounded text-xs font-semibold border border-slate-200 transition-colors"
+                        >
+                          Sửa
+                        </button>
                       </td>
                       <td className="p-3 border-b border-r">
                         {r.trangThai === 'SIGNED' ? (
@@ -385,12 +394,18 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
 
       {showKskForm && (
         <KskDynamicForm
-          type={showKskForm}
+          type={showKskForm.type}
+          initialData={showKskForm.initialData}
           onClose={() => setShowKskForm(null)}
           onSave={(data) => {
-            const newRecord = createKskHoSoRecord(data, showKskForm, { source: 'manual' });
-            setRecords(prev => [newRecord, ...prev]);
-            setSelectedIds(prev => new Set([...Array.from(prev), newRecord.id]));
+            if (showKskForm.recordId) {
+              const updatedRecord = createKskHoSoRecord(data, showKskForm.type, { id: showKskForm.recordId, source: 'manual' });
+              setRecords(prev => prev.map(r => r.id === showKskForm.recordId ? updatedRecord : r));
+            } else {
+              const newRecord = createKskHoSoRecord(data, showKskForm.type, { source: 'manual' });
+              setRecords(prev => [newRecord, ...prev]);
+              setSelectedIds(prev => new Set([...Array.from(prev), newRecord.id]));
+            }
             setShowKskForm(null);
             setActiveTab('preview');
           }}

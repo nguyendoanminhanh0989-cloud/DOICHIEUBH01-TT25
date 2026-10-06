@@ -18,7 +18,8 @@ export type KskFieldKind =
   | 'datetime'
   | 'select'
   | 'yesno'
-  | 'phanloai';
+  | 'phanloai'
+  | 'signature';
 
 export interface KskOption {
   value: string;
@@ -33,8 +34,9 @@ export interface KskField {
   required?: boolean;
   placeholder?: string;
   hint?: string;
+  hideLabel?: boolean;
   /** Số cột chiếm trong lưới 12 cột */
-  span?: 2 | 3 | 4 | 6 | 8 | 12;
+  span?: 2 | 3 | 4 | 6 | 7 | 8 | 9 | 12;
 }
 
 export interface KskSection {
@@ -154,11 +156,36 @@ const pl = (key: string, label = 'Phân loại', extra: Extra = {}): KskField =>
 });
 const tc = (key: string, label: string): KskField => sel(key, label, OPT_TIEM_CHUNG);
 
-/** Kết quả khám (8 cột) + phân loại (4 cột) */
-const kq = (key: string, label: string, plKey: string): KskField[] => [
-  t(key, label, { span: 8, placeholder: 'Nhập kết quả khám' }),
-  pl(plKey),
-];
+/** Kết quả khám + phân loại + chữ ký */
+const kq = (key: string, label: string, plKey?: string, sigKey?: string, isFirstSigInGroup = false): KskField[] => {
+  const hasPl = !!plKey;
+  const hasSig = !!sigKey;
+
+  let textSpan: any = 12;
+  let plSpan: any = 0;
+  let sigSpan: any = 0;
+
+  if (hasPl && hasSig) { textSpan = 6; plSpan = 3; sigSpan = 3; }
+  else if (hasPl && !hasSig) { textSpan = 8; plSpan = 4; sigSpan = 0; }
+  else if (!hasPl && hasSig) { textSpan = 9; plSpan = 0; sigSpan = 3; }
+
+  const fields: KskField[] = [
+    t(key, label, { span: textSpan, placeholder: 'Nhập kết quả khám' })
+  ];
+
+  if (hasPl) fields.push(pl(plKey!, 'Phân loại', { span: plSpan }));
+  
+  if (hasSig) {
+    fields.push({ 
+      key: sigKey!, 
+      label: isFirstSigInGroup ? 'Họ tên và chữ ký Bác sĩ' : 'Chữ ký Bác sĩ', 
+      kind: 'signature', 
+      span: sigSpan 
+    });
+  }
+
+  return fields;
+};
 
 /* ------------------------- Khối trường dùng chung ------------------------- */
 
@@ -194,17 +221,19 @@ const theLuc = (): KskSection => ({
   ],
 });
 
+const OPT_THI_LUC = Array.from({ length: 11 }, (_, i) => ({ value: `${i}/10`, label: `${i}/10` }));
+
 const matTmhRhm = (withPl: boolean): KskSection[] => [
   {
     title: 'Khám mắt',
     fields: [
-      t('KHONG_KINH_MAT_PHAI', 'Thị lực không kính - Mắt phải', { span: 3, placeholder: '10/10' }),
-      t('KHONG_KINH_MAT_TRAI', 'Thị lực không kính - Mắt trái', { span: 3, placeholder: '10/10' }),
-      t('CO_KINH_MAT_PHAI', 'Thị lực có kính - Mắt phải', { span: 3, placeholder: '10/10' }),
-      t('CO_KINH_MAT_TRAI', 'Thị lực có kính - Mắt trái', { span: 3, placeholder: '10/10' }),
+      sel('KHONG_KINH_MAT_PHAI', 'Thị lực không kính - Phải', OPT_THI_LUC, { span: 3 }),
+      sel('KHONG_KINH_MAT_TRAI', 'Thị lực không kính - Trái', OPT_THI_LUC, { span: 3 }),
+      sel('CO_KINH_MAT_PHAI', 'Thị lực có kính - Phải', OPT_THI_LUC, { span: 3 }),
+      sel('CO_KINH_MAT_TRAI', 'Thị lực có kính - Trái', OPT_THI_LUC, { span: 3 }),
       ...(withPl
-        ? kq('BENH_KHAC_MAT', 'Các bệnh về mắt (nếu có)', 'KHAM_MAT_PL')
-        : [t('BENH_KHAC_MAT', 'Các bệnh về mắt (nếu có)', { span: 12 })]),
+        ? kq('BENH_KHAC_MAT', 'Các bệnh về mắt (nếu có)', 'KHAM_MAT_PL', 'CKDT_KHAM_MAT', true)
+        : kq('BENH_KHAC_MAT', 'Các bệnh về mắt (nếu có)', undefined, 'CKDT_KHAM_MAT', true)),
     ],
   },
   {
@@ -215,8 +244,8 @@ const matTmhRhm = (withPl: boolean): KskSection[] => [
       t('TAI_PHAI_NOI_THUONG', 'Tai phải - nói thường (m)', { span: 3, placeholder: '5' }),
       t('TAI_PHAI_NOI_THAM', 'Tai phải - nói thầm (m)', { span: 3, placeholder: '0.5' }),
       ...(withPl
-        ? kq('BENH_KHAC_TAI_MUI_HONG', 'Các bệnh về tai mũi họng (nếu có)', 'KHAM_TAI_MUI_HONG_PL')
-        : [t('BENH_KHAC_TAI_MUI_HONG', 'Các bệnh về tai mũi họng (nếu có)', { span: 12 })]),
+        ? kq('BENH_KHAC_TAI_MUI_HONG', 'Các bệnh về tai mũi họng (nếu có)', 'KHAM_TAI_MUI_HONG_PL', 'CKDT_KHAM_TAI_MUI_HONG', true)
+        : kq('BENH_KHAC_TAI_MUI_HONG', 'Các bệnh về tai mũi họng (nếu có)', undefined, 'CKDT_KHAM_TAI_MUI_HONG', true)),
     ],
   },
   {
@@ -225,8 +254,8 @@ const matTmhRhm = (withPl: boolean): KskSection[] => [
       t('HAM_TREN', 'Hàm trên', { span: 6 }),
       t('HAM_DUOI', 'Hàm dưới', { span: 6 }),
       ...(withPl
-        ? kq('BENH_KHAC_RANG_HAM_MAT', 'Các bệnh về răng - hàm - mặt (nếu có)', 'KHAM_RANG_HAM_MAT_PL')
-        : [t('BENH_KHAC_RANG_HAM_MAT', 'Các bệnh về răng - hàm - mặt (nếu có)', { span: 12 })]),
+        ? kq('BENH_KHAC_RANG_HAM_MAT', 'Các bệnh về răng - hàm - mặt (nếu có)', 'KHAM_RANG_HAM_MAT_PL', 'CKDT_KHAM_RANG_HAM_MAT', true)
+        : kq('BENH_KHAC_RANG_HAM_MAT', 'Các bệnh về răng - hàm - mặt (nếu có)', undefined, 'CKDT_KHAM_RANG_HAM_MAT', true)),
     ],
   },
 ];
@@ -325,19 +354,19 @@ const ADULT: KskSchema = {
         {
           title: '1. Nội khoa',
           fields: [
-            ...kq('NOI_KHOA_TUAN_HOAN', 'a. Tuần hoàn', 'NOI_KHOA_TUAN_HOAN_PL'),
-            ...kq('NOI_KHOA_HO_HAP', 'b. Hô hấp', 'NOI_KHOA_HO_HAP_PL'),
-            ...kq('NOI_KHOA_TIEU_HOA', 'c. Tiêu hóa', 'NOI_KHOA_TIEU_HOA_PL'),
-            ...kq('NOI_KHOA_THAN_TN_SD', 'd. Thận - Tiết niệu - Sinh dục', 'NOI_KHOA_THAN_TN_SD_PL'),
-            ...kq('NOI_KHOA_NOI_TIET', 'đ. Nội tiết', 'NOI_KHOA_NOI_TIET_PL'),
-            ...kq('NOI_KHOA_CO_XUONG_KHOP', 'e. Cơ - Xương - Khớp', 'NOI_KHOA_CO_XUONG_KHOP_PL'),
-            ...kq('NOI_KHOA_THAN_KINH', 'g. Thần kinh', 'NOI_KHOA_THAN_KINH_PL'),
-            ...kq('NOI_KHOA_TAM_THAN', 'h. Tâm thần', 'NOI_KHOA_TAM_THAN_PL'),
+            ...kq('NOI_KHOA_TUAN_HOAN', 'a. Tuần hoàn', 'NOI_KHOA_TUAN_HOAN_PL', 'CKDT_NOI_KHOA_TUAN_HOAN', true),
+            ...kq('NOI_KHOA_HO_HAP', 'b. Hô hấp', 'NOI_KHOA_HO_HAP_PL', 'CKDT_NOI_KHOA_HO_HAP'),
+            ...kq('NOI_KHOA_TIEU_HOA', 'c. Tiêu hóa', 'NOI_KHOA_TIEU_HOA_PL', 'CKDT_NOI_KHOA_TIEU_HOA'),
+            ...kq('NOI_KHOA_THAN_TN_SD', 'd. Thận - Tiết niệu - Sinh dục', 'NOI_KHOA_THAN_TN_SD_PL', 'CKDT_NOI_KHOA_THAN_TN_SD'),
+            ...kq('NOI_KHOA_NOI_TIET', 'đ. Nội tiết', 'NOI_KHOA_NOI_TIET_PL', 'CKDT_NOI_KHOA_NOI_TIET'),
+            ...kq('NOI_KHOA_CO_XUONG_KHOP', 'e. Cơ - Xương - Khớp', 'NOI_KHOA_CO_XUONG_KHOP_PL', 'CKDT_NOI_KHOA_CO_XUONG_KHOP'),
+            ...kq('NOI_KHOA_THAN_KINH', 'g. Thần kinh', 'NOI_KHOA_THAN_KINH_PL', 'CKDT_NOI_KHOA_THAN_KINH'),
+            ...kq('NOI_KHOA_TAM_THAN', 'h. Tâm thần', 'NOI_KHOA_TAM_THAN_PL', 'CKDT_NOI_KHOA_TAM_THAN'),
           ],
         },
-        { title: '2. Ngoại khoa', fields: kq('KET_QUA_KHAM_NGOAI_KHOA', 'Kết quả khám ngoại khoa', 'KHAM_NGOAI_KHOA_PL') },
-        { title: '3. Da liễu', fields: kq('KET_QUA_KHAM_DA_LIEU', 'Kết quả khám da liễu', 'KHAM_DA_LIEU_PL') },
-        { title: '4. Sản phụ khoa', fields: kq('KET_QUA_KHAM_SAN_PHU_KHOA', 'Kết quả khám sản phụ khoa', 'KHAM_SAN_PHU_KHOA_PL') },
+        { title: '2. Ngoại khoa', fields: kq('KET_QUA_KHAM_NGOAI_KHOA', 'Kết quả khám ngoại khoa', 'KHAM_NGOAI_KHOA_PL', 'CKDT_KHAM_NGOAI_KHOA', true) },
+        { title: '3. Da liễu', fields: kq('KET_QUA_KHAM_DA_LIEU', 'Kết quả khám da liễu', 'KHAM_DA_LIEU_PL', 'CKDT_KHAM_DA_LIEU', true) },
+        { title: '4. Sản phụ khoa', fields: kq('KET_QUA_KHAM_SAN_PHU_KHOA', 'Kết quả khám sản phụ khoa', 'KHAM_SAN_PHU_KHOA_PL', 'CKDT_KHAM_SAN_PHU_KHOA', true) },
         ...matTmhRhm(true),
       ],
     },
@@ -441,13 +470,13 @@ const MINOR: KskSchema = {
         {
           title: '1. Nhi khoa',
           fields: [
-            t('NHI_KHOA_TUAN_HOAN', 'Tuần hoàn', { span: 6 }),
-            t('NHI_KHOA_HO_HAP', 'Hô hấp', { span: 6 }),
-            t('NHI_KHOA_TIEU_HOA', 'Tiêu hóa', { span: 6 }),
-            t('NHI_KHOA_THAN_TN_SD', 'Thận - Tiết niệu - Sinh dục', { span: 6 }),
-            t('NHI_KHOA_THAN_KINH', 'Thần kinh', { span: 6 }),
-            t('NHI_KHOA_TAM_THAN', 'Tâm thần', { span: 6 }),
-            t('NHI_KHOA_LAM_SANG_KHAC', 'Khám lâm sàng khác', { span: 12 }),
+            ...kq('NHI_KHOA_TUAN_HOAN', 'Tuần hoàn', undefined, 'CKDT_NHI_KHOA_TUAN_HOAN', true),
+            ...kq('NHI_KHOA_HO_HAP', 'Hô hấp', undefined, 'CKDT_NHI_KHOA_HO_HAP'),
+            ...kq('NHI_KHOA_TIEU_HOA', 'Tiêu hóa', undefined, 'CKDT_NHI_KHOA_TIEU_HOA'),
+            ...kq('NHI_KHOA_THAN_TN_SD', 'Thận - Tiết niệu - Sinh dục', undefined, 'CKDT_NHI_KHOA_THAN_TN_SD'),
+            ...kq('NHI_KHOA_THAN_KINH', 'Thần kinh', undefined, 'CKDT_NHI_KHOA_THAN_KINH'),
+            ...kq('NHI_KHOA_TAM_THAN', 'Tâm thần', undefined, 'CKDT_NHI_KHOA_TAM_THAN'),
+            ...kq('NHI_KHOA_LAM_SANG_KHAC', 'Khám lâm sàng khác', undefined, 'CKDT_NHI_KHOA_LAM_SANG_KHAC'),
           ],
         },
         ...matTmhRhm(false),
@@ -599,6 +628,7 @@ const CHILD: KskSchema = {
             t('HINH_DANG_DAU', 'Kích thước và hình dạng đầu', { span: 4 }),
             t('VAN_DONG_CO', 'Vận động cổ', { span: 4 }),
             t('KHOI_BAT_THUONG_DAU_CO', 'Khối bất thường (đầu, cổ)', { span: 4 }),
+            { key: 'CKDT_DA_DAU_CO', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
           ],
         },
         {
@@ -616,6 +646,7 @@ const CHILD: KskSchema = {
             t('CHAY_NUOC_MUI', 'Chảy nước mũi', { span: 4 }),
             t('NGHET_MUI', 'Nghẹt mũi', { span: 4 }),
             t('HONG', 'Họng', { span: 4 }),
+            { key: 'CKDT_MAT_TAI_MUI_HONG', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
           ],
         },
         {
@@ -628,6 +659,7 @@ const CHILD: KskSchema = {
             t('NAM_MIENG', 'Nấm miệng', { span: 4 }),
             t('CAM_NHO_TUT_VE_SAU', 'Cằm nhỏ, tụt về sau', { span: 4 }),
             t('SAU_MANG_BAM_LO', 'Vết sâu, mảng bám, lỗ trên răng', { span: 4 }),
+            { key: 'CKDT_MIENG_RANG', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
           ],
         },
         {
@@ -641,6 +673,7 @@ const CHILD: KskSchema = {
             t('VI_TRI_MOM_TIM', 'Vị trí mỏm tim', { span: 4 }),
             t('MACH_NGOAI_VI', 'Mạch ngoại vi (mạch quay - bẹn)', { span: 4 }),
             t('TIENG_TIM', 'Nghe tim (loạn nhịp, tiếng thổi)', { span: 4 }),
+            { key: 'CKDT_HO_HAP_TIM_MACH', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
           ],
         },
         {
@@ -651,6 +684,7 @@ const CHILD: KskSchema = {
             t('KHOI_BAT_THUONG', 'Khối bất thường (bụng)', { span: 4 }),
             t('LO_HAU_MON', 'Lỗ hậu môn', { span: 4 }),
             t('CO_QUAN_SINH_DUC_NGOAI', 'Cơ quan sinh dục ngoài', { span: 4 }),
+            { key: 'CKDT_BUNG_SINH_DUC', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
           ],
         },
         {
@@ -666,6 +700,7 @@ const CHILD: KskSchema = {
             t('KIEM_TRA_LUNG_COT_SONG', 'Kiểm tra lưng, cột sống', { span: 4 }),
             t('TU_CHI_KHOP', 'Khám tứ chi và khớp', { span: 4 }),
             t('QUAN_SAT_DANG_DI', 'Quan sát dáng đi', { span: 4 }),
+            { key: 'CKDT_THAN_KINH_CO_XUONG_KHOP', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
           ],
         },
       ],
