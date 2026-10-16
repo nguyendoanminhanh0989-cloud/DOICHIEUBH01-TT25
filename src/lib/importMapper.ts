@@ -28,26 +28,90 @@ export const COLUMN_DISPLAY: Record<string, ColumnDisplayConfig> = {
   CT07: { khoaLabel: 'THỜI GIAN NGHỈ VIỆC', chanDoanLabel: 'CHẨN ĐOÁN ICD-10', nguoiKyLabel: 'BÁC SĨ / CCHN', dinhDanhLabel: 'CCCD / BHXH' },
 };
 
-export function detectDocType(fileNameLower: string, firstRow: Record<string, any>): HoSoType {
-  if (fileNameLower.includes('ct03') || fileNameLower.includes('giayravien') || fileNameLower.includes('dsgrav')) return 'CT03';
-  if (fileNameLower.includes('ct04') || fileNameLower.includes('tomtathosobenhan') || fileNameLower.includes('tomtathoso')) return 'CT04';
-  if (fileNameLower.includes('ct05') || fileNameLower.includes('chungsinh') || fileNameLower.includes('dschungsinh')) return 'CT05';
-  if (fileNameLower.includes('ct06') || fileNameLower.includes('nghiduongthai') || fileNameLower.includes('giayxacnhan')) return 'CT06';
-  if (fileNameLower.includes('ct07') || fileNameLower.includes('nghiviec') || fileNameLower.includes('nghiviechuong')) return 'CT07';
+export function normalizeHeaderKey(key: string): string {
+  return String(key ?? '')
+    .replace(/[\r\n\t]+/g, '')     // Xóa ký tự xuống dòng / tab trong cell bị wrap text (e.g. MAU_\nSO -> MAU_SO)
+    .replace(/\s+/g, '_')          // Thay khoảng trắng thành dấu gạch dưới
+    .replace(/_+/g, '_')           // Gộp nhiều dấu gạch dưới liên tiếp
+    .replace(/^_+|_+$/g, '')       // Bỏ dấu gạch dưới ở đầu/cuối
+    .toUpperCase();
+}
 
-  const maCtRaw = (firstRow['MA_CT'] || firstRow['MAU_SO'] || '').toString().toLowerCase().trim();
-  if (maCtRaw === 'ct03') return 'CT03';
-  if (maCtRaw === 'ct04') return 'CT04';
-  if (maCtRaw === 'ct05') return 'CT05';
-  if (maCtRaw === 'ct06') return 'CT06';
-  if (maCtRaw === 'ct07') return 'CT07';
+export function normalizeRow(row: Record<string, any>): Record<string, any> {
+  const normalized: Record<string, any> = {};
+  for (const [k, v] of Object.entries(row)) {
+    const cleanKey = normalizeHeaderKey(k);
+    if (cleanKey) {
+      normalized[cleanKey] = v;
+    }
+    const upperKey = k.trim().toUpperCase();
+    if (upperKey && normalized[upperKey] === undefined) {
+      normalized[upperKey] = v;
+    }
+  }
+  return normalized;
+}
 
-  const cols = Object.keys(firstRow).map(k => k.toUpperCase());
-  if (cols.includes('HOTEN_NND') || cols.includes('MA_SOBHXH_ME') || cols.includes('HO_TEN_ME')) return 'CT05';
-  if (cols.includes('CHANDOAN_DIEUTRI') && cols.includes('TU_NGAY') && cols.includes('TEN_BSY')) return 'CT07';
-  if (cols.includes('TU_NGAY') && cols.includes('TEN_BS') && cols.includes('MA_BS') && !cols.includes('TEN_BSY')) return 'CT06';
-  if (cols.includes('CHAN_DOAN_VAO') && cols.includes('QT_BENHLY')) return 'CT04';
-  if (cols.includes('NGAY_RA') && cols.includes('THU_TRUONG_DVI')) return 'CT03';
+export function detectDocType(fileNameLower: string, firstRow: Record<string, any>, allRows?: Record<string, any>[]): HoSoType {
+  // 1. Kiểm tra trực tiếp giá trị trong các cột chỉ định loại/mẫu chứng từ (ƯU TIÊN CAO NHẤT)
+  const rowsToCheck = [firstRow, ...(allRows || []).slice(0, 5)].filter(Boolean);
+  const docTypeKeyPattern = /^(MAU_SO|MA_CT|MAU_CT|MAUSO|MA_MAU|LOAI_CT|LOAI_CHUNG_TU|MA_CHUNG_TU|TEN_MAU|SO_MAU|FORM_CODE|DOC_TYPE)$/i;
+
+  for (const row of rowsToCheck) {
+    for (const [rawKey, rawVal] of Object.entries(row)) {
+      const cleanKey = normalizeHeaderKey(rawKey);
+      if (docTypeKeyPattern.test(cleanKey)) {
+        const valStr = String(rawVal ?? '').toLowerCase().trim().replace(/[\s\-_]/g, '');
+        if (valStr === 'ct07' || valStr === '07' || valStr === '7' || valStr.includes('ct07') || valStr.includes('nghiviec')) return 'CT07';
+        if (valStr === 'ct06' || valStr === '06' || valStr === '6' || valStr.includes('ct06') || valStr.includes('duongthai')) return 'CT06';
+        if (valStr === 'ct05' || valStr === '05' || valStr === '5' || valStr.includes('ct05') || valStr.includes('chungsinh')) return 'CT05';
+        if (valStr === 'ct04' || valStr === '04' || valStr === '4' || valStr.includes('ct04') || valStr.includes('tomtat') || valStr.includes('hsba')) return 'CT04';
+        if (valStr === 'ct03' || valStr === '03' || valStr === '3' || valStr.includes('ct03') || valStr.includes('ravien')) return 'CT03';
+      }
+    }
+  }
+
+  // 2. Kiểm tra theo tên file
+  const fn = String(fileNameLower ?? '').toLowerCase();
+  if (fn.includes('ct07') || fn.includes('nghiviec') || fn.includes('nghi_viec') || fn.includes('huongbhxh') || fn.includes('giaychungnhannghiviec')) return 'CT07';
+  if (fn.includes('ct06') || fn.includes('nghiduongthai') || fn.includes('duongthai')) return 'CT06';
+  if (fn.includes('ct05') || fn.includes('chungsinh') || fn.includes('dschungsinh')) return 'CT05';
+  if (fn.includes('ct04') || fn.includes('tomtathosobenhan') || fn.includes('tomtathoso') || fn.includes('hsba')) return 'CT04';
+  if (fn.includes('ct03') || fn.includes('giayravien') || fn.includes('dsgrav') || fn.includes('ravien')) return 'CT03';
+
+  // 3. Phân tích cấu trúc cột (Dấu vân tay đặc trưng của từng loại chứng từ)
+  const cols = Object.keys(firstRow || {}).map(k => normalizeHeaderKey(k));
+
+  // CT05 (Giấy chứng sinh): Bắt buộc liên quan đến việc sinh con
+  const isBirth = cols.includes('NGAY_SINH_CON') || cols.includes('NGAY_SINHCON') || 
+                  cols.includes('CAN_NANG_CON') || cols.includes('TINH_TRANG_CON') || 
+                  cols.includes('NGUOI_DO_DE') || cols.includes('SINHCON_PHAUTHUAT') || 
+                  cols.includes('SINHCON_DUOI32TUAN') || 
+                  (cols.includes('HOTEN_NND') && !cols.includes('TU_NGAY'));
+  if (isBirth && !cols.includes('TU_NGAY')) return 'CT05';
+
+  // CT06 (Nghỉ dưỡng thai): Đặc trưng có tuổi thai
+  const isDuongThai = cols.includes('TUOI_THAI') || cols.includes('TUOITHAI');
+  if (isDuongThai) return 'CT06';
+
+  // CT07 (Nghỉ việc hưởng BHXH): Nghỉ từ ngày - đến ngày, số ngày, chẩn đoán ICD-10, bác sĩ ký (có thể có họ tên mẹ/cha khi chăm con ốm)
+  const hasLeaveTime = (cols.includes('TU_NGAY') && cols.includes('DEN_NGAY')) || cols.includes('SO_NGAY');
+  const hasCT07Signals = cols.includes('TEN_BSY') || cols.includes('TEN_NGUOI_HANH_NGHE') || 
+                         cols.includes('SERI') || cols.includes('SO_SERI') || cols.includes('SO_KCB') || 
+                         cols.includes('HO_TEN_ME') || cols.includes('HO_TEN_CHA') || 
+                         cols.includes('CHANDOAN_DIEUTRI') || cols.includes('BENHICD10') || cols.includes('TENBENHICD10') || 
+                         cols.includes('NGAY_KB') || cols.includes('NGAY_KCB') || cols.includes('LOAI_GIAYTO');
+
+  if (hasLeaveTime && hasCT07Signals && !isBirth) return 'CT07';
+
+  // CT04 (Tóm tắt hồ sơ bệnh án)
+  if (cols.includes('CHAN_DOAN_VAO') || cols.includes('CHAN_DOAN_RA') || cols.includes('QT_BENHLY') || cols.includes('TT_RAVIEN') || cols.includes('TOM_TAT_HSBA')) return 'CT04';
+
+  // CT03 (Giấy ra viện)
+  if (cols.includes('NGAY_VAO') || cols.includes('NGAY_RA') || cols.includes('MA_KHOA') || cols.includes('TEN_TRUONGKHOA') || cols.includes('THU_TRUONG_DVI')) return 'CT03';
+
+  // Nếu có thời gian nghỉ mà không rõ thì mặc định CT07
+  if (hasLeaveTime) return 'CT07';
 
   return 'CT03';
 }
@@ -66,39 +130,38 @@ export interface MappedDisplayFields {
 }
 
 export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): MappedDisplayFields {
-  const s = (k: string) => String(row[k] ?? '').trim();
-  const su = (k: string) => String(row[k.toUpperCase()] ?? row[k] ?? '').trim();
+  const s = (k: string) => String(row[k] ?? row[normalizeHeaderKey(k)] ?? '').trim();
 
   switch (type) {
     case 'CT03': return {
-      hoTen: s('HO_TEN'),
-      maBhyt: s('MA_THE'),
-      maBhxh: s('MA_BHXH'),
-      cccd: s('SO_CCCD'),
+      hoTen: s('HO_TEN') || s('HOTEN') || s('TEN_BENH_NHAN') || s('TEN_BN'),
+      maBhyt: s('MA_THE') || s('MATHE'),
+      maBhxh: s('MA_BHXH') || s('MA_SOBHXH'),
+      cccd: s('SO_CCCD') || s('CCCD') || s('SO_CMND') || s('CMND'),
       khoaPrimary: s('MA_KHOA') || s('MA_YTE'),
       khoaSecondary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' → '),
-      chanDoanPrimary: s('BENHICD10_ID') || s('BENH_ICD10_ID'),
-      chanDoanSecondary: s('CHAN_DOAN'),
-      nguoiKyPrimary: s('TEN_TRUONGKHOA') || s('THU_TRUONG_DVI'),
+      chanDoanPrimary: s('BENHICD10_ID') || s('BENH_ICD10_ID') || s('BENHICD10'),
+      chanDoanSecondary: s('CHAN_DOAN') || s('TENBENHICD10'),
+      nguoiKyPrimary: s('TEN_TRUONGKHOA') || s('THU_TRUONG_DVI') || s('NGUOI_DAI_DIEN'),
       nguoiKySecondary: s('MA_CCHN_TRUONGKHOA') || s('MA_CCHN') || s('MA_TRUONGKHOA'),
     };
     case 'CT04': return {
-      hoTen: s('HO_TEN'),
-      maBhyt: s('MA_THE'),
-      maBhxh: s('MA_BHXH'),
-      cccd: s('SO_CCCD'),
+      hoTen: s('HO_TEN') || s('HOTEN') || s('TEN_BENH_NHAN') || s('TEN_BN'),
+      maBhyt: s('MA_THE') || s('MATHE'),
+      maBhxh: s('MA_BHXH') || s('MA_SOBHXH'),
+      cccd: s('SO_CCCD') || s('CCCD') || s('SO_CMND') || s('CMND'),
       khoaPrimary: [s('NGAY_VAO'), s('NGAY_RA')].filter(Boolean).join(' → '),
       khoaSecondary: s('TT_RAVIEN') ? `Ra viện: ${s('TT_RAVIEN')}` : '',
-      chanDoanPrimary: s('BENHICD10') || s('CHAN_DOAN_RA'),
-      chanDoanSecondary: s('TENBENHICD10') || s('CHAN_DOAN_VAO'),
-      nguoiKyPrimary: s('NGUOI_DAI_DIEN'),
+      chanDoanPrimary: s('BENHICD10') || s('CHAN_DOAN_RA') || s('BENHICD10_ID'),
+      chanDoanSecondary: s('TENBENHICD10') || s('CHAN_DOAN_VAO') || s('CHAN_DOAN'),
+      nguoiKyPrimary: s('NGUOI_DAI_DIEN') || s('THU_TRUONG_DVI'),
       nguoiKySecondary: s('MA_CCHN') || '',
     };
     case 'CT05': return {
       hoTen: s('HO_TEN_ME') || s('HOTEN_NND'),
       maBhyt: s('MA_THE') || s('MA_THE_NND'),
       maBhxh: s('MA_SOBHXH_ME') || s('MA_BHXH_NND') || s('MA_SOBHXH'),
-      cccd: s('CMND') || s('SO_CMND_NND'),
+      cccd: s('CMND') || s('SO_CMND_NND') || s('SO_CCCD'),
       khoaPrimary: s('NGAY_SINHCON') || s('NGAY_SINH_CON'),
       khoaSecondary: [
         s('TEN_CON') ? `Con: ${s('TEN_CON')}` : '',
@@ -111,10 +174,10 @@ export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): Mappe
       nguoiKySecondary: s('NGUOI_DO_DE') ? `Đỡ đẻ: ${s('NGUOI_DO_DE')}` : '',
     };
     case 'CT06': return {
-      hoTen: s('HO_TEN'),
-      maBhyt: s('MA_THE'),
-      maBhxh: s('MA_BHXH'),
-      cccd: s('SO_CCCD'),
+      hoTen: s('HO_TEN') || s('HOTEN') || s('TEN_BENH_NHAN') || s('TEN_BN'),
+      maBhyt: s('MA_THE') || s('MATHE'),
+      maBhxh: s('MA_BHXH') || s('MA_SOBHXH'),
+      cccd: s('SO_CCCD') || s('CCCD') || s('SO_CMND') || s('CMND'),
       khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' → '),
       khoaSecondary: s('TUOI_THAI') ? `Thai ${s('TUOI_THAI')} tuần` : '',
       chanDoanPrimary: s('BENHICD10') || s('CHAN_DOAN'),
@@ -123,16 +186,16 @@ export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): Mappe
       nguoiKySecondary: s('MA_BS'),
     };
     case 'CT07': return {
-      hoTen: s('HO_TEN'),
-      maBhyt: s('MA_THE'),
-      maBhxh: s('MA_SOBHXH') || s('MA_BHXH'),
-      cccd: s('SO_CCCD'),
+      hoTen: s('HO_TEN') || s('HOTEN') || s('TEN_BENH_NHAN') || s('TEN_BN') || s('HO_VA_TEN') || (s('HO_TEN_ME') ? `Con của ${s('HO_TEN_ME')}` : ''),
+      maBhyt: s('MA_THE') || s('MATHE') || s('MA_THE_BHYT') || s('MA_BHYT'),
+      maBhxh: s('MA_SOBHXH') || s('MA_BHXH') || s('MASOBHXH') || s('MA_SO_BHXH'),
+      cccd: s('SO_CCCD') || s('CCCD') || s('SO_CMND') || s('CMND'),
       khoaPrimary: [s('TU_NGAY'), s('DEN_NGAY')].filter(Boolean).join(' → '),
-      khoaSecondary: s('SO_NGAY') ? `${s('SO_NGAY')} ngày nghỉ` : '',
-      chanDoanPrimary: s('BENHICD10') || s('CHANDOAN_DIEUTRI'),
-      chanDoanSecondary: s('TENBENHICD10') || '',
-      nguoiKyPrimary: s('TEN_BSY') || s('NGUOI_DAI_DIEN'),
-      nguoiKySecondary: s('MA_BS') || s('MA_CCHN'),
+      khoaSecondary: s('SO_NGAY') ? `${s('SO_NGAY')} ngày nghỉ` : (s('HO_TEN_ME') ? `Mẹ: ${s('HO_TEN_ME')}` : ''),
+      chanDoanPrimary: s('BENHICD10') || s('BENH_ICD10_ID') || s('CHANDOAN_DIEUTRI') || s('MA_BENH'),
+      chanDoanSecondary: s('TENBENHICD10') || s('TEN_BENH') || s('CHANDOAN_DIEUTRI') || '',
+      nguoiKyPrimary: s('TEN_BSY') || s('TEN_NGUOI_HANH_NGHE') || s('NGUOI_DAI_DIEN') || s('TEN_BS'),
+      nguoiKySecondary: s('MA_CCHN') || s('MA_BS') || s('MA_BSY') || '',
     };
     default: return {
       hoTen: s('HO_TEN'),
@@ -151,9 +214,16 @@ export function mapRowToDisplay(type: HoSoType, row: Record<string, any>): Mappe
 
 export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Record<string, string> {
   const raw: Record<string, string> = {};
-  Object.entries(row).forEach(([k, v]) => { raw[k.toUpperCase()] = String(v ?? '').trim(); });
+  Object.entries(row).forEach(([k, v]) => {
+    const cleanKey = normalizeHeaderKey(k);
+    if (cleanKey) raw[cleanKey] = String(v ?? '').trim();
+    raw[k.toUpperCase()] = String(v ?? '').trim();
+  });
 
   if (!raw['MA_BHXH'] && raw['MA_SOBHXH']) raw['MA_BHXH'] = raw['MA_SOBHXH'];
+  if (!raw['HO_TEN']) raw['HO_TEN'] = raw['HOTEN'] || raw['TEN_BENH_NHAN'] || raw['TEN_BN'] || raw['HO_VA_TEN'] || '';
+  if (!raw['MA_THE']) raw['MA_THE'] = raw['MATHE'] || raw['MA_THE_BHYT'] || raw['MA_BHYT'] || '';
+  if (!raw['SO_CCCD']) raw['SO_CCCD'] = raw['CCCD'] || raw['SO_CMND'] || raw['CMND'] || '';
 
   switch (type) {
     case 'CT03':
@@ -180,13 +250,19 @@ export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Recor
       if (!raw['MA_CT']) raw['MA_CT'] = 'CT06';
       break;
     case 'CT07':
-      if (!raw['BENH_ICD10_ID'] && raw['BENHICD10']) raw['BENH_ICD10_ID'] = raw['BENHICD10'];
-      if (!raw['TEN_NGUOI_HANH_NGHE'] && raw['TEN_BSY']) raw['TEN_NGUOI_HANH_NGHE'] = raw['TEN_BSY'];
-      if (!raw['MA_CCHN'] && raw['MA_BS']) raw['MA_CCHN'] = raw['MA_BS'];
-      if (!raw['CHANDOAN_DIEUTRI'] && raw['PP_DIEUTRI']) raw['CHANDOAN_DIEUTRI'] = raw['PP_DIEUTRI'];
-      if (!raw['THU_TRUONG_DV'] && raw['NGUOI_DAI_DIEN']) raw['THU_TRUONG_DV'] = raw['NGUOI_DAI_DIEN'];
-      if (!raw['SO_KCB'] && raw['SERI']) raw['SO_KCB'] = raw['SERI'];
-      if (!raw['NGAY_CHUNG_TU'] && raw['NGAY_CT']) raw['NGAY_CHUNG_TU'] = raw['NGAY_CT'];
+      if (!raw['BENH_ICD10_ID']) raw['BENH_ICD10_ID'] = raw['BENHICD10'] || raw['MA_BENH'] || raw['ICD10'] || '';
+      if (!raw['TEN_NGUOI_HANH_NGHE']) raw['TEN_NGUOI_HANH_NGHE'] = raw['TEN_BSY'] || raw['TEN_BS'] || '';
+      if (!raw['MA_CCHN']) raw['MA_CCHN'] = raw['MA_BS'] || raw['MA_BSY'] || '';
+      if (!raw['CHANDOAN_DIEUTRI']) raw['CHANDOAN_DIEUTRI'] = raw['PP_DIEUTRI'] || raw['TENBENHICD10'] || raw['TEN_BENH'] || raw['CHAN_DOAN'] || '';
+      if (!raw['THU_TRUONG_DV']) raw['THU_TRUONG_DV'] = raw['NGUOI_DAI_DIEN'] || '';
+      if (!raw['SO_KCB']) raw['SO_KCB'] = raw['SERI'] || raw['SO_SERI'] || '';
+      if (!raw['SO_SERI']) raw['SO_SERI'] = raw['SERI'] || raw['SO_KCB'] || '';
+      if (!raw['NGAY_KCB']) raw['NGAY_KCB'] = raw['NGAY_KB'] || '';
+      if (!raw['DON_VI']) raw['DON_VI'] = raw['TEN_DVI'] || raw['TEN_DON_VI'] || '';
+      if (!raw['NGAY_CHUNG_TU']) raw['NGAY_CHUNG_TU'] = raw['NGAY_CT'] || raw['NGAY_TAO'] || '';
+      if (!raw['NGAYCAP_CCCD']) raw['NGAYCAP_CCCD'] = raw['NGAY_CAP_CCCD'] || raw['NGAYCAP_CMND'] || '';
+      if (!raw['NOICAP_CCCD']) raw['NOICAP_CCCD'] = raw['NOI_CAP_CCCD'] || raw['NOICAP_CMND'] || '';
+      if (!raw['LOAI_GIAYTO']) raw['LOAI_GIAYTO'] = raw['LOAI_GIAY_TO'] || '1';
       if (!raw['MAU_SO']) raw['MAU_SO'] = 'CT07';
       break;
   }
@@ -207,7 +283,8 @@ export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Recor
   const dateFields = [
     'NGAY_CHUNG_TU', 'NGOAITRU_TUNGAY', 'NGOAITRU_DENNGAY', 
     'NGAY_SINH', 'NGAYCAP_CCCD', 'TU_NGAY', 'DEN_NGAY', 
-    'NGAY_CAP_CMND', 'NGAYCAP_CMND_NND', 'NGAYSINH_NND'
+    'NGAY_CAP_CMND', 'NGAYCAP_CMND_NND', 'NGAYSINH_NND',
+    'NGAY_KCB', 'NGAY_KB'
   ];
 
   timeFields.forEach(f => {
@@ -230,15 +307,17 @@ export function validateRecord(type: HoSoType, raw: Record<string, string>): str
   const checkDate = (field: string, name: string, isTime = false) => {
     if (raw[field]) {
       const parsed = isTime ? parseDateStr(raw[field]) : parseShortDateStr(raw[field]);
-      if (!parsed || (isTime && parsed.length !== 12) || (!isTime && parsed.length !== 8)) {
+      // Cho phép cả 8 ký tự (YYYYMMDD) hoặc 12 ký tự (YYYYMMDDHHmm)
+      if (!parsed || (isTime && parsed.length !== 12 && parsed.length !== 8) || (!isTime && parsed.length !== 8 && parsed.length !== 12)) {
         errors.push(`Sai định dạng thời gian: ${name} (Cột ${field})`);
       }
     }
   };
 
   const checkMaThe = (field: string, name: string) => {
-    if (raw[field] && raw[field].length !== 15 && raw[field].length !== 17) {
-      errors.push(`Sai độ dài: ${name} (Cột ${field}) phải là 15 hoặc 17 ký tự`);
+    // Mã thẻ BHYT hợp lệ: 10 ký tự (chuẩn QĐ 1666 mới), 15 ký tự (chuẩn cũ) hoặc 17 ký tự (bổ sung)
+    if (raw[field] && raw[field].length !== 10 && raw[field].length !== 15 && raw[field].length !== 17) {
+      errors.push(`Sai độ dài: ${name} (Cột ${field}) phải là 10, 15 hoặc 17 ký tự`);
     }
   };
 
@@ -267,14 +346,15 @@ export function validateRecord(type: HoSoType, raw: Record<string, string>): str
   } else if (type === 'CT06') {
     req('TU_NGAY', 'Từ ngày');
     req('DEN_NGAY', 'Đến ngày');
-    checkDate('TU_NGAY', 'Từ ngày', true);
-    checkDate('DEN_NGAY', 'Đến ngày', true);
+    checkDate('TU_NGAY', 'Từ ngày', false);
+    checkDate('DEN_NGAY', 'Đến ngày', false);
   } else if (type === 'CT07') {
     req('TU_NGAY', 'Từ ngày');
     req('DEN_NGAY', 'Đến ngày');
-    checkDate('TU_NGAY', 'Từ ngày', true);
-    checkDate('DEN_NGAY', 'Đến ngày', true);
+    checkDate('TU_NGAY', 'Từ ngày', false);
+    checkDate('DEN_NGAY', 'Đến ngày', false);
   }
 
   return errors;
 }
+

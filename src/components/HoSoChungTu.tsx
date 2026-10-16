@@ -15,19 +15,23 @@ import {
   ChevronDown,
   X,
   Building,
-  Trash2
+  Trash2,
+  Cloud
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import TaoHoSoModal from './TaoHoSoModal';
 import ConfigModal from './ConfigModal';
 import KySoModal from './KySoModal';
 import CskcbSetupModal, { CskcbConfig } from './CskcbSetupModal';
+import SupabaseModal from './SupabaseModal';
+import { isSupabaseConnected } from '../lib/supabase';
 import type { HoSoRecord } from '../lib/signAndSubmitService';
-import { COLUMN_DISPLAY } from '../lib/importMapper';
+import { COLUMN_DISPLAY, HoSoType } from '../lib/importMapper';
 
 export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showFacilityModal, setShowFacilityModal] = useState(false);
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showTaoHoSoModal, setShowTaoHoSoModal] = useState(false);
   const [cskcbConfig, setCskcbConfig] = useState<CskcbConfig | null>(() => {
@@ -127,17 +131,53 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
       const data = await file.arrayBuffer();
       const workbook = read(data);
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = utils.sheet_to_json(firstSheet) as Record<string, any>[];
-      if (!jsonData.length) { alert('File Excel không có dữ liệu!'); return; }
 
       const { buildXml } = await import('../lib/xmlBuilder');
       const { getOrgConfig } = await import('../lib/signAndSubmitService');
-      const { detectDocType, mapRowToDisplay, mapRowToRawData, validateRecord } = await import('../lib/importMapper');
+      const { detectDocType, mapRowToDisplay, mapRowToRawData, validateRecord, normalizeHeaderKey, normalizeRow } = await import('../lib/importMapper');
       const org = getOrgConfig();
       const fileNameLower = file.name.toLowerCase();
 
-      // Nhận dạng loại CT từ dòng đầu tiên
-      const detectedType = detectDocType(fileNameLower, jsonData[0]) as HoSoRecord['type'];
+      // Đọc bảng tính dưới dạng mảng 2 chiều để kiểm tra header 1 dòng (HIS) hoặc 2 dòng (Template)
+      const rawRows = utils.sheet_to_json(firstSheet, { header: 1, defval: '' }) as any[][];
+      if (!rawRows || !rawRows.length) { alert('File Excel không có dữ liệu!'); return; }
+
+      let headerRowIndex = 0;
+      let dataStartIndex = 1;
+      if (rawRows.length > 1) {
+        const row0 = rawRows[0].map((c: any) => String(c ?? '').trim());
+        const row1 = rawRows[1].map((c: any) => String(c ?? '').trim().toUpperCase());
+        const technicalTokens = ['MAU_SO', 'MA_CT', 'HO_TEN', 'TU_NGAY', 'DEN_NGAY', 'SO_SERI', 'SERI', 'HOTEN_NND', 'MA_BHXH', 'SO_KCB', 'NGAY_VAO', 'NGAY_RA', 'BENHICD10'];
+        const row1Matches = row1.filter((c: string) => technicalTokens.some(t => c.includes(t))).length;
+        const row0Matches = row0.filter((c: string) => technicalTokens.some(t => c.toUpperCase().includes(t))).length;
+        if (row1Matches >= 2 && row1Matches > row0Matches) {
+          headerRowIndex = 1;
+          dataStartIndex = 2;
+        }
+      }
+
+      const headers = rawRows[headerRowIndex].map((h: any) => normalizeHeaderKey(String(h ?? '')));
+      const rawHeaders = rawRows[headerRowIndex].map((h: any) => String(h ?? '').trim());
+
+      const jsonData: Record<string, any>[] = [];
+      for (let r = dataStartIndex; r < rawRows.length; r++) {
+        const rowData = rawRows[r];
+        if (!rowData || !rowData.length) continue;
+        const hasData = rowData.some((cell: any) => String(cell ?? '').trim() !== '');
+        if (!hasData) continue;
+
+        const rowObj: Record<string, any> = {};
+        headers.forEach((hdr: string, colIdx: number) => {
+          if (hdr) rowObj[hdr] = rowData[colIdx] ?? '';
+          if (rawHeaders[colIdx]) rowObj[rawHeaders[colIdx]] = rowData[colIdx] ?? '';
+        });
+        jsonData.push(normalizeRow(rowObj));
+      }
+
+      if (!jsonData.length) { alert('File Excel không có dòng dữ liệu hợp lệ!'); return; }
+
+      // Nhận dạng loại CT từ file và các dòng dữ liệu
+      const detectedType = detectDocType(fileNameLower, jsonData[0], jsonData) as HoSoRecord['type'];
 
       // Kiểm tra đối chiếu mã CSKCB
       const firstRow = jsonData[0];
@@ -152,7 +192,8 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
       }
 
       const mappedRecords: HoSoRecord[] = jsonData.map((item, index) => {
-        const type = detectedType;
+        // Nhận diện theo dòng nếu có MAU_SO riêng, ngược lại kế thừa detectedType
+        const type = (item['MAU_SO'] || item['MA_CT'] ? detectDocType(fileNameLower, item, [item]) : detectedType) as HoSoRecord['type'] || detectedType;
         const rawData = mapRowToRawData(type, item);
         const display = mapRowToDisplay(type, item);
         const errors = validateRecord(type, rawData);
@@ -167,7 +208,6 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           maBhyt: display.maBhyt,
           maBhxh: display.maBhxh,
           cccd: display.cccd,
-          // legacy fields
           khoa: display.khoaPrimary,
           ngayVao: '',
           ngayRa: '',
@@ -175,7 +215,6 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           chanDoan: display.chanDoanSecondary,
           nguoiKy: display.nguoiKyPrimary,
           cchn: display.nguoiKySecondary,
-          // display fields đúng theo loại
           displayFields: {
             khoaPrimary: display.khoaPrimary,
             khoaSecondary: display.khoaSecondary,
@@ -199,11 +238,74 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
         CT03: 'Giấy ra viện (CT03)', CT04: 'Tóm tắt HSBA (CT04)',
         CT05: 'Giấy chứng sinh (CT05)', CT06: 'Nghỉ dưỡng thai (CT06)', CT07: 'Nghỉ việc BHXH (CT07)',
       };
-      console.info(`✅ Đã nhập ${mappedRecords.length} hồ sơ loại: ${typeNames[detectedType] || detectedType}`);
+      const typeName = typeNames[detectedType] || detectedType;
+      alert(`✅ Nhận diện thành công: ${typeName}\nSố lượng nhập: ${mappedRecords.length} hồ sơ`);
 
     } catch (error) {
       console.error('Error parsing excel:', error);
       alert('Có lỗi xảy ra khi đọc file Excel!');
+    }
+  };
+
+  const handleChangeDocType = async (targetType: HoSoType, targetIds?: string[]) => {
+    try {
+      const { buildXml } = await import('../lib/xmlBuilder');
+      const { getOrgConfig } = await import('../lib/signAndSubmitService');
+      const { mapRowToDisplay, mapRowToRawData, validateRecord } = await import('../lib/importMapper');
+      const org = getOrgConfig();
+
+      const idsToChange = targetIds && targetIds.length > 0 ? new Set(targetIds) : new Set(records.map(r => r.id));
+      if (idsToChange.size === 0) return;
+
+      setRecords(prev => prev.map(r => {
+        if (!idsToChange.has(r.id)) return r;
+        const type = targetType;
+        const sourceData = r.rawData || {};
+        const rawData = mapRowToRawData(type, sourceData);
+        const display = mapRowToDisplay(type, sourceData);
+        const errors = validateRecord(type, rawData);
+
+        let xmlContent: string | undefined;
+        try { xmlContent = buildXml(type, rawData, org.ma_cskcb); } catch { }
+
+        return {
+          ...r,
+          type,
+          hoTen: display.hoTen || r.hoTen || 'Không rõ',
+          maBhyt: display.maBhyt || r.maBhyt,
+          maBhxh: display.maBhxh || r.maBhxh,
+          cccd: display.cccd || r.cccd,
+          khoa: display.khoaPrimary,
+          icd: display.chanDoanPrimary,
+          chanDoan: display.chanDoanSecondary,
+          nguoiKy: display.nguoiKyPrimary,
+          cchn: display.nguoiKySecondary,
+          displayFields: {
+            khoaPrimary: display.khoaPrimary,
+            khoaSecondary: display.khoaSecondary,
+            chanDoanPrimary: display.chanDoanPrimary,
+            chanDoanSecondary: display.chanDoanSecondary,
+            nguoiKyPrimary: display.nguoiKyPrimary,
+            nguoiKySecondary: display.nguoiKySecondary,
+          },
+          trangThai: errors.length > 0 ? 'INVALID_FORMAT' as HoSoRecord['trangThai'] : 'UNSIGNED' as HoSoRecord['trangThai'],
+          errors,
+          rawData,
+          xmlContent,
+        };
+      }));
+
+      const typeNames: Record<string, string> = {
+        CT03: 'Mẫu CT03 - Giấy ra viện',
+        CT04: 'Mẫu CT04 - Tóm tắt HSBA',
+        CT05: 'Mẫu CT05 - Giấy chứng sinh',
+        CT06: 'Mẫu CT06 - Nghỉ dưỡng thai',
+        CT07: 'Mẫu CT07 - Nghỉ việc BHXH',
+      };
+      alert(`✅ Đã chuyển đổi ${idsToChange.size} hồ sơ sang ${typeNames[targetType] || targetType}!`);
+    } catch (err) {
+      console.error('Error changing doc type:', err);
+      alert('Có lỗi khi chuyển đổi loại chứng từ!');
     }
   };
 
@@ -311,6 +413,18 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 >
                   <Building className="w-4 h-4" />
                   Đổi CSKCB
+                </button>
+                <button
+                  onClick={() => setShowSupabaseModal(true)}
+                  className={cn(
+                    "px-4 py-1.5 text-sm font-semibold rounded-lg flex items-center gap-2 transition",
+                    isSupabaseConnected()
+                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
+                      : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  )}
+                >
+                  <Cloud className="w-4 h-4 text-emerald-600" />
+                  {isSupabaseConnected() ? 'Cloud Supabase' : 'Kết nối Supabase'}
                 </button>
                 <button className="px-4 py-1.5 bg-slate-50 text-slate-600 text-sm font-semibold rounded-lg border border-slate-200 hover:bg-slate-100 transition">
                   Trạm trực thuộc (0)
@@ -555,6 +669,30 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           </div>
 
           <div className="flex items-center gap-2">
+            {records.length > 0 && (
+              <div className="relative">
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleChangeDocType(e.target.value as HoSoType, selectedIds.size > 0 ? Array.from(selectedIds) : undefined);
+                      e.target.value = '';
+                    }
+                  }}
+                  defaultValue=""
+                  className="px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-semibold hover:bg-amber-100 transition cursor-pointer"
+                  title="Chuyển đổi loại mẫu chứng từ cho các hồ sơ đang chọn (hoặc tất cả)"
+                >
+                  <option value="" disabled>
+                    🔄 Đổi mẫu {selectedIds.size > 0 ? `(${selectedIds.size})` : `(Tất cả)`}...
+                  </option>
+                  <option value="CT07">Mẫu CT07 - Nghỉ việc BHXH</option>
+                  <option value="CT06">Mẫu CT06 - Nghỉ dưỡng thai</option>
+                  <option value="CT05">Mẫu CT05 - Giấy chứng sinh</option>
+                  <option value="CT04">Mẫu CT04 - Tóm tắt HSBA</option>
+                  <option value="CT03">Mẫu CT03 - Giấy ra viện</option>
+                </select>
+              </div>
+            )}
             {selectedIds.size > 0 ? (
               <>
                 <button
@@ -934,6 +1072,14 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
       {showConfigModal && (
         <ConfigModal onClose={() => setShowConfigModal(false)} />
       )}
+
+      <SupabaseModal
+        isOpen={showSupabaseModal}
+        onClose={() => setShowSupabaseModal(false)}
+        records={records}
+        maCskcb={cskcbConfig?.cskcb.ma || '49004'}
+        onRecordsLoaded={(loaded) => setRecords(loaded)}
+      />
 
     </div>
   );
