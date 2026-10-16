@@ -6,10 +6,14 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { HoSoRecord } from './signAndSubmitService';
 
+// Cấu hình mặc định dự án Supabase TT25
+const DEFAULT_SUPABASE_URL = 'https://vqoycqhunrcyrhjjhcbk.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxb3ljcWh1bnJjeXJoampoY2JrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwMTYyODAsImV4cCI6MjA5MjU5MjI4MH0.3NPtP2CeXFHf8BPM1lS1c4J4kiUQIppXVsANyro3HzQ';
+
 // Đọc cấu hình từ biến môi trường Vite hoặc từ localStorage (cài đặt trực tiếp trên UI)
 const getEnvConfig = () => {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
   const localUrl = localStorage.getItem('supabase_url') || '';
   const localKey = localStorage.getItem('supabase_anon_key') || '';
