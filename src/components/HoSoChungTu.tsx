@@ -23,15 +23,12 @@ import TaoHoSoModal from './TaoHoSoModal';
 import ConfigModal from './ConfigModal';
 import KySoModal from './KySoModal';
 import CskcbSetupModal, { CskcbConfig } from './CskcbSetupModal';
-import SupabaseModal from './SupabaseModal';
-import { isSupabaseConnected } from '../lib/supabase';
 import type { HoSoRecord } from '../lib/signAndSubmitService';
 import { COLUMN_DISPLAY, HoSoType } from '../lib/importMapper';
 
 export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [showFacilityModal, setShowFacilityModal] = useState(false);
-  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showTaoHoSoModal, setShowTaoHoSoModal] = useState(false);
   const [cskcbConfig, setCskcbConfig] = useState<CskcbConfig | null>(() => {
@@ -350,6 +347,65 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
     }
   };
 
+  const handleExportXml = async (targetRecords?: HoSoRecord[]) => {
+    const list = targetRecords || (selectedIds.size > 0 ? selectedRecords : records);
+    if (list.length === 0) {
+      alert('Không có hồ sơ nào để xuất XML!');
+      return;
+    }
+
+    try {
+      const { buildXml, buildHSCHUNGTU, xmlToBase64, LOAI_HS_MAP } = await import('../lib/xmlBuilder');
+      const { getOrgConfig } = await import('../lib/signAndSubmitService');
+      const org = getOrgConfig();
+      const maCskcb = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '49006').trim();
+
+      if (list.length === 1) {
+        // Xuất 1 file XML đơn lẻ
+        const r = list[0];
+        let xmlStr = r.signedXml || r.xmlContent;
+        if (!xmlStr) {
+          xmlStr = buildXml(r.type, r.rawData, maCskcb);
+        }
+        const blob = new Blob([xmlStr], { type: 'application/xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const cleanName = (r.hoTen || 'HOSO').replace(/[^a-zA-Z0-9_\u00C0-\u1EF9]/g, '_');
+        a.download = `${r.type}_${maCskcb}_${cleanName}_${r.id.slice(-6)}.xml`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        // Xuất gói tổng hợp HSCHUNGTU chứa tất cả hồ sơ theo chuẩn Phụ lục 02
+        const { buildDocContent } = await import('../lib/xmlBuilder');
+        const hosoList = list.map(r => {
+          const loaiHs = LOAI_HS_MAP[r.type] || '39';
+          const innerDoc = buildDocContent(r.type, r.rawData);
+          const base64Content = xmlToBase64(innerDoc);
+          return { loaiHs, base64Content };
+        });
+
+        const packageXml = buildHSCHUNGTU(maCskcb, hosoList);
+        const blob = new Blob([packageXml], { type: 'application/xml;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        a.download = `HSCHUNGTU_${maCskcb}_${list.length}HS_${dateStr}.xml`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert(`✅ Đã xuất gói XML gồm ${list.length} hồ sơ thành công!`);
+      }
+    } catch (err: any) {
+      console.error('Lỗi xuất XML:', err);
+      alert('Có lỗi xảy ra khi tạo file XML: ' + (err?.message || ''));
+    }
+  };
+
+  const handleDownloadSingleXml = (r: HoSoRecord) => {
+    handleExportXml([r]);
+  };
+
   const filteredRecords = records.filter(r => {
     // Search
     if (searchTerm) {
@@ -414,18 +470,13 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                   <Building className="w-4 h-4" />
                   Đổi CSKCB
                 </button>
-                <button
-                  onClick={() => setShowSupabaseModal(true)}
-                  className={cn(
-                    "px-4 py-1.5 text-sm font-semibold rounded-lg flex items-center gap-2 transition",
-                    isSupabaseConnected()
-                      ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200"
-                      : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
-                  )}
+                <div 
+                  className="px-3.5 py-1.5 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-200 flex items-center gap-2 shadow-sm"
+                  title="Dữ liệu chỉ lưu tạm thời trong RAM của phiên làm việc. F5 hoặc tắt trình duyệt dữ liệu sẽ tự động giải phóng sạch."
                 >
-                  <Cloud className="w-4 h-4 text-emerald-600" />
-                  {isSupabaseConnected() ? 'Cloud Supabase' : 'Kết nối Supabase'}
-                </button>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Lưu tạm phiên (RAM) • F5 tự hủy
+                </div>
                 <button className="px-4 py-1.5 bg-slate-50 text-slate-600 text-sm font-semibold rounded-lg border border-slate-200 hover:bg-slate-100 transition">
                   Trạm trực thuộc (0)
                 </button>
@@ -620,6 +671,32 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
         </div>
       )}
 
+      {/* In-Memory Privacy & Security Notice Banner */}
+      <div className="bg-gradient-to-r from-emerald-50/90 via-blue-50/70 to-slate-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 text-xs shadow-sm">
+        <div className="flex items-center gap-3 text-slate-700">
+          <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-emerald-200">
+            <ShieldCheck className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+              Chế độ bảo mật phiên làm việc (In-Memory RAM)
+              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300 uppercase">
+                Không lưu Supabase
+              </span>
+            </div>
+            <div className="text-slate-600 text-xs mt-0.5">
+              Tất cả hồ sơ chứng từ sau khi nhập chỉ lưu tạm trong RAM máy trạm để phục vụ Ký số & Xuất XML / Đẩy cổng BHXH.
+              <span className="font-semibold text-rose-600"> Khi đóng trình duyệt hoặc nhấn F5, toàn bộ dữ liệu sẽ tự động xóa sạch</span> để đảm bảo an toàn thông tin bệnh nhân.
+            </div>
+          </div>
+        </div>
+        <div className="shrink-0 text-right hidden sm:block">
+          <span className="px-2.5 py-1 bg-white border border-slate-200 rounded-md font-mono text-[11px] font-bold text-slate-600 shadow-xs">
+            RAM: {records.length} hồ sơ
+          </span>
+        </div>
+      </div>
+
       {/* Table Section */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
         {/* Filters */}
@@ -748,6 +825,20 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 Xóa tất cả
               </button>
             )}
+            <button
+              onClick={() => handleExportXml()}
+              disabled={records.length === 0}
+              className={cn(
+                "px-4 py-2 text-sm font-bold flex items-center gap-2 border rounded-lg transition",
+                records.length > 0
+                  ? "text-blue-700 border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 shadow-xs"
+                  : "text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed"
+              )}
+              title="Xuất file XML chuẩn Phụ lục 02 để nộp hoặc lưu trữ"
+            >
+              <FileCode2 className="w-4 h-4 text-blue-600" />
+              Xuất XML {selectedIds.size > 0 ? `(${selectedIds.size})` : records.length > 0 ? `(${records.length})` : ''}
+            </button>
             <button
               onClick={handleExportExcel}
               className="px-4 py-2 text-slate-600 text-sm font-semibold flex items-center gap-2 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition"
@@ -932,6 +1023,13 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                           </>
                         )}
                         <button
+                          onClick={() => handleDownloadSingleXml(r)}
+                          title="Tải file XML hồ sơ này"
+                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => handleDeleteRecord(r.id)}
                           title="Xóa hồ sơ"
                           className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
@@ -982,14 +1080,6 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           }}
         />
       )}
-
-      <SupabaseModal
-        isOpen={showSupabaseModal}
-        onClose={() => setShowSupabaseModal(false)}
-        records={records}
-        maCskcb={cskcbConfig?.cskcb.ma || '49006'}
-        onRecordsLoaded={(loaded) => setRecords(loaded)}
-      />
 
     </div>
   );

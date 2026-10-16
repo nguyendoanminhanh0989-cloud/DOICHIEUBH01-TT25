@@ -16,14 +16,16 @@ import {
   FileText
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import type { HoSoRecord } from '../lib/signAndSubmitService';
 
 interface TaoHoSoModalProps {
   onClose: () => void;
+  onRecordsCreated?: (records: HoSoRecord[]) => void;
 }
 
 type DocType = 'CT03' | 'CT04' | 'CT05' | 'CT06' | 'CT07';
 
-export default function TaoHoSoModal({ onClose }: TaoHoSoModalProps) {
+export default function TaoHoSoModal({ onClose, onRecordsCreated }: TaoHoSoModalProps) {
   const [activeTab, setActiveTab] = useState<DocType>('CT03');
 
   const tabs = [
