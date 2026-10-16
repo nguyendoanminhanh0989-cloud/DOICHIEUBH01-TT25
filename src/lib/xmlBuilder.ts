@@ -240,11 +240,14 @@ export function buildHSCHUNGTU(
   const hoSoId = `Id-${genId()}`;
   const ngayLap = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
-  const fileHosoBlocks = hosoList.map(hs => `
+  // Chuẩn Phụ lục 02 BHXH: mỗi FILEHOSO nằm trong HOSO riêng biệt
+  const hosoBlocks = hosoList.map(hs => `
+      <HOSO>
         <FILEHOSO>
           <LOAIHOSO>${esc(hs.loaiHs)}</LOAIHOSO>
           <NOIDUNGFILE>${hs.base64Content}</NOIDUNGFILE>
-        </FILEHOSO>`).join('');
+        </FILEHOSO>
+      </HOSO>`).join('');
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <HSCHUNGTU xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -254,9 +257,7 @@ export function buildHSCHUNGTU(
   <THONGTINHOSO Id="${hoSoId}">
     <NGAYLAP>${ngayLap}</NGAYLAP>
     <SOLUONGHOSO>${hosoList.length}</SOLUONGHOSO>
-    <DANHSACHHOSO>
-      <HOSO>${fileHosoBlocks}
-      </HOSO>
+    <DANHSACHHOSO>${hosoBlocks}
     </DANHSACHHOSO>
   </THONGTINHOSO>
   <CHUKYDONVI/>
@@ -269,7 +270,9 @@ export function buildHSCHUNGTU(
 export function buildXml(type: DocType, data: Record<string, string>, maCskcb: string): string {
   const content = buildDocContent(type, data);
   const contentBase64 = xmlToBase64(content);
-  return buildHSCHUNGTU(maCskcb, [{ loaiHs: type, base64Content: contentBase64 }]);
+  // Dùng LOAI_HS_MAP để lấy mã số chuẩn (39 hoặc 61), không truyền tên type (CT03...) vào loaiHs
+  const loaiHs = LOAI_HS_MAP[type] || '39';
+  return buildHSCHUNGTU(maCskcb, [{ loaiHs, base64Content: contentBase64 }]);
 }
 
 /**
