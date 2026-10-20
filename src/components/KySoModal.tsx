@@ -6,13 +6,15 @@
  * NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X, ShieldCheck, Send, AlertTriangle, CheckCircle2,
-  Loader2, Info, Usb, Smartphone, ChevronDown, XCircle
+  Loader2, Info, Usb, Smartphone, ChevronDown, XCircle,
+  Download, Upload, RefreshCw, FileCode
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { HoSoRecord, SignMethod } from '../lib/signAndSubmitService';
+import { checkLocalTokenSigner, LocalSignerStatus } from '../lib/localTokenSignerService';
 
 interface KySoModalProps {
   records: HoSoRecord[];                                    // Danh sách hồ sơ được chọn
@@ -31,8 +33,9 @@ interface ProgressEntry {
 }
 
 export default function KySoModal({ records, mode, onClose, onComplete }: KySoModalProps) {
+  const [currentRecords, setCurrentRecords] = useState<HoSoRecord[]>(records);
   const [step, setStep] = useState<Step>('config');
-  const [signMethod, setSignMethod] = useState<SignMethod>('SMARTCA_TOTP');
+  const [signMethod, setSignMethod] = useState<SignMethod>('USB_TOKEN'); // Default USB Token as requested by user
   const [progressList, setProgressList] = useState<ProgressEntry[]>([]);
   const [resultRecords, setResultRecords] = useState<HoSoRecord[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -40,8 +43,96 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
   const cancelRef = React.useRef(false);
   const [summary, setSummary] = useState({ success: 0, error: 0, total: 0 });
 
-  const signableRecords = records.filter(r => r.trangThai !== 'SUBMITTED');
-  const unsignedWarning = records.filter(r => r.trangThai !== 'SIGNED' && mode !== 'sign');
+  const [localSignerStatus, setLocalSignerStatus] = useState<LocalSignerStatus | null>(null);
+  const [isCheckingSigner, setIsCheckingSigner] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const signableRecords = currentRecords.filter(r => r.trangThai !== 'SUBMITTED');
+  const unsignedWarning = currentRecords.filter(r => r.trangThai !== 'SIGNED' && mode !== 'sign');
+
+  const checkSigner = async () => {
+    setIsCheckingSigner(true);
+    try {
+      const res = await checkLocalTokenSigner();
+      setLocalSignerStatus(res);
+    } catch {
+      setLocalSignerStatus({ available: false });
+    } finally {
+      setIsCheckingSigner(false);
+    }
+  };
+
+  useEffect(() => {
+    if (signMethod === 'USB_TOKEN') {
+      checkSigner();
+    }
+  }, [signMethod]);
+
+  const handleDownloadXml = async () => {
+    const { buildXml } = await import('../lib/xmlBuilder');
+    const { getOrgConfig } = await import('../lib/signAndSubmitService');
+    const org = getOrgConfig();
+
+    for (const rec of signableRecords) {
+      let xmlContent = rec.xmlContent;
+      if (!xmlContent) {
+        try { xmlContent = buildXml(rec.type, rec.rawData, org.ma_cskcb); } catch {}
+      }
+      if (!xmlContent) continue;
+      const blob = new Blob([xmlContent], { type: 'application/xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${rec.type}_${rec.hoTen.replace(/\s+/g, '_')}_${rec.maBhyt || rec.id}.xml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const handleUploadSignedXml = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    let updatedCount = 0;
+    const newRecords = [...currentRecords];
+
+    for (let fIdx = 0; fIdx < files.length; fIdx++) {
+      const file = files[fIdx];
+      const text = await file.text();
+      if (!text.includes('<SignatureValue>')) {
+        alert(`File ${file.name} chưa chứa chữ ký số XMLDSig hợp lệ!`);
+        continue;
+      }
+
+      const matchedIdx = newRecords.findIndex(r => 
+        (r.maBhyt && text.includes(r.maBhyt)) || 
+        (r.hoTen && text.includes(r.hoTen)) ||
+        file.name.includes(r.id)
+      );
+
+      if (matchedIdx !== -1) {
+        newRecords[matchedIdx] = {
+          ...newRecords[matchedIdx],
+          trangThai: 'SIGNED',
+          xmlContent: text,
+          errorMessage: undefined
+        };
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      setCurrentRecords(newRecords);
+      onComplete(newRecords);
+      alert(`Đã nạp thành công ${updatedCount} hồ sơ đã ký số! Bây giờ bạn có thể bấm "Đẩy Cổng BHXH".`);
+    } else {
+      alert('Không tìm thấy hồ sơ nào trong danh sách khớp với file XML vừa chọn.');
+    }
+
+    if (e.target) e.target.value = '';
+  };
 
   const modeLabel = {
     sign: 'Ký Số Hồ Sơ',
@@ -243,6 +334,90 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
                       </button>
                     ))}
                   </div>
+
+                  {/* Panel hỗ trợ riêng cho USB Token */}
+                  {signMethod === 'USB_TOKEN' && (
+                    <div className="mt-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "w-2.5 h-2.5 rounded-full animate-pulse",
+                            localSignerStatus?.available ? "bg-emerald-500" : "bg-amber-500"
+                          )} />
+                          <span className="text-xs font-bold text-slate-700">
+                            {localSignerStatus?.available 
+                              ? `Đã kết nối công cụ ký USB Token (Cổng ${localSignerStatus.port})`
+                              : "Chưa kết nối công cụ ký USB Token cục bộ"
+                            }
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={checkSigner}
+                          disabled={isCheckingSigner}
+                          className="flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-700 bg-white px-2 py-1 rounded border border-slate-200 hover:bg-slate-50"
+                        >
+                          <RefreshCw className={cn("w-3 h-3", isCheckingSigner && "animate-spin")} />
+                          Kiểm tra kết nối
+                        </button>
+                      </div>
+
+                      {localSignerStatus?.available ? (
+                        <div className="text-xs text-emerald-700 bg-emerald-50 p-2.5 rounded-lg border border-emerald-200">
+                          ✅ <strong>Sẵn sàng ký:</strong> Khi bạn bấm "Ký Số", hộp thoại nhập mã PIN của USB Token sẽ tự động xuất hiện trên máy tính.
+                          {localSignerStatus.certSubject && (
+                            <div className="mt-1 text-[11px] text-emerald-800 truncate font-mono">
+                              Chủ thể: {localSignerStatus.certSubject}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-amber-800 bg-amber-50 p-3 rounded-lg border border-amber-200 space-y-2">
+                          <div className="font-semibold flex items-center gap-1.5 text-amber-900">
+                            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                            Hai cách ký số bằng USB Token:
+                          </div>
+                          <div className="space-y-1.5 pl-5 text-[11px] list-decimal">
+                            <div>
+                              <strong>Cách 1 (Ký 1-click):</strong> Mở file <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">Chay_Ky_So_USB_Token.bat</code> trong thư mục phần mềm trên máy tính, sau đó bấm <em>"Kiểm tra kết nối"</em>.
+                            </div>
+                            <div>
+                              <strong>Cách 2 (Ký ngoại tuyến):</strong> Bấm <em>"Tải XML chưa ký"</em> để tải file về, dùng phần mềm ký số USB Token của viện/phòng khám ký file, rồi bấm <em>"Tải lên XML đã ký"</em>.
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Nút thao tác ngoại tuyến */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
+                        <button
+                          type="button"
+                          onClick={handleDownloadXml}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+                        >
+                          <Download className="w-3.5 h-3.5 text-blue-600" />
+                          Tải XML chưa ký về máy ({signableRecords.length})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 transition"
+                        >
+                          <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                          Tải lên XML đã ký số
+                        </button>
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          onChange={handleUploadSignedXml}
+                          multiple
+                          accept=".xml"
+                          className="hidden"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -274,9 +449,8 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
               <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-start gap-2 text-blue-700 text-xs">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  Hệ thống sẽ tự động tạo XML chuẩn BHXH (TT25), tính hash SHA-256, gửi ký qua VNPT SmartCA Gateway, 
-                  nhúng chữ ký vào XML rồi đẩy lên Cổng tiếp nhận BHXH: <strong>egw.baohiemxahoi.gov.vn</strong>.
-                  <br />Cần cấu hình trước: <strong>Cổng BHXH (tài khoản) + VNPT SmartCA (Serial/TOTP)</strong>.
+                  Hồ sơ sau khi ký số thật chuẩn XMLDSig (Phụ lục 02 TT25) sẽ được đẩy trực tiếp lên Cổng tiếp nhận BHXH: <strong>egw.baohiemxahoi.gov.vn</strong>.
+                  <br />Hỗ trợ đồng thời cả <strong>USB Token cắm máy tính</strong> và <strong>VNPT SmartCA (App / TOTP)</strong>.
                 </span>
               </div>
             </div>

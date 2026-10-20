@@ -493,28 +493,42 @@ export async function prepareXmlForSigning(
     const hashToSign = await computeXmlHashBase64(xmlString);
     return {
       hashToSign,
-      buildSignedXml: (sig: string) => embedSignatureInXml(xmlString, sig, certInfo.rawCertBase64)
+      buildSignedXml: (sig: string) => embedSignatureInXml(xmlString, sig, certInfo.rawCertBase64, undefined, certInfo.subject)
     };
   }
 
-  // Chuẩn Phụ lục 02 - TT25 BHXH Việt Nam
-  const hoSoIdMatch = xmlString.match(/<THONGTINHOSO\s+Id="([^"]+)"/i);
+  const is01BH = xmlString.includes('<HSTH01BH');
+  
+  // Trích xuất ID hồ sơ (hỗ trợ cả THONGTINHOSO và DS_CHITIET)
+  const hoSoIdMatch = xmlString.match(/<THONGTINHOSO\s+Id="([^"]+)"/i) ||
+                      xmlString.match(/<DS_CHITIET\s+Id="([^"]+)"/i);
   const hoSoId = hoSoIdMatch ? hoSoIdMatch[1] : `Id-${genId()}`;
 
-  // Trích xuất nội dung <THONGTINHOSO>...</THONGTINHOSO> để tính DigestValue
-  const thongTinHoSoMatch = xmlString.match(/<THONGTINHOSO[\s\S]*?<\/THONGTINHOSO>/i);
-  const thongTinHoSoXml = thongTinHoSoMatch ? thongTinHoSoMatch[0] : xmlString;
-  const hosoDigest = await computeXmlHashBase64(thongTinHoSoXml);
+  // Trích xuất nội dung cần ký để tính DigestValue
+  let dataDigest = '';
+  if (is01BH) {
+    const dsChiTietMatch = xmlString.match(/<DS_CHITIET[\s\S]*?<\/DS_CHITIET>/i);
+    const dsChiTietXml = dsChiTietMatch ? dsChiTietMatch[0] : xmlString;
+    dataDigest = await computeXmlHashBase64(dsChiTietXml);
+  } else {
+    const thongTinHoSoMatch = xmlString.match(/<THONGTINHOSO[\s\S]*?<\/THONGTINHOSO>/i);
+    const thongTinHoSoXml = thongTinHoSoMatch ? thongTinHoSoMatch[0] : xmlString;
+    dataDigest = await computeXmlHashBase64(thongTinHoSoXml);
+  }
 
   const signingTime = new Date().toISOString().slice(0, 19);
   const objectXml = `<Object Id="Object-CHUKYDONVI-${hoSoId}"><SignatureProperties xmlns=""><SignatureProperty Target="#CHUKYDONVI-${hoSoId}" Id="SignatureProperty-CHUKYDONVI-${hoSoId}"><SigningTime>${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
   const objectDigest = await computeXmlHashBase64(objectXml);
 
-  // Cấu trúc SignedInfo chuẩn W3C XMLDSig cho BHXH
-  const signedInfoInner = `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI="#Object-CHUKYDONVI-${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${objectDigest}</DigestValue></Reference><Reference URI="#${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${hosoDigest}</DigestValue></Reference>`;
-  const signedInfoXml = `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoInner}</SignedInfo>`;
+  // Cấu trúc SignedInfo chuẩn W3C XMLDSig cho BHXH (theo MAU_01BH và Phụ lục 02)
+  let signedInfoInner = '';
+  if (is01BH) {
+    signedInfoInner = `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI="#Object-CHUKYDONVI-${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${objectDigest}</DigestValue></Reference><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${dataDigest}</DigestValue></Reference>`;
+  } else {
+    signedInfoInner = `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI="#Object-CHUKYDONVI-${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${objectDigest}</DigestValue></Reference><Reference URI="#${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${dataDigest}</DigestValue></Reference>`;
+  }
 
-  // Hash của SignedInfo gửi tới SmartCA ký
+  const signedInfoXml = `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoInner}</SignedInfo>`;
   const hashToSign = await computeXmlHashBase64(signedInfoXml);
 
   const cleanCert = (certInfo.rawCertBase64 || '').replace(/-----[^\n]+-----/g, '').replace(/\s+/g, '');
@@ -522,36 +536,24 @@ export async function prepareXmlForSigning(
 
   const buildSignedXml = (signatureBase64: string) => {
     const cleanSig = signatureBase64.replace(/\s+/g, '');
-    const sigBlock = `
-  <CHUKYDONVI>
-    <Signature Id="CHUKYDONVI-${hoSoId}" xmlns="http://www.w3.org/2000/09/xmldsig#">
-      <SignedInfo>
-        ${signedInfoInner}
-      </SignedInfo>
-      <SignatureValue>${cleanSig}</SignatureValue>
-      <KeyInfo>
-        <X509Data>
-          <X509SubjectName>${esc(subjectName)}</X509SubjectName>
-          <X509Certificate>${cleanCert}</X509Certificate>
-        </X509Data>
-      </KeyInfo>
-      ${objectXml}
-    </Signature>
-  </CHUKYDONVI>`;
+    const sigBlock = `<CHUKYDONVI><Signature Id="CHUKYDONVI-${hoSoId}" xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo>${signedInfoInner}</SignedInfo><SignatureValue>${cleanSig}</SignatureValue><KeyInfo><X509Data><X509SubjectName>${esc(subjectName)}</X509SubjectName><X509Certificate>${cleanCert}</X509Certificate></X509Data></KeyInfo>${objectXml}</Signature></CHUKYDONVI>`;
 
     if (xmlString.includes('<CHUKYDONVI/>')) {
-      return xmlString.replace('<CHUKYDONVI/>', sigBlock.trim());
+      return xmlString.replace('<CHUKYDONVI/>', sigBlock);
     }
     if (xmlString.includes('<CHUKYDONVI>')) {
-      return xmlString.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, sigBlock.trim());
+      return xmlString.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, sigBlock);
+    }
+    if (xmlString.includes('</HSTH01BH>')) {
+      return xmlString.replace('</HSTH01BH>', sigBlock + '</HSTH01BH>');
     }
     if (xmlString.includes('</HSCHUNGTU>')) {
-      return xmlString.replace('</HSCHUNGTU>', sigBlock + '\n</HSCHUNGTU>');
+      return xmlString.replace('</HSCHUNGTU>', sigBlock + '</HSCHUNGTU>');
     }
     if (xmlString.includes('</DU_LIEU_KHAM_SUC_KHOE>')) {
-      return xmlString.replace('</DU_LIEU_KHAM_SUC_KHOE>', sigBlock + '\n</DU_LIEU_KHAM_SUC_KHOE>');
+      return xmlString.replace('</DU_LIEU_KHAM_SUC_KHOE>', sigBlock + '</DU_LIEU_KHAM_SUC_KHOE>');
     }
-    return xmlString + sigBlock;
+    return xmlString.replace(/(<\/([a-zA-Z0-9_]+)>)$/, sigBlock + '$1');
   };
 
   return { hashToSign, buildSignedXml };
@@ -576,59 +578,42 @@ export function embedSignatureInXml(
     return xmlString.replace('</KHAMSUCKHOE>', kskSigBlock + '\n</KHAMSUCKHOE>');
   }
 
-  const hoSoIdMatch = xmlString.match(/<THONGTINHOSO\s+Id="([^"]+)"/i);
+  const is01BH = xmlString.includes('<HSTH01BH');
+  const hoSoIdMatch = xmlString.match(/<THONGTINHOSO\s+Id="([^"]+)"/i) ||
+                      xmlString.match(/<DS_CHITIET\s+Id="([^"]+)"/i);
   const hoSoId = hoSoIdMatch ? hoSoIdMatch[1] : `Id-${genId()}`;
   const cleanCert = (certBase64 || '').replace(/-----[^\n]+-----/g, '').replace(/\s+/g, '');
   const subject = subjectDN || 'CN=CSKCB';
   const signingTime = new Date().toISOString().slice(0, 19);
 
-  // Định dạng chữ ký chuẩn XMLDSig Phụ lục 02
-  const sigBlock = `
-  <CHUKYDONVI>
-    <Signature Id="CHUKYDONVI-${hoSoId}" xmlns="http://www.w3.org/2000/09/xmldsig#">
-      <SignedInfo>
-        <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
-        <SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
-        <Reference URI="#Object-CHUKYDONVI-${hoSoId}">
-          <DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-          <DigestValue>${digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='}</DigestValue>
-        </Reference>
-        <Reference URI="#${hoSoId}">
-          <DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-          <DigestValue>${digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='}</DigestValue>
-        </Reference>
-      </SignedInfo>
-      <SignatureValue>${signatureBase64.replace(/\s+/g, '')}</SignatureValue>
-      ${cleanCert ? `
-      <KeyInfo>
-        <X509Data>
-          <X509SubjectName>${esc(subject)}</X509SubjectName>
-          <X509Certificate>${cleanCert}</X509Certificate>
-        </X509Data>
-      </KeyInfo>` : ''}
-      <Object Id="Object-CHUKYDONVI-${hoSoId}">
-        <SignatureProperties xmlns="">
-          <SignatureProperty Target="#CHUKYDONVI-${hoSoId}" Id="SignatureProperty-CHUKYDONVI-${hoSoId}">
-            <SigningTime>${signingTime}</SigningTime>
-          </SignatureProperty>
-        </SignatureProperties>
-      </Object>
-    </Signature>
-  </CHUKYDONVI>`;
+  const objectXml = `<Object Id="Object-CHUKYDONVI-${hoSoId}"><SignatureProperties xmlns=""><SignatureProperty Target="#CHUKYDONVI-${hoSoId}" Id="SignatureProperty-CHUKYDONVI-${hoSoId}"><SigningTime>${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
+
+  let signedInfoInner = '';
+  if (is01BH) {
+    signedInfoInner = `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI="#Object-CHUKYDONVI-${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='}</DigestValue></Reference><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='}</DigestValue></Reference>`;
+  } else {
+    signedInfoInner = `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI="#Object-CHUKYDONVI-${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='}</DigestValue></Reference><Reference URI="#${hoSoId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='}</DigestValue></Reference>`;
+  }
+
+  const keyInfoXml = cleanCert ? `<KeyInfo><X509Data><X509SubjectName>${esc(subject)}</X509SubjectName><X509Certificate>${cleanCert}</X509Certificate></X509Data></KeyInfo>` : '';
+  const sigBlock = `<CHUKYDONVI><Signature Id="CHUKYDONVI-${hoSoId}" xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo>${signedInfoInner}</SignedInfo><SignatureValue>${signatureBase64.replace(/\s+/g, '')}</SignatureValue>${keyInfoXml}${objectXml}</Signature></CHUKYDONVI>`;
 
   if (xmlString.includes('<CHUKYDONVI/>')) {
-    return xmlString.replace('<CHUKYDONVI/>', sigBlock.trim());
+    return xmlString.replace('<CHUKYDONVI/>', sigBlock);
   }
   if (xmlString.includes('<CHUKYDONVI>')) {
-    return xmlString.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, sigBlock.trim());
+    return xmlString.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, sigBlock);
+  }
+  if (xmlString.includes('</HSTH01BH>')) {
+    return xmlString.replace('</HSTH01BH>', sigBlock + '</HSTH01BH>');
   }
   if (xmlString.includes('</HSCHUNGTU>')) {
-    return xmlString.replace('</HSCHUNGTU>', sigBlock + '\n</HSCHUNGTU>');
+    return xmlString.replace('</HSCHUNGTU>', sigBlock + '</HSCHUNGTU>');
   }
   if (xmlString.includes('</DU_LIEU_KHAM_SUC_KHOE>')) {
-    return xmlString.replace('</DU_LIEU_KHAM_SUC_KHOE>', sigBlock + '\n</DU_LIEU_KHAM_SUC_KHOE>');
+    return xmlString.replace('</DU_LIEU_KHAM_SUC_KHOE>', sigBlock + '</DU_LIEU_KHAM_SUC_KHOE>');
   }
-  return xmlString + sigBlock;
+  return xmlString.replace(/(<\/([a-zA-Z0-9_]+)>)$/, sigBlock + '$1');
 }
 
 /**

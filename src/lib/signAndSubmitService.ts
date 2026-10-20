@@ -10,6 +10,7 @@
 import { signSmartCAHash, getSmartCAConfig, SmartCAConfig, getSmartCaCertificate, DEFAULT_VNPT_CERT, DEFAULT_VNPT_SUBJECT } from './vnptSmartCaService';
 import { bhxhGetToken, bhxhSubmitDocument } from './bhxhService';
 import { computeXmlHashBase64, embedSignatureInXml, prepareXmlForSigning, xmlToBase64, LOAI_HS_MAP, DocType } from './xmlBuilder';
+import { signXmlWithUsbToken } from './localTokenSignerService';
 
 export interface OrganizationConfig {
   ma_cskcb: string;
@@ -91,19 +92,14 @@ export async function signOneRecord(
 
   if (method === 'USB_TOKEN') {
     onProgress?.('🔐 Đang giao tiếp với USB Token...');
-    await new Promise(r => setTimeout(r, 1200));
-    const fakeSignature = "USBT0KEN_SIGNATURE_BASE64_STUB_==";
-    onProgress?.('✅ Ký số USB Token thành công! Đang hoàn thiện XMLDSig...');
-    const { buildSignedXml } = await prepareXmlForSigning(record.xmlContent, {
-      rawCertBase64: DEFAULT_VNPT_CERT,
-      subject: DEFAULT_VNPT_SUBJECT
-    });
-    const signedXml = buildSignedXml(fakeSignature);
+    const result = await signXmlWithUsbToken(record.xmlContent, onProgress);
+    onProgress?.('✅ Ký số USB Token hoàn tất!');
     return {
       ...record,
       trangThai: 'SIGNED',
-      xmlContent: signedXml,
-      signatureBase64: fakeSignature,
+      xmlContent: result.signedXml,
+      signatureBase64: result.signatureBase64,
+      certBase64: result.rawCertBase64,
       errorMessage: undefined,
     };
   }
