@@ -4,11 +4,13 @@ CÔNG CỤ KÝ SỐ USB TOKEN CỤC BỘ (LOCAL AGENT) - ĐỐI CHIẾU 01BH & C
 Tác giả: Nguyễn Đoàn Minh Ánh - IT Y Tế Đà Nẵng
 Cổng lắng nghe: http://127.0.0.1:18088/
 Hỗ trợ: Mọi USB Token (Viettel, VNPT, BKAV, FPT, EasyCA, SmartSign, NewTel, v.v.)
+Tuân thủ: Phụ lục 02 Thông tư 25/2025/TT-BYT & Quyết định BHXH Việt Nam
 ================================================================================
 #>
 
 Add-Type -AssemblyName System.Security
 Add-Type -AssemblyName System.Web
+Add-Type -AssemblyName System.Xml
 
 $port = 18088
 $listener = New-Object System.Net.HttpListener
@@ -58,58 +60,140 @@ function Get-UsbCertificate {
     return $certs[0]
 }
 
-function Sign-XmlContent([string]$xmlString, $cert) {
+function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
+    $isKsk = $xmlString.Contains("<KHAMSUCKHOE")
+    if ($isKsk) {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $dataBytes = [System.Text.Encoding]::UTF8.GetBytes($xmlString)
+        $hash = $sha256.ComputeHash($dataBytes)
+        $sigBytes = $null
+        try {
+            $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+            if ($rsa) { $sigBytes = $rsa.SignHash($hash, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) }
+        } catch {}
+        if (-not $sigBytes) {
+            $csp = [System.Security.Cryptography.RSACryptoServiceProvider]$cert.PrivateKey
+            $sigBytes = $csp.SignHash($hash, [System.Security.Cryptography.CryptoConfig]::MapNameToOID("SHA256"))
+        }
+        $sigB64 = [Convert]::ToBase64String($sigBytes)
+        $kskBlock = "<CHUKYDONVI><CKS_NGUOI_KET_LUAN>$sigB64</CKS_NGUOI_KET_LUAN><CKS_BENH_VIEN>$sigB64</CKS_BENH_VIEN></CHUKYDONVI>"
+        return @{
+            SignedXml = $xmlString.Replace("</KHAMSUCKHOE>", $kskBlock + "</KHAMSUCKHOE>")
+            Signature = $sigB64
+            Certificate = [Convert]::ToBase64String($cert.RawData)
+            Subject = $cert.Subject
+            SerialNumber = $cert.SerialNumber
+        }
+    }
+
     [xml]$xmlDoc = New-Object System.Xml.XmlDocument
     $xmlDoc.PreserveWhitespace = $true
     $xmlDoc.LoadXml($xmlString)
 
+    $root = $xmlDoc.DocumentElement
+    $is01BH = ($root.LocalName -eq "HSTH01BH")
+    
+    # Tim Id ho so (THONGTINHOSO hoac DS_CHITIET hoac the co attribute Id)
+    $hoSoNode = $root.SelectSingleNode("//*[@Id]")
+    $hoSoId = if ($hoSoNode) { $hoSoNode.GetAttribute("Id") } else { "Id-" + [Guid]::NewGuid().ToString() }
+
     $signedXml = New-Object System.Security.Cryptography.Xml.SignedXml($xmlDoc)
-    $signedXml.SigningKey = $cert.PrivateKey
+    
+    # Lay Private Key tuong thich SHA-256 tu USB Token
+    $keyFound = $false
+    try {
+        $rsaKey = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+        if ($rsaKey) {
+            $signedXml.SigningKey = $rsaKey
+            $keyFound = $true
+        }
+    } catch {}
+
+    if (-not $keyFound) {
+        if ($cert.PrivateKey -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
+            $csp = [System.Security.Cryptography.RSACryptoServiceProvider]$cert.PrivateKey
+            if ($csp.CspKeyContainerInfo.ProviderType -ne 24) {
+                try {
+                    $cp = New-Object System.Security.Cryptography.CspParameters(24, $csp.CspKeyContainerInfo.ProviderName, $csp.CspKeyContainerInfo.KeyContainerName)
+                    $cp.Flags = [System.Security.Cryptography.CspProviderFlags]::UseExistingKey
+                    if ($csp.CspKeyContainerInfo.MachineKeyStore) {
+                        $cp.Flags = $cp.Flags -bor [System.Security.Cryptography.CspProviderFlags]::UseMachineKeyStore
+                    }
+                    $signedXml.SigningKey = New-Object System.Security.Cryptography.RSACryptoServiceProvider($cp)
+                    $keyFound = $true
+                } catch {}
+            }
+        }
+        if (-not $keyFound) {
+            $signedXml.SigningKey = $cert.PrivateKey
+        }
+    }
+
     $signedXml.SignedInfo.CanonicalizationMethod = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
     $signedXml.SignedInfo.SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+    $signedXml.Signature.Id = "CHUKYDONVI-$hoSoId"
 
-    # Reference toi toan bo tai lieu (Enveloped)
-    $reference = New-Object System.Security.Cryptography.Xml.Reference("")
-    $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
-    $reference.AddTransform($env)
-    $reference.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
-    $signedXml.AddReference($reference)
+    # Tao DataObject SigningTime chuan Phu luc 02
+    $objDoc = New-Object System.Xml.XmlDocument
+    $signingTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+    $objXml = "<SignatureProperties xmlns=`"`"><SignatureProperty Target=`"#CHUKYDONVI-$hoSoId`" Id=`"SignatureProperty-CHUKYDONVI-$hoSoId`"><SigningTime>$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
+    $objDoc.LoadXml($objXml)
 
-    # KeyInfo chua chung thu so
+    $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
+    $dataObj.Id = "Object-CHUKYDONVI-$hoSoId"
+    $dataObj.Data = $objDoc.ChildNodes
+    $signedXml.AddObject($dataObj)
+
+    # Reference 1: Object SigningTime
+    $ref1 = New-Object System.Security.Cryptography.Xml.Reference("#Object-CHUKYDONVI-$hoSoId")
+    $ref1.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+    $signedXml.AddReference($ref1)
+
+    # Reference 2: Noi dung ho so
+    if ($is01BH) {
+        $ref2 = New-Object System.Security.Cryptography.Xml.Reference("")
+        $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
+        $ref2.AddTransform($env)
+        $ref2.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($ref2)
+    } else {
+        $ref2 = New-Object System.Security.Cryptography.Xml.Reference("#$hoSoId")
+        $ref2.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($ref2)
+    }
+
+    # KeyInfo chua Certificate va SubjectName
     $keyInfo = New-Object System.Security.Cryptography.Xml.KeyInfo
-    $keyInfoX509 = New-Object System.Security.Cryptography.Xml.KeyInfoX509Data($cert)
-    $keyInfo.AddClause($keyInfoX509)
+    $kix = New-Object System.Security.Cryptography.Xml.KeyInfoX509Data
+    $kix.AddSubjectName($cert.Subject)
+    $kix.AddCertificate($cert)
+    $keyInfo.AddClause($kix)
     $signedXml.KeyInfo = $keyInfo
 
-    Write-Host " Dang yeu cau ky so bang USB Token..." -ForegroundColor Cyan
+    # Tinh toan chu ky chuan XMLDSig W3C
     $signedXml.ComputeSignature()
     $xmlDigitalSignature = $signedXml.GetXml()
 
-    # Nhúng chữ ký vào thẻ CHUKYDONVI
-    $rootNode = $xmlDoc.DocumentElement
-    $chuKyNode = $xmlDoc.CreateElement("CHUKYDONVI", $rootNode.NamespaceURI)
+    # Nhung chu ky vao the CHUKYDONVI
+    $chuKyNode = $xmlDoc.CreateElement("CHUKYDONVI", $root.NamespaceURI)
     $importedSig = $xmlDoc.ImportNode($xmlDigitalSignature, $true)
     $chuKyNode.AppendChild($importedSig) | Out-Null
 
-    # Xoa the CHUKYDONVI cu neu co
-    $oldSig = $rootNode.SelectSingleNode("//*[local-name()='CHUKYDONVI']")
+    $oldSig = $root.SelectSingleNode("//*[local-name()='CHUKYDONVI']")
     if ($oldSig) {
-        $rootNode.RemoveChild($oldSig) | Out-Null
+        $root.ReplaceChild($chuKyNode, $oldSig) | Out-Null
+    } else {
+        $root.AppendChild($chuKyNode) | Out-Null
     }
-
-    $rootNode.AppendChild($chuKyNode) | Out-Null
 
     $sw = New-Object System.IO.StringWriter
     $xmlDoc.Save($sw)
     $signedXmlText = $sw.ToString()
 
-    $sigBase64 = [Convert]::ToBase64String($signedXml.SignatureValue)
-    $certBase64 = [Convert]::ToBase64String($cert.RawData)
-
     return @{
         SignedXml = $signedXmlText
-        Signature = $sigBase64
-        Certificate = $certBase64
+        Signature = [Convert]::ToBase64String($signedXml.SignatureValue)
+        Certificate = [Convert]::ToBase64String($cert.RawData)
         Subject = $cert.Subject
         SerialNumber = $cert.SerialNumber
     }
@@ -165,8 +249,8 @@ while ($listener.IsListening) {
                 throw "Khong tim thay chung thu so USB Token nao tren may tinh. Vui long cam USB Token vao may va kiem tra driver."
             }
 
-            Write-Host " Nhap nhan yeu cau ky cho: $($cert.Subject)" -ForegroundColor Green
-            $signResult = Sign-XmlContent -xmlString $xmlInput -cert $cert
+            Write-Host " Nhan yeu cau ky cho: $($cert.Subject)" -ForegroundColor Green
+            $signResult = Sign-BhxhXmlDocument -xmlString $xmlInput -cert $cert
 
             $respData = @{
                 status = "success"
