@@ -388,21 +388,39 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
                         </div>
                       )}
 
-                      {/* Nút thao tác ngoại tuyến */}
-                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200">
+                      {/* Nút thao tác ngoại tuyến và tải tool */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
+                        <a
+                          href="/tools/Ky_XML_Bang_USB_Token.bat"
+                          download="Ky_XML_Bang_USB_Token.bat"
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5 text-amber-700" />
+                          Tải Ky_XML_Bang_USB_Token.bat
+                        </a>
+
+                        <a
+                          href="/tools/Chay_Ky_So_USB_Token.bat"
+                          download="Chay_Ky_So_USB_Token.bat"
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-blue-900 bg-blue-100 hover:bg-blue-200 border border-blue-300 rounded-lg shadow-sm transition"
+                        >
+                          <Download className="w-3.5 h-3.5 text-blue-700" />
+                          Tải Chay_Ky_So_USB_Token.bat (Ký 1-click)
+                        </a>
+
                         <button
                           type="button"
                           onClick={handleDownloadXml}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
                         >
                           <Download className="w-3.5 h-3.5 text-blue-600" />
-                          Tải XML chưa ký về máy ({signableRecords.length})
+                          Tải XML chưa ký ({signableRecords.length})
                         </button>
 
                         <button
                           type="button"
                           onClick={() => fileInputRef.current?.click()}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 transition"
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 transition"
                         >
                           <Upload className="w-3.5 h-3.5 text-emerald-600" />
                           Tải lên XML đã ký số
@@ -514,6 +532,46 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
                   <div className="text-xs font-bold text-slate-600 mt-1">Tổng hồ sơ</div>
                 </div>
               </div>
+
+              {/* Banner trợ giúp tải công cụ ký USB Token khi có lỗi */}
+              {summary.error > 0 && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    Tải công cụ hỗ trợ ký số USB Token trên máy tính:
+                  </div>
+                  <div className="text-[11px] text-amber-800">
+                    Bạn có thể tải file <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-amber-900 font-bold">Ky_XML_Bang_USB_Token.bat</code> để ký ngoại tuyến hoặc <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-amber-900 font-bold">Chay_Ky_So_USB_Token.bat</code> để ký trực tiếp 1-click từ trình duyệt.
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <a
+                      href="/tools/Ky_XML_Bang_USB_Token.bat"
+                      download="Ky_XML_Bang_USB_Token.bat"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Tải Ky_XML_Bang_USB_Token.bat
+                    </a>
+                    <a
+                      href="/tools/Chay_Ky_So_USB_Token.bat"
+                      download="Chay_Ky_So_USB_Token.bat"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold rounded-lg shadow-sm transition"
+                    >
+                      <Download className="w-3.5 h-3.5 text-blue-600" />
+                      Tải Chay_Ky_So_USB_Token.bat (1-Click)
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStep('config');
+                      }}
+                      className="text-xs text-blue-600 hover:underline font-semibold ml-auto"
+                    >
+                      Quay lại cấu hình & thử lại →
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="max-h-[300px] overflow-y-auto space-y-2">
                 {progressList.map(p => (

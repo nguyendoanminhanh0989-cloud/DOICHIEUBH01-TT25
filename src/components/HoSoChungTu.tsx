@@ -16,7 +16,8 @@ import {
   X,
   Building,
   Trash2,
-  Cloud
+  Cloud,
+  Usb
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import TaoHoSoModal from './TaoHoSoModal';
@@ -535,6 +536,24 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                       </div>
                     </a>
                   ))}
+
+                  <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-t border-b border-slate-100 my-1">
+                    CÔNG CỤ KÝ SỐ USB TOKEN (.BAT)
+                  </div>
+                  <a href="/tools/Ky_XML_Bang_USB_Token.bat" className="flex gap-3 px-4 py-2 hover:bg-amber-50 transition cursor-pointer items-start" download>
+                    <Usb className="w-5 h-5 text-amber-600 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-semibold text-slate-700">Ky_XML_Bang_USB_Token.bat</div>
+                      <div className="text-xs text-slate-500">Ký hàng loạt XML ngoại tuyến bằng USB Token</div>
+                    </div>
+                  </a>
+                  <a href="/tools/Chay_Ky_So_USB_Token.bat" className="flex gap-3 px-4 py-2 hover:bg-blue-50 transition cursor-pointer items-start" download>
+                    <Usb className="w-5 h-5 text-blue-600 mt-0.5" />
+                    <div>
+                      <div className="text-sm font-semibold text-slate-700">Chay_Ky_So_USB_Token.bat</div>
+                      <div className="text-xs text-slate-500">Dịch vụ ký trực tiếp 1-click từ trình duyệt</div>
+                    </div>
+                  </a>
                 </div>
               )}
             </div>
