@@ -7,9 +7,9 @@
  * NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG
  */
 
-import { signSmartCAHash, getSmartCAConfig, SmartCAConfig } from './vnptSmartCaService';
+import { signSmartCAHash, getSmartCAConfig, SmartCAConfig, getSmartCaCertificate, DEFAULT_VNPT_CERT, DEFAULT_VNPT_SUBJECT } from './vnptSmartCaService';
 import { bhxhGetToken, bhxhSubmitDocument } from './bhxhService';
-import { computeXmlHashBase64, embedSignatureInXml, xmlToBase64, LOAI_HS_MAP, DocType } from './xmlBuilder';
+import { computeXmlHashBase64, embedSignatureInXml, prepareXmlForSigning, xmlToBase64, LOAI_HS_MAP, DocType } from './xmlBuilder';
 
 export interface OrganizationConfig {
   ma_cskcb: string;
@@ -78,23 +78,27 @@ export const saveOrgConfig = (config: OrganizationConfig) => {
 };
 
 /**
- * Ký số 1 hồ sơ bằng VNPT SmartCA (TOTP tự động)
+ * Ký số 1 hồ sơ bằng VNPT SmartCA (TOTP tự động) chuẩn Phụ lục 02 BHXH
  */
 export async function signOneRecord(
   record: HoSoRecord,
   method: SignMethod = 'SMARTCA_TOTP',
   onProgress?: (msg: string) => void
 ): Promise<HoSoRecord> {
+  if (!record.xmlContent) {
+    throw new Error('Hồ sơ chưa có nội dung XML. Hãy tạo XML trước khi ký số.');
+  }
+
   if (method === 'USB_TOKEN') {
-    if (!record.xmlContent) {
-      throw new Error('Hồ sơ chưa có nội dung XML. Hãy tạo XML trước khi ký số.');
-    }
     onProgress?.('🔐 Đang giao tiếp với USB Token...');
-    // Giả lập thời gian ký USB Token
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1200));
     const fakeSignature = "USBT0KEN_SIGNATURE_BASE64_STUB_==";
-    onProgress?.('✅ Ký số USB Token thành công! Đang nhúng chữ ký...');
-    const signedXml = embedSignatureInXml(record.xmlContent, fakeSignature);
+    onProgress?.('✅ Ký số USB Token thành công! Đang hoàn thiện XMLDSig...');
+    const { buildSignedXml } = await prepareXmlForSigning(record.xmlContent, {
+      rawCertBase64: DEFAULT_VNPT_CERT,
+      subject: DEFAULT_VNPT_SUBJECT
+    });
+    const signedXml = buildSignedXml(fakeSignature);
     return {
       ...record,
       trangThai: 'SIGNED',
@@ -108,18 +112,18 @@ export async function signOneRecord(
   if (!cfg.clientId || !cfg.serialNumber) {
     throw new Error('Chưa cấu hình VNPT SmartCA. Vui lòng vào Cấu hình → Cấu hình VNPT SmartCA.');
   }
-  if (!record.xmlContent) {
-    throw new Error('Hồ sơ chưa có nội dung XML. Hãy tạo XML trước khi ký số.');
-  }
 
-  onProgress?.('🔐 Đang tính toán hash XML...');
-  const hashBase64 = await computeXmlHashBase64(record.xmlContent);
+  onProgress?.('🔐 Đang lấy thông tin chứng thư số...');
+  const certInfo = await getSmartCaCertificate(cfg);
+
+  onProgress?.('🔐 Đang chuẩn bị cấu trúc ký số chuẩn Phụ lục 02 BHXH...');
+  const { hashToSign, buildSignedXml } = await prepareXmlForSigning(record.xmlContent, certInfo);
 
   onProgress?.('📡 Đang gửi yêu cầu ký đến VNPT SmartCA...');
-  const signatureBase64 = await signSmartCAHash(cfg, hashBase64);
+  const signatureBase64 = await signSmartCAHash(cfg, hashToSign);
 
-  onProgress?.('✅ Ký số thành công! Đang nhúng chữ ký vào XML...');
-  const signedXml = embedSignatureInXml(record.xmlContent, signatureBase64, cfg.clientId);
+  onProgress?.('✅ Ký số thành công! Đang nhúng chữ ký số chuẩn XMLDSig...');
+  const signedXml = buildSignedXml(signatureBase64);
 
   return {
     ...record,

@@ -37,6 +37,8 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
   const [smartcaPassword, setSmartcaPassword] = useState('');
   const [smartcaSerialNumber, setSmartcaSerialNumber] = useState('');
   const [smartcaTotpSecret, setSmartcaTotpSecret] = useState('');
+  const [smartcaCertificate, setSmartcaCertificate] = useState('');
+  const [smartcaSubject, setSmartcaSubject] = useState('');
 
   // Form states - BHYT
   const [bhytUsername, setBhytUsername] = useState('');
@@ -65,6 +67,8 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
     setSmartcaUserId(smartCAConfig.userId || '');
     setSmartcaPassword(smartCAConfig.password || '');
     setSmartcaTotpSecret(smartCAConfig.totpSecret || '');
+    setSmartcaCertificate(smartCAConfig.certificateBase64 || '');
+    setSmartcaSubject(smartCAConfig.subjectDN || '');
   }, []);
 
   // Load danh mục CSKCB
@@ -132,9 +136,15 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
           userId: smartcaUserId,
           password: smartcaPassword,
           serialNumber: smartcaSerialNumber,
-          totpSecret: smartcaTotpSecret
+          totpSecret: smartcaTotpSecret,
+          certificateBase64: smartcaCertificate || undefined,
+          subjectDN: smartcaSubject || undefined
         };
         const res = await testSmartCaConnection(config);
+        if (res.status === 'success' && res.certificate?.rawCertBase64) {
+          setSmartcaCertificate(res.certificate.rawCertBase64);
+          setSmartcaSubject(res.certificate.subject);
+        }
         setTestResult({ 
           success: res.status === 'success', 
           message: res.message,
@@ -170,7 +180,9 @@ export default function ConfigModal({ onClose }: ConfigModalProps) {
       userId: smartcaUserId,
       password: smartcaPassword,
       serialNumber: smartcaSerialNumber,
-      totpSecret: smartcaTotpSecret
+      totpSecret: smartcaTotpSecret,
+      certificateBase64: smartcaCertificate || undefined,
+      subjectDN: smartcaSubject || undefined
     });
 
     alert('Đã lưu cấu hình thành công!');

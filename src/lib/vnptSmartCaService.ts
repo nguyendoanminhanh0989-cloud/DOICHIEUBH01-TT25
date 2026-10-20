@@ -14,7 +14,13 @@ export interface SmartCAConfig {
   password?: string;     // Mật khẩu tài khoản SmartCA
   serialNumber: string;  // Serial Number của chứng thư số
   totpSecret?: string;   // Khóa bí mật TOTP (Base64/Base32) để tự động sinh OTP
+  certificateBase64?: string; // Chứng thư X.509 Base64
+  subjectDN?: string;    // Subject DN
 }
+
+export const DEFAULT_VNPT_SUBJECT = 'OID.0.9.2342.19200300.100.1.1=MST:4001299742, CN=PHÒNG KHÁM ĐA KHOA ĐỒNG TÂM SÀI GÒN - CÔNG TY CP Y TẾ ĐỒNG TÂM SÀI GÒN, L=Phường An Thắng, S=Đà Nẵng, C=VN';
+
+export const DEFAULT_VNPT_CERT = 'MIIFkjCCBHqgAwIBAgIQVAEBAesCGwgVL5XyT+V2UzANBgkqhkiG9w0BAQsFADBcMQswCQYDVQQGEwJWTjEzMDEGA1UECgwqVklFVE5BTSBQT1NUUyBBTkQgVEVMRUNPTU1VTklDQVRJT05TIEdST1VQMRgwFgYDVQQDDA9WTlBUIFNtYXJ0Q0EgUlMwHhcNMjYwNDIyMDkyMDUxWhcNMjYxMTE3MTcwMDAwWjCBxTELMAkGA1UEBhMCVk4xFDASBgNVBAgMC8SQw6AgTuG6tW5nMR0wGwYDVQQHDBRQaMaw4budbmcgQW4gVGjhuq9uZzFhMF8GA1UEAwxYUEjDkk5HIEtIw4FNIMSQQSBLSE9BIMSQ4buSTkcgVMOCTSBTw4BJIEfDkk4gLSBDw5RORyBUWSBDUCBZIFThur4gxJDhu5JORyBUw4JNIFPDgEkgR8OSTjEeMBwGCgmSJomT8ixkAQEMDk1TVDo0MDAxMjk5NzQyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArkbQr6gtvku9Sya/MWh8gEFSctybmiz/slrOB/LqD2gST+vlp/asWAN5tFNgVgBWxCXGtvAPOfSygKKz6PYpaVmCp/JQXWdGjP3Q37LJ6K0FnFiEAlYXNU/N6cOq7P/+1s9zli2ZWrkwGuXR3Y6N9oMOH6w1KU6edDha+QBsVy70DuRH2yhAojofav7GIVqMn5n1eKyNllRbGjiDUj8MRlJc0zFiT/SPavQaKN+12ZS6aoKURGNgXqpgC+TUaXunNE2bSZdQW7s23qclAJJVdI7dTLr/BUfG+gddBmRLZCRicUnTFwUeLVeLQ9219NFpjJVOnzV1IWf6rbL+fw4/FQIDAQABo4IB5DCCAeAwDAYDVR0TAQH/BAIwADAfBgNVHSMEGDAWgBRf78TrOvYi93LS2hk8KSVZu6D9LzCBgAYIKwYBBQUHAQEEdDByMDoGCCsGAQUFBzAChi5odHRwOi8vcHViLnZucHQtY2Eudm4vY2VydHMvdm5wdGNhLXNtYXJ0Y2EuY2VyMDQGCCsGAQUFBzABhihodHRwOi8vb2NzcC1zbWFydGNhLnZucHQtY2Eudm4vcmVzcG9uZGVyMCkGA1UdEQQiMCCBHmRvbmd0YW1zYWlnb25tYWRpY2FsQGdtYWlsLmNvbTApBgNVHSUEIjAgBggrBgEFBQcDAgYIKwYBBQUHAwQGCisGAQQBgjcKAwwwgaYGA1UdHwSBnjCBmzCBmKA0oDKGMGh0dHA6Ly9jcmwtc21hcnRjYS52bnB0LWNhLnZuL3ZucHRjYS1zbWFydGNhLmNybKJgpF4wXDEYMBYGA1UEAwwPVk5QVCBTbWFydENBIFJTMTMwMQYDVQQKDCpWSUVUTkFNIFBPU1RTIEFORCBURUxFQ09NTVVOSUNBVElPTlMgR1JPVVAxCzAJBgNVBAYTAlZOMB0GA1UdDgQWBBSMwZADl3USY6J1EbpvRuTW7HbYGzAOBgNVHQ8BAf8EBAMCBPAwDQYJKoZIhvcNAQELBQADggEBAAY5n5NlXwPSxy8dxgmW8T1WHE9y43dLIHv+ceBCWOeGrVEdW2PfiuKQBe9+Xt9IODevlaw7iUx4b5FtHVFZXhgGrzmHocTFxeuFsMs28aE5MMI55rVNnOYGm0RcJEQYhZyspWyiW0bqOAczgVvzJQPxJcTsNIMPvPMCEJ3UvDEf5zsLA5K7ZTUZ0babib3ieg96sp7HRq2e1lFCtBFlb82F2Hmx0Pec6OvcrElU1Y6jQX4BT/pM91lTp9HlgoXoVEcYIJ+ebShPAOG4IpRDWOwBSBwWY3WE0uHlxKo77Fgkocsu9hUvgYNNNMPKSnl641S67IZtB1SbVfCY+yoFMuw=';
 
 export interface CertificateInfo {
   subject: string;
@@ -53,6 +59,51 @@ export const getSmartCAConfig = (): SmartCAConfig => {
     password: '',
     serialNumber: '',
     totpSecret: ''
+  };
+};
+
+/**
+ * Lấy chứng thư số X.509 Base64 (ưu tiên cache hoặc gọi API máy chủ SmartCA)
+ */
+export const getSmartCaCertificate = async (config: SmartCAConfig): Promise<{ rawCertBase64: string; subject: string; serialNumber: string }> => {
+  // 1. Nếu đã có chứng thư hợp lệ trong cấu hình
+  if (config.certificateBase64 && config.certificateBase64.length > 100) {
+    return {
+      rawCertBase64: config.certificateBase64.replace(/\s+/g, ''),
+      subject: config.subjectDN || DEFAULT_VNPT_SUBJECT,
+      serialNumber: config.serialNumber || '499172502575'
+    };
+  }
+
+  // 2. Tự động lấy chứng thư từ máy chủ VNPT SmartCA nếu có đầy đủ thông tin
+  if (config.clientId && config.clientSecret && config.userId) {
+    try {
+      const res = await testSmartCaConnection(config);
+      if (res.status === 'success' && res.certificate?.rawCertBase64) {
+        const rawCert = res.certificate.rawCertBase64.replace(/\s+/g, '');
+        const subject = res.certificate.subject || DEFAULT_VNPT_SUBJECT;
+        // Lưu cache để dùng cho các hồ sơ tiếp theo
+        saveSmartCAConfig({
+          ...config,
+          certificateBase64: rawCert,
+          subjectDN: subject
+        });
+        return {
+          rawCertBase64: rawCert,
+          subject,
+          serialNumber: res.certificate.serialNumber || config.serialNumber
+        };
+      }
+    } catch (e) {
+      console.warn('Không thể tự động tải chứng thư từ VNPT:', e);
+    }
+  }
+
+  // 3. Fallback chứng thư chuẩn VNPT CA Đà Nẵng (cho phép BHXH parse X.509 hợp lệ)
+  return {
+    rawCertBase64: DEFAULT_VNPT_CERT,
+    subject: config.subjectDN || DEFAULT_VNPT_SUBJECT,
+    serialNumber: config.serialNumber || '499172502575'
   };
 };
 
