@@ -66,7 +66,7 @@ export const getSmartCAConfig = (): SmartCAConfig => {
  * Lấy chứng thư số X.509 Base64 (ưu tiên cache hoặc gọi API máy chủ SmartCA)
  */
 export const getSmartCaCertificate = async (config: SmartCAConfig): Promise<{ rawCertBase64: string; subject: string; serialNumber: string }> => {
-  // 1. Nếu đã có chứng thư hợp lệ trong cấu hình
+  // 1. Nếu đã có chứng thư hợp lệ trong cấu hình (cache từ lần kiểm tra kết nối)
   if (config.certificateBase64 && config.certificateBase64.length > 100) {
     return {
       rawCertBase64: config.certificateBase64.replace(/\s+/g, ''),
@@ -94,17 +94,29 @@ export const getSmartCaCertificate = async (config: SmartCAConfig): Promise<{ ra
           serialNumber: res.certificate.serialNumber || config.serialNumber
         };
       }
-    } catch (e) {
+      // Kết nối thành công nhưng không lấy được cert
+      if (res.status === 'error') {
+        throw new Error(`Không lấy được chứng thư số từ VNPT SmartCA: ${res.message}. Vui lòng vào Cấu hình → Kiểm tra kết nối SmartCA để tải chứng thư.`);
+      }
+    } catch (e: any) {
+      // Nếu lỗi kết nối thật sự, ném lỗi để người dùng biết
+      if (e.message && (e.message.includes('Không lấy được') || e.message.includes('phản hồi lỗi') || e.message.includes('không tồn tại'))) {
+        throw e;
+      }
       console.warn('Không thể tự động tải chứng thư từ VNPT:', e);
     }
   }
 
-  // 3. Fallback chứng thư chuẩn VNPT CA Đà Nẵng (cho phép BHXH parse X.509 hợp lệ)
-  return {
-    rawCertBase64: DEFAULT_VNPT_CERT,
-    subject: config.subjectDN || DEFAULT_VNPT_SUBJECT,
-    serialNumber: config.serialNumber || '499172502575'
-  };
+  // 3. KHÔNG fallback sang cert hardcoded vì sẽ gây lỗi "Lỗi phát sinh" trên cổng BHXH
+  // (chữ ký từ VNPT SmartCA không match với cert hardcoded)
+  // Báo lỗi rõ ràng để người dùng vào cấu hình kiểm tra kết nối trước
+  throw new Error(
+    'Chưa có chứng thư số trong cấu hình. Vui lòng:\n' +
+    '1. Vào Cấu hình → Tab "Ký số VNPT SmartCA"\n' +
+    '2. Nhập đầy đủ Client ID, Client Secret, User ID, Serial Number\n' +
+    '3. Nhấn "Kiểm tra kết nối" để tải chứng thư số về\n' +
+    '4. Nhấn Lưu và thử ký lại.'
+  );
 };
 
 /**
@@ -317,10 +329,10 @@ export const testSmartCaConnection = async (config: SmartCAConfig): Promise<Smar
 };
 
 /**
- * Thực hiện Ký Hash với VNPT SmartCA bằng TOTP
+ * Thực hiện Ký Hash với VNPT SmartCA bằng TOTP hoặc APP
+ * - Nếu có totpSecret: tự động sinh OTP và ký
+ * - Nếu không có totpSecret: ký qua App (người dùng xác nhận trên app VNPT SmartCA)
  */
-
-
 export const signSmartCAHash = async (config: SmartCAConfig, hashBase64: string): Promise<string> => {
   const clientId = config.clientId?.trim();
   const clientSecret = config.clientSecret?.trim();
@@ -329,8 +341,8 @@ export const signSmartCAHash = async (config: SmartCAConfig, hashBase64: string)
   const serialNumber = config.serialNumber?.trim();
   let proxyBase = config.baseUrl?.replace(/\/+$/, '').trim() || 'https://gwsca.vnpt.vn';
 
-  if (!clientId || !clientSecret || !userId || !totpSecret) {
-    throw new Error('Thiếu thông tin cấu hình ký số TOTP (SP ID, Secret, User ID, TOTP Secret).');
+  if (!clientId || !clientSecret || !userId) {
+    throw new Error('Thiếu thông tin cấu hình ký số (SP ID / Client ID, Client Secret, User ID là bắt buộc).');
   }
 
   if (proxyBase.includes('gwsca.vnpt.vn')) {
@@ -422,6 +434,108 @@ export const signSmartCAHash = async (config: SmartCAConfig, hashBase64: string)
   const totpOffsets = [0, -30, 30, -60, 60, -120, 120];
   const totpAlgs = ['SHA-1', 'SHA-256'];
   let isAppFlowTriggered = false;
+
+  // === APP-ONLY MODE: Không có TOTP → gửi yêu cầu không có OTP để app điện thoại xác nhận ===
+  if (!totpSecret) {
+    const appPayload = { ...payload };
+    // Không có OTP, hệ thống sẽ push notification đến app VNPT SmartCA
+    appPayload.transaction_id = `SIG${Date.now()}${Math.floor(Math.random() * 10000)}`;
+
+    for (const suffix of silentSuffixes) {
+      const url = `${proxyBase}${suffix}`;
+      try {
+        const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+        if (accessToken) reqHeaders['Authorization'] = `Bearer ${accessToken}`;
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: reqHeaders,
+          body: JSON.stringify(appPayload)
+        });
+        
+        const resText = await res.text();
+        console.log('VNPT-APP-DIAG:', `[${suffix}] HTTP ${res.status}: ${resText.substring(0, 300)}`);
+        
+        let data;
+        try { data = JSON.parse(resText); } catch { continue; }
+        
+        if (res.ok) {
+          // Kiểm tra có SAD token chưa (two-step APP flow)
+          const d = data.data || data;
+          const rawSad = d.sad || data.sad || d.SAD;
+          const tid = d.transaction_id || data.transaction_id || d.tran_id;
+          const sig = d.signature || data.signature || d.signed_data || data.signed_data;
+          const sigList = d.signatures || d.sign_files || data.signatures;
+          const firstSig = Array.isArray(sigList) ? sigList[0] : null;
+          const sigValue = sig || firstSig?.signature || firstSig?.signature_value || firstSig?.['signature value'];
+          
+          if (sigValue) { finalSignature = sigValue; break; }
+          
+          if (rawSad && tid) {
+            // APP mode two-step: có SAD, cần gọi confirm sau khi user xác nhận trên app
+            isAppFlowTriggered = true;
+            // Thử confirm ngay (user có thể đã xác nhận)
+            const confirmPaths = ['/sca/sp769/v2/signatures/confirm', '/sca/v2/signatures/confirm', '/v2/signatures/confirm'];
+            const confirmPayload = {
+              client_id: clientId, client_secret: clientSecret,
+              sp_id: clientId, sp_password: clientSecret,
+              'sp id': clientId, 'sp password': clientSecret,
+              user_id: userId, 'user id': userId,
+              password: config.password || '',
+              sad: rawSad, transaction_id: tid
+            };
+            for (const cPath of confirmPaths) {
+              try {
+                await new Promise(r => setTimeout(r, 3000)); // Chờ user xác nhận
+                const cRes = await fetch(`${proxyBase}${cPath}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                  body: JSON.stringify(confirmPayload)
+                });
+                const cText = await cRes.text();
+                let cData; try { cData = JSON.parse(cText); } catch { continue; }
+                const cd = cData.data || cData;
+                const cSig = cd.signature || cData.signature || cd.signed_data || cData.signed_data;
+                const cSigList = cd.signatures || cd.sign_files;
+                const firstCS = Array.isArray(cSigList) ? cSigList[0] : cSigList;
+                const cSigVal = cSig || firstCS?.signature || firstCS?.signature_value || firstCS?.['signature value'] || (typeof firstCS === 'string' ? firstCS : null);
+                if (cSigVal) { finalSignature = cSigVal; break; }
+              } catch { /* ignore */ }
+            }
+            if (finalSignature) break;
+          }
+          
+          // Kiểm tra xem có phải APP mode không
+          const errMsg = (data.message || data.error_description || data.desc || '').toString();
+          if (errMsg.includes('sig_wait_for_user_confirm') || errMsg.toLowerCase().includes('waiting') || errMsg.toLowerCase().includes('app')) {
+            isAppFlowTriggered = true;
+          }
+        }
+      } catch (e: any) {
+        diagLog += `[APP-${suffix}]: ${e.message} | `;
+      }
+    }
+    
+    if (finalSignature) return finalSignature;
+    
+    if (isAppFlowTriggered) {
+      throw new Error(
+        '📱 Yêu cầu ký đã được gửi đến ứng dụng VNPT SmartCA trên điện thoại của bạn.\n' +
+        'Vui lòng mở ứng dụng VNPT SmartCA, xác nhận ký số, sau đó thử lại.\n\n' +
+        'Nếu muốn ký tự động (không cần mở app), hãy nhập TOTP Secret vào phần cấu hình.'
+      );
+    }
+    
+    throw new Error(
+      `Ký số APP Mode thất bại: Không nhận được phản hồi hợp lệ từ VNPT SmartCA.\n` +
+      `Vui lòng:\n` +
+      `1. Kiểm tra kết nối mạng\n` +
+      `2. Đảm bảo đã cấu hình đúng Client ID, Client Secret, User ID\n` +
+      `3. Hoặc nhập TOTP Secret để ký tự động (không cần app)\n` +
+      `[Chẩn đoán: ${diagLog}]`
+    );
+  }
+  // === END APP-ONLY MODE ===
 
   for (const alg of totpAlgs) {
     if (finalSignature) break;
