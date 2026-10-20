@@ -189,7 +189,7 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $sw = New-Object System.IO.StringWriter
     $xmlDoc.Save($sw)
     $signedXmlText = $sw.ToString()
-
+    $signedXmlText = $signedXmlText -replace '^\s*<\?xml[^>]*\?>', '<?xml version="1.0" encoding="utf-8"?>'
     return @{
         SignedXml = $signedXmlText
         Signature = [Convert]::ToBase64String($signedXml.SignatureValue)

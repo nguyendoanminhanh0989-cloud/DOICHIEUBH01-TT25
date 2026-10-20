@@ -209,7 +209,7 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $sw = New-Object System.IO.StringWriter
     $xmlDoc.Save($sw)
     $signedXmlText = $sw.ToString()
-
+    $signedXmlText = $signedXmlText -replace '^\s*<\?xml[^>]*\?>', '<?xml version="1.0" encoding="utf-8"?>'
     return @{
         SignedXml = $signedXmlText
         Signature = [Convert]::ToBase64String($signedXml.SignatureValue)
@@ -229,7 +229,7 @@ foreach ($f in $files) {
         $res = Sign-BhxhXmlDocument -xmlString $xmlContent -cert $cert
         
         $outPath = Join-Path $outputDir $f.Name
-        [System.IO.File]::WriteAllText($outPath, $res.SignedXml, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($outPath, $res.SignedXml, (New-Object System.Text.UTF8Encoding($false)))
 
         Write-Host "[THANH CONG]" -ForegroundColor Green
         $successCount++
