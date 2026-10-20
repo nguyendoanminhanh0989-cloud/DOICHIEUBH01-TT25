@@ -75,7 +75,25 @@ function Invoke-TokenSignHash($cert, [byte[]]$hash) {
             return $csp.SignHash($hash, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
         }
     } catch { $errs += ("CSP: " + $_.Exception.Message) }
-    throw ("Khong ky duoc bang USB Token. Chi tiet: " + ($errs -join " | "))
+    # Du phong cho token Viettel-CA (CSP cu): tu nhap PIN va truyen truc tiep cho CSP
+    try {
+        $old = $cert.PrivateKey
+        if ($old -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
+            $info = $old.CspKeyContainerInfo
+            for ($try = 1; $try -le 3; $try++) {
+                $sec = Read-Host (" Nhap ma PIN USB Token (lan " + $try + "/3)") -AsSecureString
+                try {
+                    $cp = New-Object System.Security.Cryptography.CspParameters($info.ProviderType, $info.ProviderName, $info.KeyContainerName)
+                    $cp.KeyNumber = $info.KeyNumber
+                    $cp.Flags = [System.Security.Cryptography.CspProviderFlags]::UseExistingKey
+                    if ($info.MachineKeyStore) { $cp.Flags = $cp.Flags -bor [System.Security.Cryptography.CspProviderFlags]::UseMachineKeyStore }
+                    $cp.KeyPassword = $sec
+                    $rsaPin = New-Object System.Security.Cryptography.RSACryptoServiceProvider($cp)
+                    return $rsaPin.SignHash($hash, [System.Security.Cryptography.CryptoConfig]::MapNameToOID("SHA256"))
+                } catch { $errs += ("PIN" + $try + ": " + $_.Exception.Message) }
+            }
+        }
+    } catch { $errs += ("PINCSP: " + $_.Exception.Message) }    throw ("Khong ky duoc bang USB Token. Chi tiet: " + ($errs -join " | "))
 }
 function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $isKsk = $xmlString.Contains("<KHAMSUCKHOE")
