@@ -355,7 +355,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
     }
 
     try {
-      const { buildXml, buildHSCHUNGTU, xmlToBase64, LOAI_HS_MAP } = await import('../lib/xmlBuilder');
+      const { buildXml, buildHSCHUNGTU, xmlToBase64, LOAI_HOSO_XML_NAME } = await import('../lib/xmlBuilder');
       const { getOrgConfig } = await import('../lib/signAndSubmitService');
       const org = getOrgConfig();
       const maCskcb = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '49006').trim();
@@ -379,7 +379,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
         // Xuất gói tổng hợp HSCHUNGTU chứa tất cả hồ sơ theo chuẩn Phụ lục 02
         const { buildDocContent } = await import('../lib/xmlBuilder');
         const hosoList = list.map(r => {
-          const loaiHs = LOAI_HS_MAP[r.type] || '39';
+          const loaiHs = LOAI_HOSO_XML_NAME[r.type] || r.type;
           const innerDoc = buildDocContent(r.type, r.rawData);
           const base64Content = xmlToBase64(innerDoc);
           return { loaiHs, base64Content };

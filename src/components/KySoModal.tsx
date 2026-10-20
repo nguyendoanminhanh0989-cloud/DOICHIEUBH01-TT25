@@ -98,8 +98,8 @@ export default function KySoModal({ records, mode, onClose, onComplete }: KySoMo
       try {
         update('running', 'Đang xử lý...');
 
-        // === BƯỚC 1: Tạo XML nếu chưa có ===
-        if (!rec.xmlContent) {
+        // === BƯỚC 1: Tạo XML chuẩn BHXH (luôn làm mới khi ký hoặc nếu chứa thẻ cũ) ===
+        if (!rec.xmlContent || mode === 'sign' || mode === 'sign_then_submit' || rec.xmlContent.includes('GIAYCHUNGNHANNGHIVIEC') || rec.xmlContent.includes('<GRV>') || rec.xmlContent.includes('<TOMTATBA>') || rec.xmlContent.includes('GIAYXACNHANNGHIDUONGTHAI')) {
           update('running', '📄 Đang tạo XML chuẩn BHXH...');
           const xmlStr = buildXml(rec.type, rec.rawData, org.ma_cskcb);
           rec = { ...rec, xmlContent: xmlStr };

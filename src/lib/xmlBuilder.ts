@@ -26,16 +26,35 @@ import { parseDateStr, parseShortDateStr } from './data-utils';
 
 export type DocType = 'CT03' | 'CT04' | 'CT05' | 'CT06' | 'CT07' | 'GIAYDIEUTRINOITRU' | 'GIAYDIEUTRIVOSINH' | 'GIAYSUCKHOEME' | 'KHAM_SUC_KHOE';
 
-/** Mã loaiHs để đẩy API cổng BHXH */
+/**
+ * Mã loaiHs để đẩy API cổng BHXH (tham số loaiHs trong form POST)
+ * Theo Phụ lục 02 BHXH: loaiHs=39 cho các chứng từ TT25, loaiHs=61 cho Giấy chứng sinh
+ */
 export const LOAI_HS_MAP: Record<string, string> = {
   CT03: '39',
   CT04: '39',
-  CT05: '61',   // Giấy chứng sinh
+  CT05: '61',   // Giấy chứng sinh → endpoint guiGiayToDienTu, loaiHs=61
   CT06: '39',
   CT07: '39',
   GIAYDIEUTRINOITRU: '39',
   GIAYDIEUTRIVOSINH: '39',
   GIAYSUCKHOEME: '39',
+};
+
+/**
+ * Tên LOAIHOSO trong XML wrapper <FILEHOSO>
+ * Theo Phụ lục 02 BHXH: dùng tên loại (CT03, CT07, GIAYDIEUTRINOITRU...)
+ * KHÔNG dùng số (39, 61...)
+ */
+export const LOAI_HOSO_XML_NAME: Record<string, string> = {
+  CT03: 'CT03',
+  CT04: 'CT04',
+  CT05: 'CT05',           // Giấy chứng sinh
+  CT06: 'CT06',
+  CT07: 'CT07',
+  GIAYDIEUTRINOITRU: 'GIAYDIEUTRINOITRU',
+  GIAYDIEUTRIVOSINH: 'GIAYDIEUTRIVOSINH',
+  GIAYSUCKHOEME: 'GIAYSUCKHOEME',
 };
 
 /** Escape XML special chars */
@@ -60,39 +79,41 @@ function fmtDate(d: string, isTime = false): string {
  * =========================== */
 export function buildCT03Content(data: Record<string, string>): string {
   return `<?xml version="1.0" encoding="utf-8"?>
-<GRV>
-  <MA_BHXH>${esc(data.MA_BHXH)}</MA_BHXH>
-  <MA_THE>${esc(data.MA_THE)}</MA_THE>
-  <HO_TEN>${esc(data.HO_TEN)}</HO_TEN>
-  <NGAY_SINH>${fmtDate(data.NGAY_SINH)}</NGAY_SINH>
-  <GIOI_TINH>${esc(data.GIOI_TINH)}</GIOI_TINH>
+<CT03 xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SO_LUU_TRU>${esc(data.SO_LUU_TRU || '')}</SO_LUU_TRU>
+  <MA_YTE>${esc(data.MA_YTE || '')}</MA_YTE>
+  <MA_KHOA>${esc(data.MA_KHOA || '')}</MA_KHOA>
+  <MA_BHXH>${esc(data.MA_BHXH || '')}</MA_BHXH>
+  <MA_THE>${esc(data.MA_THE || '')}</MA_THE>
+  <HO_TEN>${esc(data.HO_TEN || '')}</HO_TEN>
+  <NGAY_SINH>${fmtDate(data.NGAY_SINH, false)}</NGAY_SINH>
+  <GIOI_TINH>${esc(data.GIOI_TINH || '1')}</GIOI_TINH>
   <MA_DANTOC>${esc(data.MA_DANTOC || '01')}</MA_DANTOC>
-  <NGHE_NGHIEP>${esc(data.NGHE_NGHIEP)}</NGHE_NGHIEP>
-  <DIA_CHI>${esc(data.DIA_CHI)}</DIA_CHI>
-  <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
-  <SO_CCCD>${esc(data.SO_CCCD)}</SO_CCCD>
-  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD)}</NGAYCAP_CCCD>
-  <SO_LUU_TRU>${esc(data.SO_LUU_TRU)}</SO_LUU_TRU>
-  <MA_YTE>${esc(data.MA_YTE)}</MA_YTE>
-  <MA_KHOA>${esc(data.MA_KHOA)}</MA_KHOA>
+  <NGHE_NGHIEP>${esc(data.NGHE_NGHIEP || '')}</NGHE_NGHIEP>
+  <DIA_CHI>${esc(data.DIA_CHI || '')}</DIA_CHI>
   <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
   <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
   <DINH_CHI_THAI_NGHEN>${esc(data.DINH_CHI_THAI_NGHEN || '0')}</DINH_CHI_THAI_NGHEN>
-  <TUOI_THAI>${esc(data.TUOI_THAI)}</TUOI_THAI>
-  <BENHICD10_ID>${esc(data.BENHICD10_ID)}</BENHICD10_ID>
-  <CHAN_DOAN>${esc(data.CHAN_DOAN)}</CHAN_DOAN>
-  <PP_DIEUTRI>${esc(data.PP_DIEUTRI)}</PP_DIEUTRI>
-  <GHI_CHU>${esc(data.GHI_CHU)}</GHI_CHU>
-  <HO_TEN_CHA>${esc(data.HO_TEN_CHA)}</HO_TEN_CHA>
-  <HO_TEN_ME>${esc(data.HO_TEN_ME)}</HO_TEN_ME>
+  <TUOI_THAI>${esc(data.TUOI_THAI || '')}</TUOI_THAI>
+  <CHAN_DOAN>${esc(data.CHAN_DOAN || '')}</CHAN_DOAN>
+  <PP_DIEUTRI>${esc(data.PP_DIEUTRI || '')}</PP_DIEUTRI>
+  <GHI_CHU>${esc(data.GHI_CHU || '')}</GHI_CHU>
+  <THU_TRUONG_DVI>${esc(data.THU_TRUONG_DVI || '')}</THU_TRUONG_DVI>
+  <MA_CCHN_TRUONGKHOA>${esc(data.MA_CCHN_TRUONGKHOA || '')}</MA_CCHN_TRUONGKHOA>
+  <TEN_TRUONGKHOA>${esc(data.TEN_TRUONGKHOA || '')}</TEN_TRUONGKHOA>
+  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU || data.NGAY_CT, false)}</NGAY_CHUNG_TU>
   <TEKT>${esc(data.TEKT || '0')}</TEKT>
-  <NGOAITRU_TUNGAY>${fmtDate(data.NGOAITRU_TUNGAY, true)}</NGOAITRU_TUNGAY>
-  <NGOAITRU_DENNGAY>${fmtDate(data.NGOAITRU_DENNGAY, true)}</NGOAITRU_DENNGAY>
-  <THU_TRUONG_DVI>${esc(data.THU_TRUONG_DVI)}</THU_TRUONG_DVI>
-  <MA_CCHN_TRUONGKHOA>${esc(data.MA_CCHN_TRUONGKHOA)}</MA_CCHN_TRUONGKHOA>
-  <TEN_TRUONGKHOA>${esc(data.TEN_TRUONGKHOA)}</TEN_TRUONGKHOA>
-  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU, true)}</NGAY_CHUNG_TU>
-</GRV>`;
+  <HO_TEN_CHA>${esc(data.HO_TEN_CHA || '')}</HO_TEN_CHA>
+  <HO_TEN_ME>${esc(data.HO_TEN_ME || '')}</HO_TEN_ME>
+  <NGOAITRU_TUNGAY>${fmtDate(data.NGOAITRU_TUNGAY, false)}</NGOAITRU_TUNGAY>
+  <NGOAITRU_DENNGAY>${fmtDate(data.NGOAITRU_DENNGAY, false)}</NGOAITRU_DENNGAY>
+  <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
+  <SO_CCCD>${esc(data.SO_CCCD || '')}</SO_CCCD>
+  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD, false)}</NGAYCAP_CCCD>
+  <NOICAP_CCCD>${esc(data.NOICAP_CCCD || '')}</NOICAP_CCCD>
+  <BENHICD10_ID>${esc(data.BENHICD10_ID || data.BENH_ICD10_ID || '')}</BENHICD10_ID>
+  <TENBENHNICD10>${esc(data.TENBENHNICD10 || data.BENH_ICD10_TEN || data.CHAN_DOAN || '')}</TENBENHNICD10>
+</CT03>`;
 }
 
 /** ===========================
@@ -100,32 +121,53 @@ export function buildCT03Content(data: Record<string, string>): string {
  * =========================== */
 export function buildCT04Content(data: Record<string, string>): string {
   return `<?xml version="1.0" encoding="utf-8"?>
-<TOMTATBA>
-  <SO_SERI>${esc(data.SO_SERI)}</SO_SERI>
-  <MA_BHXH>${esc(data.MA_BHXH)}</MA_BHXH>
-  <MA_THE>${esc(data.MA_THE)}</MA_THE>
-  <HO_TEN>${esc(data.HO_TEN)}</HO_TEN>
-  <NGAY_SINH>${fmtDate(data.NGAY_SINH)}</NGAY_SINH>
-  <GIOI_TINH>${esc(data.GIOI_TINH)}</GIOI_TINH>
+<CT04 xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <MA_CT>${esc(data.MA_CT || data.SO_SERI || '')}</MA_CT>
+  <SO_SERI>${esc(data.SO_SERI || '')}</SO_SERI>
+  <MA_BHXH>${esc(data.MA_BHXH || '')}</MA_BHXH>
+  <MA_THE>${esc(data.MA_THE || '')}</MA_THE>
+  <HO_TEN>${esc(data.HO_TEN || '')}</HO_TEN>
+  <NGAY_SINH>${fmtDate(data.NGAY_SINH, false)}</NGAY_SINH>
+  <GIOI_TINH>${esc(data.GIOI_TINH || '1')}</GIOI_TINH>
   <MA_DANTOC>${esc(data.MA_DANTOC || '01')}</MA_DANTOC>
-  <HO_TEN_CHA>${esc(data.HO_TEN_CHA)}</HO_TEN_CHA>
-  <HO_TEN_ME>${esc(data.HO_TEN_ME)}</HO_TEN_ME>
-  <TEN_DONVI>${esc(data.TEN_DONVI)}</TEN_DONVI>
-  <NGUOI_DAI_DIEN>${esc(data.NGUOI_DAI_DIEN)}</NGUOI_DAI_DIEN>
-  <NGAY_CT>${fmtDate(data.NGAY_CT, true)}</NGAY_CT>
+  <DIA_CHI>${esc(data.DIA_CHI || '')}</DIA_CHI>
+  <NGHE_NGHIEP>${esc(data.NGHE_NGHIEP || '')}</NGHE_NGHIEP>
+  <HO_TEN_CHA>${esc(data.HO_TEN_CHA || '')}</HO_TEN_CHA>
+  <HO_TEN_ME>${esc(data.HO_TEN_ME || '')}</HO_TEN_ME>
+  <NGUOI_GIAM_HO>${esc(data.NGUOI_GIAM_HO || '')}</NGUOI_GIAM_HO>
+  <TEN_DONVI>${esc(data.TEN_DONVI || '')}</TEN_DONVI>
+  <NGUOI_DAI_DIEN>${esc(data.NGUOI_DAI_DIEN || '')}</NGUOI_DAI_DIEN>
+  <NGAY_CT>${fmtDate(data.NGAY_CT || data.NGAY_CHUNG_TU, false)}</NGAY_CT>
   <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
   <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
-  <CHAN_DOAN_VAO>${esc(data.CHAN_DOAN_VAO)}</CHAN_DOAN_VAO>
-  <CHAN_DOAN_RA>${esc(data.CHAN_DOAN_RA)}</CHAN_DOAN_RA>
-  <QT_BENHLY>${esc(data.QT_BENHLY)}</QT_BENHLY>
-  <TOMTAT_KQ>${esc(data.TOMTAT_KQ)}</TOMTAT_KQ>
-  <PP_DIEUTRI>${esc(data.PP_DIEUTRI)}</PP_DIEUTRI>
-  <NGAY_SINHCON>${fmtDate(data.NGAY_SINHCON, true)}</NGAY_SINHCON>
-  <NGAY_CHETCON>${fmtDate(data.NGAY_CHETCON, true)}</NGAY_CHETCON>
+  <CHAN_DOAN_VAO>${esc(data.CHAN_DOAN_VAO || '')}</CHAN_DOAN_VAO>
+  <CHAN_DOAN_RA>${esc(data.CHAN_DOAN_RA || data.CHAN_DOAN || '')}</CHAN_DOAN_RA>
+  <QT_BENHLY>${esc(data.QT_BENHLY || '')}</QT_BENHLY>
+  <TOMTAT_KQ>${esc(data.TOMTAT_KQ || '')}</TOMTAT_KQ>
+  <PP_DIEUTRI>${esc(data.PP_DIEUTRI || '')}</PP_DIEUTRI>
+  <NGAY_SINHCON>${fmtDate(data.NGAY_SINHCON, false)}</NGAY_SINHCON>
+  <NGAY_CHETCON>${fmtDate(data.NGAY_CHETCON, false)}</NGAY_CHETCON>
   <SO_CONCHET>${esc(data.SO_CONCHET || '0')}</SO_CONCHET>
-  <TT_RAVIEN>${esc(data.TT_RAVIEN)}</TT_RAVIEN>
+  <TT_RAVIEN>${esc(data.TT_RAVIEN || '1')}</TT_RAVIEN>
+  <GHI_CHU>${esc(data.GHI_CHU || '')}</GHI_CHU>
   <TEKT>${esc(data.TEKT || '0')}</TEKT>
-</TOMTATBA>`;
+  <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
+  <SO_CCCD>${esc(data.SO_CCCD || '')}</SO_CCCD>
+  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD, false)}</NGAYCAP_CCCD>
+  <NOICAP_CCCD>${esc(data.NOICAP_CCCD || '')}</NOICAP_CCCD>
+  <LYDO_VVIEN>${esc(data.LYDO_VVIEN || '1')}</LYDO_VVIEN>
+  <TIEN_SU_BENH>${esc(data.TIEN_SU_BENH || '')}</TIEN_SU_BENH>
+  <DAU_HIEU_LAM_SANG>${esc(data.DAU_HIEU_LAM_SANG || '')}</DAU_HIEU_LAM_SANG>
+  <NOI_KHOA>${esc(data.NOI_KHOA || '')}</NOI_KHOA>
+  <IS_NOI_KHOA>${esc(data.IS_NOI_KHOA || '0')}</IS_NOI_KHOA>
+  <PHAU_THUAT_THU_THUAT>${esc(data.PHAU_THUAT_THU_THUAT || '')}</PHAU_THUAT_THU_THUAT>
+  <IS_PHAU_THUAT_THU_THUAT>${esc(data.IS_PHAU_THUAT_THU_THUAT || '0')}</IS_PHAU_THUAT_THU_THUAT>
+  <HUONG_DIEU_TRI>${esc(data.HUONG_DIEU_TRI || '')}</HUONG_DIEU_TRI>
+  <BENH_ICD10_ID>${esc(data.BENH_ICD10_ID || data.BENHICD10_ID || '')}</BENH_ICD10_ID>
+  <BENH_ICD10_TEN>${esc(data.BENH_ICD10_TEN || data.TENBENHNICD10 || '')}</BENH_ICD10_TEN>
+  <IS_LAO_GIAI_DOAN_NANG>${esc(data.IS_LAO_GIAI_DOAN_NANG || '0')}</IS_LAO_GIAI_DOAN_NANG>
+  <IS_XO_GAN_GIAI_DOAN_MAT_BU>${esc(data.IS_XO_GAN_GIAI_DOAN_MAT_BU || '0')}</IS_XO_GAN_GIAI_DOAN_MAT_BU>
+</CT04>`;
 }
 
 /** ===========================
@@ -165,23 +207,32 @@ export function buildCT05Content(data: Record<string, string>): string {
  * =========================== */
 export function buildCT06Content(data: Record<string, string>): string {
   return `<?xml version="1.0" encoding="utf-8"?>
-<GIAYXACNHANNGHIDUONGTHAI>
-  <SO_SERI>${esc(data.SO_SERI)}</SO_SERI>
-  <MA_BHXH>${esc(data.MA_BHXH)}</MA_BHXH>
-  <MA_THE>${esc(data.MA_THE)}</MA_THE>
-  <HO_TEN>${esc(data.HO_TEN)}</HO_TEN>
-  <NGAY_SINH>${fmtDate(data.NGAY_SINH)}</NGAY_SINH>
-  <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
-  <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
-  <CHAN_DOAN>${esc(data.CHAN_DOAN)}</CHAN_DOAN>
-  <NGUOI_DAI_DIEN>${esc(data.NGUOI_DAI_DIEN)}</NGUOI_DAI_DIEN>
-  <MA_BS>${esc(data.MA_BS)}</MA_BS>
-  <TEN_BS>${esc(data.TEN_BS)}</TEN_BS>
-  <TEN_DVI>${esc(data.TEN_DVI)}</TEN_DVI>
-  <SO_KCB>${esc(data.SO_KCB)}</SO_KCB>
-  <NGAY_CT>${fmtDate(data.NGAY_CT, true)}</NGAY_CT>
-  <MA_CT>${esc(data.MA_CT || 'CT06')}</MA_CT>
-</GIAYXACNHANNGHIDUONGTHAI>`;
+<CT06 xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <MA_BHXH>${esc(data.MA_BHXH || '')}</MA_BHXH>
+  <MA_THE>${esc(data.MA_THE || '')}</MA_THE>
+  <HO_TEN>${esc(data.HO_TEN || '')}</HO_TEN>
+  <NGAY_SINH>${fmtDate(data.NGAY_SINH, false)}</NGAY_SINH>
+  <NGAY_VAO>${fmtDate(data.NGAY_VAO, false)}</NGAY_VAO>
+  <NGAY_RA>${fmtDate(data.NGAY_RA, false)}</NGAY_RA>
+  <CHAN_DOAN>${esc(data.CHAN_DOAN || '')}</CHAN_DOAN>
+  <NGUOI_DAI_DIEN>${esc(data.NGUOI_DAI_DIEN || '')}</NGUOI_DAI_DIEN>
+  <MA_BS>${esc(data.MA_BS || '')}</MA_BS>
+  <TEN_BS>${esc(data.TEN_BS || '')}</TEN_BS>
+  <TEN_DVI>${esc(data.TEN_DVI || '')}</TEN_DVI>
+  <SO_KCB>${esc(data.SO_KCB || '')}</SO_KCB>
+  <NGAY_CT>${fmtDate(data.NGAY_CT || data.NGAY_CHUNG_TU, false)}</NGAY_CT>
+  <SO_SERI>${esc(data.SO_SERI || '')}</SO_SERI>
+  <MA_CT>${esc(data.MA_CT || data.SO_SERI || '')}</MA_CT>
+  <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
+  <SO_CCCD>${esc(data.SO_CCCD || '')}</SO_CCCD>
+  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD, false)}</NGAYCAP_CCCD>
+  <NOI_CU_TRU_NND>${esc(data.NOI_CU_TRU_NND || '')}</NOI_CU_TRU_NND>
+  <MATINH_CU_TRU>${esc(data.MATINH_CU_TRU || '')}</MATINH_CU_TRU>
+  <MAXA_CU_TRU>${esc(data.MAXA_CU_TRU || '')}</MAXA_CU_TRU>
+  <TUOI_THAI>${esc(data.TUOI_THAI || '0')}</TUOI_THAI>
+  <BENH_ICD10_ID>${esc(data.BENH_ICD10_ID || data.BENHICD10_ID || '')}</BENH_ICD10_ID>
+  <BENH_ICD10_TEN>${esc(data.BENH_ICD10_TEN || data.TENBENHNICD10 || data.CHAN_DOAN || '')}</BENH_ICD10_TEN>
+</CT06>`;
 }
 
 /** ===========================
@@ -189,32 +240,156 @@ export function buildCT06Content(data: Record<string, string>): string {
  * =========================== */
 export function buildCT07Content(data: Record<string, string>): string {
   return `<?xml version="1.0" encoding="utf-8"?>
-<GIAYCHUNGNHANNGHIVIEC>
+<CT07 xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <MA_CT>${esc(data.MA_CT || data.SO_SERI || '')}</MA_CT>
   <MAU_SO>${esc(data.MAU_SO || 'CT07')}</MAU_SO>
-  <SO_SERI>${esc(data.SO_SERI)}</SO_SERI>
-  <SO_KCB>${esc(data.SO_KCB)}</SO_KCB>
-  <NGAY_KCB>${fmtDate(data.NGAY_KCB, true)}</NGAY_KCB>
-  <MA_BHXH>${esc(data.MA_BHXH)}</MA_BHXH>
-  <MA_THE>${esc(data.MA_THE)}</MA_THE>
-  <HO_TEN>${esc(data.HO_TEN)}</HO_TEN>
-  <NGAY_SINH>${fmtDate(data.NGAY_SINH)}</NGAY_SINH>
-  <GIOI_TINH>${esc(data.GIOI_TINH)}</GIOI_TINH>
-  <DON_VI>${esc(data.DON_VI)}</DON_VI>
-  <CHANDOAN_DIEUTRI>${esc(data.CHANDOAN_DIEUTRI)}</CHANDOAN_DIEUTRI>
-  <TU_NGAY>${fmtDate(data.TU_NGAY, true)}</TU_NGAY>
-  <DEN_NGAY>${fmtDate(data.DEN_NGAY, true)}</DEN_NGAY>
-  <HO_TEN_CHA>${esc(data.HO_TEN_CHA)}</HO_TEN_CHA>
-  <HO_TEN_ME>${esc(data.HO_TEN_ME)}</HO_TEN_ME>
+  <SO_SERI>${esc(data.SO_SERI || '')}</SO_SERI>
+  <SO_KCB>${esc(data.SO_KCB || '')}</SO_KCB>
+  <MA_BHXH>${esc(data.MA_BHXH || '')}</MA_BHXH>
+  <MA_THE>${esc(data.MA_THE || '')}</MA_THE>
+  <HO_TEN>${esc(data.HO_TEN || '')}</HO_TEN>
+  <NGAY_SINH>${fmtDate(data.NGAY_SINH, false)}</NGAY_SINH>
+  <GIOI_TINH>${esc(data.GIOI_TINH || '1')}</GIOI_TINH>
+  <DON_VI>${esc(data.DON_VI || '')}</DON_VI>
+  <CHANDOAN_DIEUTRI>${esc(data.CHANDOAN_DIEUTRI || data.CHAN_DOAN || '')}</CHANDOAN_DIEUTRI>
+  <TU_NGAY>${fmtDate(data.TU_NGAY, false)}</TU_NGAY>
+  <DEN_NGAY>${fmtDate(data.DEN_NGAY, false)}</DEN_NGAY>
+  <HO_TEN_CHA>${esc(data.HO_TEN_CHA || '')}</HO_TEN_CHA>
+  <HO_TEN_ME>${esc(data.HO_TEN_ME || '')}</HO_TEN_ME>
+  <THU_TRUONG_DV>${esc(data.THU_TRUONG_DV || data.THU_TRUONG_DVI || '')}</THU_TRUONG_DV>
+  <MA_CCHN>${esc(data.MA_CCHN || '')}</MA_CCHN>
+  <TEN_NGUOI_HANH_NGHE>${esc(data.TEN_NGUOI_HANH_NGHE || '')}</TEN_NGUOI_HANH_NGHE>
+  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU || data.NGAY_CT, false)}</NGAY_CHUNG_TU>
   <TEKT>${esc(data.TEKT || '0')}</TEKT>
   <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
-  <SO_CCCD>${esc(data.SO_CCCD)}</SO_CCCD>
-  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD)}</NGAYCAP_CCCD>
-  <BENH_ICD10_ID>${esc(data.BENH_ICD10_ID)}</BENH_ICD10_ID>
-  <THU_TRUONG_DV>${esc(data.THU_TRUONG_DV)}</THU_TRUONG_DV>
-  <MA_CCHN>${esc(data.MA_CCHN)}</MA_CCHN>
-  <TEN_NGUOI_HANH_NGHE>${esc(data.TEN_NGUOI_HANH_NGHE)}</TEN_NGUOI_HANH_NGHE>
-  <NGAY_CHUNG_TU>${fmtDate(data.NGAY_CHUNG_TU, true)}</NGAY_CHUNG_TU>
-</GIAYCHUNGNHANNGHIVIEC>`;
+  <SO_CCCD>${esc(data.SO_CCCD || '')}</SO_CCCD>
+  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD, false)}</NGAYCAP_CCCD>
+  <NOICAP_CCCD>${esc(data.NOICAP_CCCD || '')}</NOICAP_CCCD>
+  <NGAY_KCB>${fmtDate(data.NGAY_KCB || data.TU_NGAY, false)}</NGAY_KCB>
+  <BENH_ICD10_ID>${esc(data.BENH_ICD10_ID || data.BENHICD10_ID || '')}</BENH_ICD10_ID>
+  <BENH_ICD10_TEN>${esc(data.BENH_ICD10_TEN || data.TENBENHNICD10 || data.CHANDOAN_DIEUTRI || '')}</BENH_ICD10_TEN>
+</CT07>`;
+}
+
+/** ===========================
+ *  GIAYDIEUTRINOITRU - GIẤY XÁC NHẬN ĐIỀU TRỊ NỘI TRÚ (Mẫu số 06 - TT25)
+ * =========================== */
+export function buildGiayDieuTriNoiTruContent(data: Record<string, string>): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<CTGiayDieuTriNoiTru xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SO_LUU_TRU>${esc(data.SO_LUU_TRU || '')}</SO_LUU_TRU>
+  <MA_YTE>${esc(data.MA_YTE || '')}</MA_YTE>
+  <MA_BHXH>${esc(data.MA_BHXH || '')}</MA_BHXH>
+  <MA_THE>${esc(data.MA_THE || '')}</MA_THE>
+  <HO_TEN>${esc(data.HO_TEN || '')}</HO_TEN>
+  <NGAY_SINH>${fmtDate(data.NGAY_SINH, false)}</NGAY_SINH>
+  <GIOI_TINH>${esc(data.GIOI_TINH || '1')}</GIOI_TINH>
+  <MA_KHOA>${esc(data.MA_KHOA || '')}</MA_KHOA>
+  <TEN_DAN_TOC>${esc(data.TEN_DAN_TOC || 'Kinh')}</TEN_DAN_TOC>
+  <MA_DAN_TOC>${esc(data.MA_DAN_TOC || '01')}</MA_DAN_TOC>
+  <NGHE_NGHIEP>${esc(data.NGHE_NGHIEP || '')}</NGHE_NGHIEP>
+  <DIA_CHI>${esc(data.DIA_CHI || '')}</DIA_CHI>
+  <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
+  <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
+  <CHAN_DOAN>${esc(data.CHAN_DOAN || '')}</CHAN_DOAN>
+  <PP_DIEUTRI>${esc(data.PP_DIEUTRI || '')}</PP_DIEUTRI>
+  <MO_TA>${esc(data.MO_TA || '')}</MO_TA>
+  <GHI_CHU>${esc(data.GHI_CHU || '')}</GHI_CHU>
+  <DAI_DIEN_DVI>${esc(data.DAI_DIEN_DVI || data.THU_TRUONG_DVI || '')}</DAI_DIEN_DVI>
+  <MA_CCHN_BS>${esc(data.MA_CCHN_BS || data.MA_CCHN || '')}</MA_CCHN_BS>
+  <TEN_BS>${esc(data.TEN_BS || data.TEN_NGUOI_HANH_NGHE || '')}</TEN_BS>
+  <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
+  <SO_CCCD>${esc(data.SO_CCCD || '')}</SO_CCCD>
+  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD, false)}</NGAYCAP_CCCD>
+  <NOICAP_CCCD>${esc(data.NOICAP_CCCD || '')}</NOICAP_CCCD>
+  <BENH_ICD10_MA>${esc(data.BENH_ICD10_MA || data.BENH_ICD10_ID || '')}</BENH_ICD10_MA>
+  <BENH_ICD10_TEN>${esc(data.BENH_ICD10_TEN || data.CHAN_DOAN || '')}</BENH_ICD10_TEN>
+  <MA_CT>${esc(data.MA_CT || data.SO_SERI || '')}</MA_CT>
+  <NGAY_CT>${fmtDate(data.NGAY_CT || data.NGAY_CHUNG_TU, false)}</NGAY_CT>
+  <SO_SERI>${esc(data.SO_SERI || '')}</SO_SERI>
+  <TUOI_THAI>${esc(data.TUOI_THAI || '')}</TUOI_THAI>
+  <LOAI_PHUONG_PHAP>${esc(data.LOAI_PHUONG_PHAP || '')}</LOAI_PHUONG_PHAP>
+  <LOAI_PP_DIEU_TRI_VOSINH>${esc(data.LOAI_PP_DIEU_TRI_VOSINH || '')}</LOAI_PP_DIEU_TRI_VOSINH>
+  <NGAY_DINH_CHI_THAINGHEN>${fmtDate(data.NGAY_DINH_CHI_THAINGHEN, true)}</NGAY_DINH_CHI_THAINGHEN>
+  <IS_NGHIDUONGTHAI>${esc(data.IS_NGHIDUONGTHAI || '0')}</IS_NGHIDUONGTHAI>
+  <SO_NGAY_NGHIDUONGTHAI>${esc(data.SO_NGAY_NGHIDUONGTHAI || '0')}</SO_NGAY_NGHIDUONGTHAI>
+</CTGiayDieuTriNoiTru>`;
+}
+
+/** ===========================
+ *  GIAYDIEUTRIVOSINH - GIẤY XÁC NHẬN ĐIỀU TRỊ VÔ SINH (Mẫu số 09 - TT25)
+ * =========================== */
+export function buildGiayDieuTriVoSinhContent(data: Record<string, string>): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<CTGiayDieuTriVoSinh xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SO_LUU_TRU>${esc(data.SO_LUU_TRU || '')}</SO_LUU_TRU>
+  <MA_YTE>${esc(data.MA_YTE || '')}</MA_YTE>
+  <MA_BHXH>${esc(data.MA_BHXH || '')}</MA_BHXH>
+  <MA_THE>${esc(data.MA_THE || '')}</MA_THE>
+  <HO_TEN>${esc(data.HO_TEN || '')}</HO_TEN>
+  <NGAY_SINH>${fmtDate(data.NGAY_SINH, false)}</NGAY_SINH>
+  <MA_KHOA>${esc(data.MA_KHOA || '')}</MA_KHOA>
+  <MA_TINHCUTRU>${esc(data.MA_TINHCUTRU || '')}</MA_TINHCUTRU>
+  <MA_XACUTRU>${esc(data.MA_XACUTRU || '')}</MA_XACUTRU>
+  <NGHE_NGHIEP>${esc(data.NGHE_NGHIEP || '')}</NGHE_NGHIEP>
+  <DIA_CHI>${esc(data.DIA_CHI || '')}</DIA_CHI>
+  <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
+  <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
+  <CHAN_DOAN>${esc(data.CHAN_DOAN || '')}</CHAN_DOAN>
+  <PP_DIEUTRI>${esc(data.PP_DIEUTRI || '')}</PP_DIEUTRI>
+  <GHI_CHU>${esc(data.GHI_CHU || '')}</GHI_CHU>
+  <DAI_DIEN_DVI>${esc(data.DAI_DIEN_DVI || data.THU_TRUONG_DVI || '')}</DAI_DIEN_DVI>
+  <MA_CCHN_BS>${esc(data.MA_CCHN_BS || data.MA_CCHN || '')}</MA_CCHN_BS>
+  <TEN_BS>${esc(data.TEN_BS || data.TEN_NGUOI_HANH_NGHE || '')}</TEN_BS>
+  <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
+  <SO_CCCD>${esc(data.SO_CCCD || '')}</SO_CCCD>
+  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD, false)}</NGAYCAP_CCCD>
+  <NOICAP_CCCD>${esc(data.NOICAP_CCCD || '')}</NOICAP_CCCD>
+  <BENH_ICD10_MA>${esc(data.BENH_ICD10_MA || data.BENH_ICD10_ID || '')}</BENH_ICD10_MA>
+  <BENH_ICD10_TEN>${esc(data.BENH_ICD10_TEN || data.CHAN_DOAN || '')}</BENH_ICD10_TEN>
+  <MA_CT>${esc(data.MA_CT || data.SO_SERI || '')}</MA_CT>
+  <NGAY_CT>${fmtDate(data.NGAY_CT || data.NGAY_CHUNG_TU, false)}</NGAY_CT>
+  <SO_SERI>${esc(data.SO_SERI || '')}</SO_SERI>
+  <LOAI_PHUONG_PHAP>${esc(data.LOAI_PHUONG_PHAP || '1')}</LOAI_PHUONG_PHAP>
+</CTGiayDieuTriVoSinh>`;
+}
+
+/** ===========================
+ *  GIAYSUCKHOEME - GIẤY XÁC NHẬN NGƯỜI MẸ KHÔNG ĐỦ SỨC KHỎE (Mẫu số 10 - TT25)
+ * =========================== */
+export function buildGiaySucKhoeMeContent(data: Record<string, string>): string {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<CTGiaySucKhoeMe xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <SO_LUU_TRU>${esc(data.SO_LUU_TRU || '')}</SO_LUU_TRU>
+  <MA_YTE>${esc(data.MA_YTE || '')}</MA_YTE>
+  <MA_BHXH>${esc(data.MA_BHXH || '')}</MA_BHXH>
+  <MA_THE>${esc(data.MA_THE || '')}</MA_THE>
+  <HO_TEN>${esc(data.HO_TEN || '')}</HO_TEN>
+  <NGAY_SINH>${fmtDate(data.NGAY_SINH, false)}</NGAY_SINH>
+  <MA_KHOA>${esc(data.MA_KHOA || '')}</MA_KHOA>
+  <MA_TINHCUTRU>${esc(data.MA_TINHCUTRU || '')}</MA_TINHCUTRU>
+  <MA_XACUTRU>${esc(data.MA_XACUTRU || '')}</MA_XACUTRU>
+  <NGHE_NGHIEP>${esc(data.NGHE_NGHIEP || '')}</NGHE_NGHIEP>
+  <DIA_CHI>${esc(data.DIA_CHI || '')}</DIA_CHI>
+  <NGAY_VAO>${fmtDate(data.NGAY_VAO, true)}</NGAY_VAO>
+  <NGAY_RA>${fmtDate(data.NGAY_RA, true)}</NGAY_RA>
+  <CHAN_DOAN>${esc(data.CHAN_DOAN || '')}</CHAN_DOAN>
+  <PP_DIEUTRI>${esc(data.PP_DIEUTRI || '')}</PP_DIEUTRI>
+  <KET_LUAN>${esc(data.KET_LUAN || '1')}</KET_LUAN>
+  <TINHTRANGBENHHIENTAI>${esc(data.TINHTRANGBENHHIENTAI || '')}</TINHTRANGBENHHIENTAI>
+  <DAI_DIEN_DVI>${esc(data.DAI_DIEN_DVI || data.THU_TRUONG_DVI || '')}</DAI_DIEN_DVI>
+  <MA_CCHN_BS>${esc(data.MA_CCHN_BS || data.MA_CCHN || '')}</MA_CCHN_BS>
+  <TEN_BS>${esc(data.TEN_BS || data.TEN_NGUOI_HANH_NGHE || '')}</TEN_BS>
+  <LOAI_GIAYTO>${esc(data.LOAI_GIAYTO || '1')}</LOAI_GIAYTO>
+  <SO_CCCD>${esc(data.SO_CCCD || '')}</SO_CCCD>
+  <NGAYCAP_CCCD>${fmtDate(data.NGAYCAP_CCCD, false)}</NGAYCAP_CCCD>
+  <NOICAP_CCCD>${esc(data.NOICAP_CCCD || '')}</NOICAP_CCCD>
+  <BENH_ICD10_MA>${esc(data.BENH_ICD10_MA || data.BENH_ICD10_ID || '')}</BENH_ICD10_MA>
+  <BENH_ICD10_TEN>${esc(data.BENH_ICD10_TEN || data.CHAN_DOAN || '')}</BENH_ICD10_TEN>
+  <MA_CT>${esc(data.MA_CT || data.SO_SERI || '')}</MA_CT>
+  <NGAY_CT>${fmtDate(data.NGAY_CT || data.NGAY_CHUNG_TU, false)}</NGAY_CT>
+  <SO_SERI>${esc(data.SO_SERI || '')}</SO_SERI>
+</CTGiaySucKhoeMe>`;
 }
 
 /** Build nội dung XML của từng chứng từ (sẽ được nhúng vào wrapper) */
@@ -225,13 +400,18 @@ export function buildDocContent(type: DocType, data: Record<string, string>): st
     case 'CT05': return buildCT05Content(data);
     case 'CT06': return buildCT06Content(data);
     case 'CT07': return buildCT07Content(data);
-    default: return buildCT03Content(data);
+    case 'GIAYDIEUTRINOITRU': return buildGiayDieuTriNoiTruContent(data);
+    case 'GIAYDIEUTRIVOSINH': return buildGiayDieuTriVoSinhContent(data);
+    case 'GIAYSUCKHOEME': return buildGiaySucKhoeMeContent(data);
+    default: return buildCT07Content(data);
   }
 }
 
 /**
  * Build XML wrapper <HSCHUNGTU> theo đúng chuẩn Phụ lục 02
- * Chứa nhiều hồ sơ (FILEHOSO) trong <DANHSACHHOSO>
+ * Theo tài liệu BHXH: tất cả FILEHOSO nằm trong 1 HOSO duy nhất
+ * <LOAIHOSO> dùng tên loại: CT03, CT07, GIAYDIEUTRINOITRU... (KHÔNG dùng số 39)
+ * <NOIDUNGFILE> là base64 của chứng từ con (<CT07>...</CT07>), KHÔNG phải toàn bộ wrapper
  */
 export function buildHSCHUNGTU(
   maCskcb: string,
@@ -240,14 +420,12 @@ export function buildHSCHUNGTU(
   const hoSoId = `Id-${genId()}`;
   const ngayLap = new Date().toISOString().slice(0, 10).replace(/-/g, '');
 
-  // Chuẩn Phụ lục 02 BHXH: mỗi FILEHOSO nằm trong HOSO riêng biệt
-  const hosoBlocks = hosoList.map(hs => `
-      <HOSO>
+  // Theo Phụ lục 02 BHXH: tất cả FILEHOSO nằm trong 1 HOSO duy nhất
+  const filehosoBlocks = hosoList.map(hs => `
         <FILEHOSO>
           <LOAIHOSO>${esc(hs.loaiHs)}</LOAIHOSO>
           <NOIDUNGFILE>${hs.base64Content}</NOIDUNGFILE>
-        </FILEHOSO>
-      </HOSO>`).join('');
+        </FILEHOSO>`).join('');
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <HSCHUNGTU xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -257,7 +435,9 @@ export function buildHSCHUNGTU(
   <THONGTINHOSO Id="${hoSoId}">
     <NGAYLAP>${ngayLap}</NGAYLAP>
     <SOLUONGHOSO>${hosoList.length}</SOLUONGHOSO>
-    <DANHSACHHOSO>${hosoBlocks}
+    <DANHSACHHOSO>
+      <HOSO>${filehosoBlocks}
+      </HOSO>
     </DANHSACHHOSO>
   </THONGTINHOSO>
   <CHUKYDONVI/>
@@ -265,14 +445,16 @@ export function buildHSCHUNGTU(
 }
 
 /**
- * Build XML đơn lẻ (cho 1 hồ sơ) - tương thích API cũ
+ * Build XML đơn lẻ (cho 1 hồ sơ)
+ * - LOAIHOSO trong XML dùng tên loại: CT03, CT07... (theo Phụ lục 02 BHXH)
+ * - NOIDUNGFILE là base64 của chứng từ con, không phải toàn bộ HSCHUNGTU
  */
 export function buildXml(type: DocType, data: Record<string, string>, maCskcb: string): string {
   const content = buildDocContent(type, data);
   const contentBase64 = xmlToBase64(content);
-  // Dùng LOAI_HS_MAP để lấy mã số chuẩn (39 hoặc 61), không truyền tên type (CT03...) vào loaiHs
-  const loaiHs = LOAI_HS_MAP[type] || '39';
-  return buildHSCHUNGTU(maCskcb, [{ loaiHs, base64Content: contentBase64 }]);
+  // LOAIHOSO trong XML dùng tên loại (CT03/CT07/GIAYDIEUTRINOITRU...)
+  const loaiHosoXmlName = LOAI_HOSO_XML_NAME[type] || type;
+  return buildHSCHUNGTU(maCskcb, [{ loaiHs: loaiHosoXmlName, base64Content: contentBase64 }]);
 }
 
 /**
