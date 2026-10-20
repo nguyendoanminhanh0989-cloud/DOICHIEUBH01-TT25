@@ -60,6 +60,25 @@ function Get-UsbCertificate {
     return $certs[0]
 }
 
+function Invoke-TokenSignHash($cert, [byte[]]$hash) {
+    $errs = @()
+    try {
+        $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+        if ($rsa) {
+            return $rsa.SignHash($hash, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        }
+    } catch { $errs += ("CNG: " + $_.Exception.Message) }
+    try {
+        $csp = $cert.PrivateKey
+        if ($csp -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
+            return $csp.SignHash($hash, [System.Security.Cryptography.CryptoConfig]::MapNameToOID("SHA256"))
+        }
+        if ($csp) {
+            return $csp.SignHash($hash, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        }
+    } catch { $errs += ("CSP: " + $_.Exception.Message) }
+    throw ("Khong ky duoc bang USB Token. Chi tiet: " + ($errs -join " | "))
+}
 function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $isKsk = $xmlString.Contains("<KHAMSUCKHOE")
     if ($isKsk) {
@@ -100,34 +119,8 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $signedXml = New-Object System.Security.Cryptography.Xml.SignedXml($xmlDoc)
     
     # Lay Private Key tuong thich SHA-256 tu USB Token
-    $keyFound = $false
-    try {
-        $rsaKey = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-        if ($rsaKey) {
-            $signedXml.SigningKey = $rsaKey
-            $keyFound = $true
-        }
-    } catch {}
-
-    if (-not $keyFound) {
-        if ($cert.PrivateKey -is [System.Security.Cryptography.RSACryptoServiceProvider]) {
-            $csp = [System.Security.Cryptography.RSACryptoServiceProvider]$cert.PrivateKey
-            if ($csp.CspKeyContainerInfo.ProviderType -ne 24) {
-                try {
-                    $cp = New-Object System.Security.Cryptography.CspParameters(24, $csp.CspKeyContainerInfo.ProviderName, $csp.CspKeyContainerInfo.KeyContainerName)
-                    $cp.Flags = [System.Security.Cryptography.CspProviderFlags]::UseExistingKey
-                    if ($csp.CspKeyContainerInfo.MachineKeyStore) {
-                        $cp.Flags = $cp.Flags -bor [System.Security.Cryptography.CspProviderFlags]::UseMachineKeyStore
-                    }
-                    $signedXml.SigningKey = New-Object System.Security.Cryptography.RSACryptoServiceProvider($cp)
-                    $keyFound = $true
-                } catch {}
-            }
-        }
-        if (-not $keyFound) {
-            $signedXml.SigningKey = $cert.PrivateKey
-        }
-    }
+    $dummyKey = New-Object System.Security.Cryptography.RSACryptoServiceProvider(2048)
+    $signedXml.SigningKey = $dummyKey
 
     $signedXml.SignedInfo.CanonicalizationMethod = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
     $signedXml.SignedInfo.SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
@@ -172,6 +165,18 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
 
     # Tinh toan chu ky chuan XMLDSig W3C
     $signedXml.ComputeSignature()
+    # Ky that bang USB Token: c14n SignedInfo -> SHA256 -> ky 1 lan duy nhat (chi hoi PIN 1 lan)
+    $c14n = New-Object System.Security.Cryptography.Xml.XmlDsigC14NTransform
+    $siDoc = New-Object System.Xml.XmlDocument
+    $siDoc.PreserveWhitespace = $true
+    $siDoc.LoadXml($signedXml.SignedInfo.GetXml().OuterXml)
+    $c14n.LoadInput($siDoc)
+    $siStream = $c14n.GetOutput([System.IO.Stream])
+    $siMs = New-Object System.IO.MemoryStream
+    $siStream.CopyTo($siMs)
+    $siHash = [System.Security.Cryptography.SHA256]::Create().ComputeHash($siMs.ToArray())
+    $sigBytes = Invoke-TokenSignHash $cert $siHash
+    $signedXml.Signature.SignatureValue = $sigBytes
     $xmlDigitalSignature = $signedXml.GetXml()
 
     # Nhung chu ky vao the CHUKYDONVI
