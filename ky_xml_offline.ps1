@@ -140,6 +140,11 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $xmlDoc.LoadXml($xmlString)
 
     $root = $xmlDoc.DocumentElement
+    if ($xmlString -notmatch '[\s<]xs[di]:[A-Za-z]') {
+        foreach ($nsName in @('xmlns:xsd','xmlns:xsi')) {
+            if ($root.HasAttribute($nsName)) { $root.RemoveAttribute($nsName) }
+        }
+    }
     $is01BH = ($root.LocalName -eq "HSTH01BH")
     
     # Tim Id ho so (THONGTINHOSO hoac DS_CHITIET hoac the co attribute Id)
@@ -154,44 +159,31 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
 
     $signedXml.SignedInfo.CanonicalizationMethod = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
     $signedXml.SignedInfo.SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
-    $signedXml.Signature.Id = "CHUKYDONVI-$hoSoId"
 
-    # Tao DataObject SigningTime chuan Phu luc 02
-    $objDoc = New-Object System.Xml.XmlDocument
-    $signingTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
-    $objXml = "<SignatureProperties xmlns=`"`"><SignatureProperty Target=`"#CHUKYDONVI-$hoSoId`" Id=`"SignatureProperty-CHUKYDONVI-$hoSoId`"><SigningTime>$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
-    $objDoc.LoadXml($objXml)
-
-    $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
-    $dataObj.Id = "Object-CHUKYDONVI-$hoSoId"
-    $dataObj.Data = $objDoc.ChildNodes
-    $signedXml.AddObject($dataObj)
-
-    # Reference 1: Object SigningTime
-    $ref1 = New-Object System.Security.Cryptography.Xml.Reference("#Object-CHUKYDONVI-$hoSoId")
-    $ref1.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
-    $signedXml.AddReference($ref1)
-
-    # Reference 2: Noi dung ho so
-    if ($is01BH) {
-        $ref2 = New-Object System.Security.Cryptography.Xml.Reference("")
-        $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
-        $ref2.AddTransform($env)
-        $ref2.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
-        $signedXml.AddReference($ref2)
-    } else {
-        $ref2 = New-Object System.Security.Cryptography.Xml.Reference("#$hoSoId")
-        $ref2.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
-        $signedXml.AddReference($ref2)
-    }
+    # Reference duy nhat theo chuan mau cong BHXH: Enveloped signature tren toan bo file (URI="")
+    $ref = New-Object System.Security.Cryptography.Xml.Reference("")
+    $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
+    $ref.AddTransform($env)
+    $ref.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+    $signedXml.AddReference($ref)
 
     # KeyInfo chua Certificate va SubjectName
     $keyInfo = New-Object System.Security.Cryptography.Xml.KeyInfo
     $kix = New-Object System.Security.Cryptography.Xml.KeyInfoX509Data
-    $kix.AddSubjectName($cert.Subject)
     $kix.AddCertificate($cert)
+    $kix.AddSubjectName($cert.Subject)
     $keyInfo.AddClause($kix)
     $signedXml.KeyInfo = $keyInfo
+
+    # Tao DataObject SigningTime chuan mau cong BHXH
+    $objDoc = New-Object System.Xml.XmlDocument
+    $signingTime = (Get-Date).ToString("yyyyMMddHHmmss")
+    $objXml = "<SignatureProperties Id=`"proid`" xmlns=`"`"><SignatureProperty><SigningTime xmlns=`"http://example.org/#signatureProperties`">$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
+    $objDoc.LoadXml($objXml)
+
+    $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
+    $dataObj.Data = $objDoc.ChildNodes
+    $signedXml.AddObject($dataObj)
 
     # Tinh toan chu ky chuan XMLDSig W3C
     $signedXml.ComputeSignature()
