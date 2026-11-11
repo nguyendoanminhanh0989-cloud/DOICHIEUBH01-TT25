@@ -758,7 +758,12 @@ export default function App() {
 
   return (
     <div 
-      className="min-h-screen text-slate-900 font-sans selection:bg-lime-300 selection:text-lime-900 bg-cover bg-center bg-fixed relative pb-12"
+      className={cn(
+        "min-h-screen text-slate-900 font-sans selection:bg-lime-300 selection:text-lime-900 bg-cover bg-center bg-fixed relative",
+        mainTab === 'TT12_BH01_BH02' || mainTab === 'XML_3176'
+          ? "h-screen overflow-hidden flex flex-col"
+          : "pb-12"
+      )}
       style={{ 
         backgroundImage: "url('/hinh_nen.png')",
         backgroundColor: "rgba(57, 255, 20, 0.15)", // Neon green overlay
@@ -1021,11 +1026,11 @@ export default function App() {
       ) : mainTab === 'KHAM_SUC_KHOE' ? (
         <KhamSucKhoe onGoHome={() => setMainTab('HOME')} />
       ) : mainTab === 'XML_3176' ? (
-        <main className="max-w-[1600px] mx-auto p-6">
+        <main className="max-w-[1600px] w-full mx-auto px-4 py-2 flex-1 min-h-0 flex flex-col overflow-hidden">
           <Xml3176Module />
         </main>
       ) : mainTab === 'TT12_BH01_BH02' ? (
-        <main className="max-w-[1600px] mx-auto p-6">
+        <main className="max-w-[1600px] w-full mx-auto px-4 py-2 flex-1 min-h-0 flex flex-col overflow-hidden">
           <ChungTuTt12Module />
         </main>
       ) : (

@@ -1058,9 +1058,9 @@ export default function Xml3176Module() {
   }, [doc, activeTab]);
 
   return (
-    <div className="space-y-4">
-      {/* THANH CÔNG CỤ & THÔNG TIN TỔNG QUAN HỒ SƠ 3176 */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+    <div className="h-[calc(100vh-56px)] flex flex-col gap-3 overflow-hidden">
+      {/* THANH CÔNG CỤ & THÔNG TIN TỔNG QUAN HỒ SƠ 3176 (CỐ ĐỊNH TRÊN CÙNG) */}
+      <div className="shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-sm">
@@ -1331,10 +1331,10 @@ export default function Xml3176Module() {
         )}
       </div>
 
-      {/* THANH TAB: BẢNG LỖI | BẢNG 1 -> BẢNG 15 */}
+      {/* THANH TAB: BẢNG LỖI | BẢNG 1 -> BẢNG 15 (CHỈ CUỘN NỘI DUNG BẢNG KHI LĂN CHUỘT) */}
       {doc && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-slate-100 border-b border-slate-300 px-2 pt-2 flex items-end gap-1 overflow-x-auto no-scrollbar">
+        <div className="flex-1 min-h-0 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+          <div className="shrink-0 bg-slate-100 border-b border-slate-300 px-2 pt-2 flex items-end gap-1 overflow-x-auto no-scrollbar">
             {/* Tab Bảng lỗi */}
             <button
               onClick={() => {
@@ -1391,7 +1391,7 @@ export default function Xml3176Module() {
           </div>
 
           {/* THANH LỌC THEO BỆNH NHÂN (HOSO), TÍCH CHỌN NHANH, TÌM KIẾM & THÊM DÒNG */}
-          <div className="p-3 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div className="shrink-0 p-2.5 bg-slate-50/70 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-bold text-slate-700">
                 {activeTab === 'ERRORS'
@@ -1479,7 +1479,7 @@ export default function Xml3176Module() {
 
           {/* NỘI DUNG BẢNG LỖI HOẶC BẢNG 1..15 */}
           {activeTab === 'ERRORS' ? (
-            <div className="overflow-x-auto max-h-[65vh]">
+            <div className="flex-1 min-h-0 overflow-auto">
               {filteredErrors.length === 0 ? (
                 <div className="p-12 text-center">
                   <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
@@ -1545,7 +1545,7 @@ export default function Xml3176Module() {
             </div>
           ) : (
             /* BẢNG DỮ LIỆU CHI TIẾT CHO BẢNG 1 -> BẢNG 15 */
-            <div className="overflow-x-auto max-h-[65vh]">
+            <div className="flex-1 min-h-0 overflow-auto">
               {currentTableRows.length === 0 ? (
                 <div className="p-12 text-center">
                   <FileCode2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
@@ -1776,7 +1776,7 @@ export default function Xml3176Module() {
           )}
 
           {/* PHÂN TRANG */}
-          <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+          <div className="shrink-0 px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
             <div>
               Đang hiển thị trang <b>{currentPage}</b> / <b>{totalPages}</b> (Tổng số:{' '}
               <b>{activeTab === 'ERRORS' ? filteredErrors.length : currentTableRows.length}</b> dòng • Đã tích chọn:{' '}
