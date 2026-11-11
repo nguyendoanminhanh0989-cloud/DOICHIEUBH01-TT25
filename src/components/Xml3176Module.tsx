@@ -46,6 +46,7 @@ export default function Xml3176Module() {
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [selectedHosoFilter, setSelectedHosoFilter] = useState<string>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
@@ -215,6 +216,14 @@ export default function Xml3176Module() {
     );
   }, [doc, selectedHosoIndices]);
 
+  const activeColFilterEntries = useMemo(
+    () =>
+      Object.entries(columnFilters as Record<string, string>)
+        .map(([k, v]) => [k, v.trim().toLowerCase()] as const)
+        .filter(([, v]) => v.length > 0),
+    [columnFilters]
+  );
+
   // Dữ liệu của Bảng đang chọn sau khi lọc
   const currentTableRows = useMemo(() => {
     if (!doc || activeTab === 'ERRORS') return [];
@@ -224,11 +233,23 @@ export default function Xml3176Module() {
       if (selectedHosoFilter !== 'ALL' && String(row.hosoIndex) !== selectedHosoFilter) {
         return false;
       }
-      if (!q) return true;
-      if (row.maLk.toLowerCase().includes(q) || row.hoTen.toLowerCase().includes(q)) return true;
-      return Object.values(row.fields).some(v => (v || '').toLowerCase().includes(q));
+      if (q) {
+        const matchesGlobal =
+          row.maLk.toLowerCase().includes(q) ||
+          row.hoTen.toLowerCase().includes(q) ||
+          Object.values(row.fields).some(v => (v || '').toLowerCase().includes(q));
+        if (!matchesGlobal) return false;
+      }
+      for (const [colKey, colQuery] of activeColFilterEntries) {
+        const cellVal =
+          colKey === '__HO_TEN_BN__'
+            ? (row.hoTen || '').toLowerCase()
+            : String(row.fields[colKey] ?? '').toLowerCase();
+        if (!cellVal.includes(colQuery)) return false;
+      }
+      return true;
     });
-  }, [doc, activeTab, searchTerm, selectedHosoFilter]);
+  }, [doc, activeTab, searchTerm, selectedHosoFilter, activeColFilterEntries]);
 
   const filteredErrors = useMemo(() => {
     if (!doc) return [];
@@ -1367,6 +1388,7 @@ export default function Xml3176Module() {
                   key={t.id}
                   onClick={() => {
                     setActiveTab(t.id);
+                    setColumnFilters({});
                     setCurrentPage(1);
                   }}
                   title={t.fullTitle}
@@ -1577,43 +1599,124 @@ export default function Xml3176Module() {
                     )}
 
                     <th
-                      className={`border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[155px] bg-slate-100 ${
+                      className={`border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[155px] bg-slate-100 align-top ${
                         activeTab !== 'XML1' ? 'sticky left-0 z-20' : ''
                       }`}
                     >
-                      Thao tác
+                      <div>Thao tác</div>
+                      {activeColFilterEntries.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setColumnFilters({});
+                            setCurrentPage(1);
+                          }}
+                          className="mt-1 px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-700 text-[10px] font-bold transition cursor-pointer"
+                          title="Xóa tất cả bộ lọc cột"
+                        >
+                          ✕ Bỏ lọc cột
+                        </button>
+                      )}
                     </th>
 
-                    <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-14 bg-slate-100">
+                    <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-14 bg-slate-100 align-top">
                       Hồ sơ
                     </th>
 
                     {activeTab !== 'XML1' && (
-                      <th className="border-b border-r border-slate-300 px-3 py-2 text-left min-w-[160px] bg-blue-50/60">
+                      <th className="border-b border-r border-slate-300 px-2.5 py-1.5 text-left min-w-[160px] bg-blue-50/60 align-top">
                         <div className="font-bold text-blue-900">HỌ TÊN BN (XML1)</div>
                         <div className="text-[10px] font-normal text-blue-600">Liên kết theo MA_LK</div>
+                        <div className="relative mt-1">
+                          <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={columnFilters.__HO_TEN_BN__ || ''}
+                            onChange={e => {
+                              setColumnFilters(prev => ({
+                                ...prev,
+                                __HO_TEN_BN__: e.target.value,
+                              }));
+                              setCurrentPage(1);
+                            }}
+                            placeholder="Lọc Họ tên..."
+                            className="w-full pl-6 pr-5 py-1 rounded-md border border-blue-200 bg-white text-[11px] font-normal text-slate-700 focus:border-blue-500 outline-none"
+                          />
+                          {columnFilters.__HO_TEN_BN__ && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setColumnFilters(prev => ({ ...prev, __HO_TEN_BN__: '' }));
+                                setCurrentPage(1);
+                              }}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       </th>
                     )}
 
-                    {activeColumns.map((col, idx) => (
-                      <th
-                        key={col}
-                        className="border-b border-r border-slate-300 px-2.5 py-2 text-left min-w-[135px] whitespace-nowrap"
-                      >
-                        <div className="flex items-center gap-1">
-                          <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-1 py-px rounded border border-blue-200">
-                            {idx + 1}
-                          </span>
-                          <span className="font-mono font-bold text-slate-900">{col}</span>
-                        </div>
-                        <div
-                          className="text-[10px] font-normal text-slate-500 truncate max-w-[180px] mt-0.5"
-                          title={FIELD_LABELS_3176[col] || col}
+                    {activeColumns.map((col, idx) => {
+                      const colFilterVal = columnFilters[col] || '';
+                      return (
+                        <th
+                          key={col}
+                          className="border-b border-r border-slate-300 px-2 py-1.5 text-left min-w-[140px] whitespace-nowrap align-top"
                         >
-                          {FIELD_LABELS_3176[col] || col}
-                        </div>
-                      </th>
-                    ))}
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-1 py-px rounded border border-blue-200">
+                              {idx + 1}
+                            </span>
+                            <span className="font-mono font-bold text-slate-900">{col}</span>
+                          </div>
+                          <div
+                            className="text-[10px] font-normal text-slate-500 truncate max-w-[180px] mt-0.5"
+                            title={FIELD_LABELS_3176[col] || col}
+                          >
+                            {FIELD_LABELS_3176[col] || col}
+                          </div>
+                          <div className="relative mt-1">
+                            <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={colFilterVal}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setColumnFilters(prev => ({
+                                  ...prev,
+                                  [col]: val,
+                                }));
+                                setCurrentPage(1);
+                              }}
+                              placeholder={`Lọc ${col}...`}
+                              className={`w-full pl-6 pr-5 py-1 rounded-md border text-[11px] font-normal outline-none transition ${
+                                colFilterVal
+                                  ? 'bg-blue-50/80 border-blue-500 text-blue-950 font-semibold ring-1 ring-blue-400'
+                                  : 'bg-white border-slate-300 text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-400'
+                              }`}
+                            />
+                            {colFilterVal && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setColumnFilters(prev => ({
+                                    ...prev,
+                                    [col]: '',
+                                  }));
+                                  setCurrentPage(1);
+                                }}
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                title="Xóa lọc cột này"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
