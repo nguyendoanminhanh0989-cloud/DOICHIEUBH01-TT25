@@ -517,9 +517,12 @@ export async function prepareXmlForSigning(
     const dataDigest = await computeXmlHashBase64(cleanXmlForDigest);
 
     const now = new Date();
+    const sigId = 'CHUKYDONVI-' + String(now.getTime());
     const pad = (n: number) => String(n).padStart(2, '0');
-    const signingTime = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const objectXml = `<Object><SignatureProperties Id="proid"><SignatureProperty><SigningTime xmlns="http://example.org/#signatureProperties">${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
+    const signingTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    // Cấu trúc chuẩn BHXH: SignatureProperty bắt buộc có Id + Target trỏ về Id của <Signature>;
+    // SigningTime không có namespace; SignatureProperties không có thuộc tính Id.
+    const objectXml = `<Object><SignatureProperties xmlns=""><SignatureProperty Id="SignatureProperty-${sigId}" Target="#${sigId}"><SigningTime>${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
 
     const signedInfoInner = `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${dataDigest}</DigestValue></Reference>`;
     const signedInfoXml = `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoInner}</SignedInfo>`;
@@ -527,7 +530,7 @@ export async function prepareXmlForSigning(
 
     const buildSignedXml = (signatureBase64: string) => {
       const cleanSig = signatureBase64.replace(/\s+/g, '');
-      const sigBlock = `<CHUKYDONVI><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoInner}</SignedInfo><SignatureValue>${cleanSig}</SignatureValue><KeyInfo><X509Data><X509Certificate>${cleanCert}</X509Certificate><X509SubjectName>${esc(subjectName)}</X509SubjectName></X509Data></KeyInfo>${objectXml}</Signature></CHUKYDONVI>`;
+      const sigBlock = `<CHUKYDONVI><Signature Id="${sigId}" xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoInner}</SignedInfo><SignatureValue>${cleanSig}</SignatureValue><KeyInfo><X509Data><X509Certificate>${cleanCert}</X509Certificate><X509SubjectName>${esc(subjectName)}</X509SubjectName></X509Data></KeyInfo>${objectXml}</Signature></CHUKYDONVI>`;
 
       if (/<CHUKYDONVI\s*\/>/.test(xmlString)) return xmlString.replace(/<CHUKYDONVI\s*\/>/, sigBlock);
       if (xmlString.includes('<CHUKYDONVI>')) return xmlString.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, sigBlock);
@@ -612,12 +615,15 @@ export function embedSignatureInXml(
 
   if (is01BH) {
     const now = new Date();
+    const sigId = 'CHUKYDONVI-' + String(now.getTime());
     const pad = (n: number) => String(n).padStart(2, '0');
-    const signingTime = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    const objectXml = `<Object><SignatureProperties Id="proid"><SignatureProperty><SigningTime xmlns="http://example.org/#signatureProperties">${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
+    const signingTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    // Cấu trúc chuẩn BHXH: SignatureProperty bắt buộc có Id + Target trỏ về Id của <Signature>;
+    // SigningTime không có namespace; SignatureProperties không có thuộc tính Id.
+    const objectXml = `<Object><SignatureProperties xmlns=""><SignatureProperty Id="SignatureProperty-${sigId}" Target="#${sigId}"><SigningTime>${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
     const signedInfoInner = `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/><SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><Reference URI=""><Transforms><Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='}</DigestValue></Reference>`;
 
-    const sigBlock = `<CHUKYDONVI><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoInner}</SignedInfo><SignatureValue>${signatureBase64.replace(/\s+/g, '')}</SignatureValue>${keyInfoXml}${objectXml}</Signature></CHUKYDONVI>`;
+    const sigBlock = `<CHUKYDONVI><Signature Id="${sigId}" xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">${signedInfoInner}</SignedInfo><SignatureValue>${signatureBase64.replace(/\s+/g, '')}</SignatureValue>${keyInfoXml}${objectXml}</Signature></CHUKYDONVI>`;
 
     if (/<CHUKYDONVI\s*\/>/.test(xmlString)) return xmlString.replace(/<CHUKYDONVI\s*\/>/, sigBlock);
     if (xmlString.includes('<CHUKYDONVI>')) return xmlString.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, sigBlock);
