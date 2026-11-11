@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Save, ShieldCheck } from 'lucide-react';
+import { X, Save, ShieldCheck, Globe } from 'lucide-react';
 
 export interface KskConfig {
   apiUrl: string;
@@ -8,6 +8,7 @@ export interface KskConfig {
   username: string;
   password?: string;
   privateKey: string;
+  receiverId?: string;
 }
 
 interface KskConfigModalProps {
@@ -18,18 +19,23 @@ interface KskConfigModalProps {
 
 export default function KskConfigModal({ isOpen, onClose, onSave }: KskConfigModalProps) {
   const [config, setConfig] = useState<KskConfig>({
-    apiUrl: '',
+    apiUrl: 'https://api.emrhub.vn',
     senderId: '',
     username: '',
     password: '',
-    privateKey: ''
+    privateKey: '',
+    receiverId: 'emrhub',
   });
 
   useEffect(() => {
     const saved = localStorage.getItem('ksk_config');
     if (saved) {
       try {
-        setConfig(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setConfig({
+          ...parsed,
+          receiverId: parsed.receiverId || 'emrhub',
+        });
       } catch (e) {}
     }
   }, [isOpen]);
@@ -66,7 +72,7 @@ export default function KskConfigModal({ isOpen, onClose, onSave }: KskConfigMod
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-800">Cấu hình API Khám sức khỏe (EMRHUB)</h3>
-                <p className="text-sm text-slate-500 font-medium">Thiết lập kết nối liên thông SYT</p>
+                <p className="text-sm text-slate-500 font-medium">Theo chuẩn Hướng dẫn liên thông API của Bộ Y Tế</p>
               </div>
             </div>
             <button 
@@ -80,14 +86,33 @@ export default function KskConfigModal({ isOpen, onClose, onSave }: KskConfigMod
           <div className="p-6 overflow-y-auto space-y-5 flex-1">
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">URL API Đồng bộ (SYNC_CHECK_UP)</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-bold text-slate-700">Base URL Cổng Quốc gia (HTTPS)</label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, apiUrl: 'https://api-sandbox.emrhub.vn' })}
+                      className="text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+                    >
+                      Môi trường Thử nghiệm (Sandbox)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfig({ ...config, apiUrl: 'https://api.emrhub.vn' })}
+                      className="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 transition-colors"
+                    >
+                      Môi trường Thật (Production)
+                    </button>
+                  </div>
+                </div>
                 <input 
                   type="text"
                   value={config.apiUrl}
                   onChange={e => setConfig({...config, apiUrl: e.target.value})}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
-                  placeholder="VD: https://api.csdlksk.vn/api/sync..."
+                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all font-mono"
+                  placeholder="https://api.emrhub.vn hoặc https://api-sandbox.emrhub.vn"
                 />
+                <p className="text-xs text-slate-500 mt-1">Hệ thống tự động điều hướng /api/auth/login và /api/platform/data-sync/push.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -98,7 +123,7 @@ export default function KskConfigModal({ isOpen, onClose, onSave }: KskConfigMod
                     value={config.username}
                     onChange={e => setConfig({...config, username: e.target.value})}
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
-                    placeholder="Tài khoản EMRHUB"
+                    placeholder="<MÃ_GLN>_api (VD: 8934285005264_api)"
                   />
                 </div>
                 <div>
@@ -108,31 +133,50 @@ export default function KskConfigModal({ isOpen, onClose, onSave }: KskConfigMod
                     value={config.password}
                     onChange={e => setConfig({...config, password: e.target.value})}
                     className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
-                    placeholder="Mật khẩu EMRHUB"
+                    placeholder="Mật khẩu tài khoản API EMRHUB"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Mã GLN cơ sở KCB (sender_id, 13 số)</label>
+                  <input 
+                    type="text"
+                    value={config.senderId}
+                    onChange={e => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 13);
+                      setConfig({
+                        ...config,
+                        senderId: val,
+                        username: config.username ? config.username : (val ? `${val}_api` : ''),
+                      });
+                    }}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all font-mono"
+                    placeholder="VD: 8934285005264"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Mã bên nhận (receiver_id)</label>
+                  <input 
+                    type="text"
+                    value={config.receiverId || 'emrhub'}
+                    onChange={e => setConfig({...config, receiverId: e.target.value})}
+                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all font-mono"
+                    placeholder="emrhub"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Mã định danh (sender-id)</label>
-                <input 
-                  type="text"
-                  value={config.senderId}
-                  onChange={e => setConfig({...config, senderId: e.target.value})}
-                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all"
-                  placeholder="VD: G18/DMSA"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1">Private Key (Để ký điện tử Payload)</label>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Khóa riêng Private Key (PKCS#8 PEM, ký RSA-SHA256)</label>
                 <textarea 
                   value={config.privateKey}
                   onChange={e => setConfig({...config, privateKey: e.target.value})}
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition-all font-mono h-32"
                   placeholder="-----BEGIN PRIVATE KEY-----..."
                 />
-                <p className="text-xs text-slate-500 mt-1">Lấy từ mục Thông tin cá nhân trên trang admin của hệ thống EMRHUB.</p>
+                <p className="text-xs text-slate-500 mt-1">Lấy tại mục &quot;Thông tin cá nhân&quot; trên trang quản trị EMRHUB (admin.csdlksk.vn) theo Bước 2 trong tài liệu của Bộ Y Tế.</p>
               </div>
             </div>
           </div>

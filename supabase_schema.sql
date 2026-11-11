@@ -61,3 +61,33 @@ FOR ALL
 TO anon, authenticated 
 USING (true) 
 WITH CHECK (true);
+
+-- 4. Bảng Quản lý Người dùng & Phân quyền (Admin & Users)
+CREATE TABLE IF NOT EXISTS public.app_users (
+    id TEXT PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    plain_password_hint TEXT,
+    full_name TEXT NOT NULL,
+    phone TEXT,
+    department TEXT,
+    role TEXT DEFAULT 'USER',                    -- ADMIN, USER
+    status TEXT DEFAULT 'ACTIVE',                -- ACTIVE, SUSPENDED, PENDING
+    allowed_modules JSONB DEFAULT '["DOI_SOAT","CHUNG_TU","KHAM_SUC_KHOE","XML_3176"]'::jsonb,
+    note TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    last_login TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_users_username ON public.app_users (username);
+CREATE INDEX IF NOT EXISTS idx_app_users_status ON public.app_users (status);
+
+ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Cho phép anon thao tác bảng quản lý người dùng"
+ON public.app_users
+FOR ALL
+TO anon, authenticated
+USING (true)
+WITH CHECK (true);

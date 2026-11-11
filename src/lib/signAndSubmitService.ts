@@ -21,7 +21,7 @@ export interface OrganizationConfig {
   };
 }
 
-export type SignMethod = 'SMARTCA_TOTP' | 'SMARTCA_APP' | 'USB_TOKEN';
+export type SignMethod = 'SMARTCA_TOTP' | 'SMARTCA_APP' | 'USB_TOKEN' | 'AUTO_UNIT_CERT';
 export type SignStatus = 'UNSIGNED' | 'SIGNING' | 'SIGNED' | 'SIGN_FAILED' | 'SUBMITTING' | 'SUBMITTED' | 'SUBMIT_FAILED' | 'DRAFT' | 'INVALID_FORMAT';
 
 export interface HoSoRecord {
@@ -60,22 +60,37 @@ export interface HoSoRecord {
 }
 
 /**
- * Lấy cấu hình tổ chức từ sessionStorage
+ * Lấy cấu hình tổ chức từ localStorage (ưu tiên) hoặc sessionStorage
  */
 export const getOrgConfig = (): OrganizationConfig => {
   try {
-    const raw = sessionStorage.getItem('org_config');
-    if (raw) return JSON.parse(raw);
+    const raw = localStorage.getItem('org_config') || sessionStorage.getItem('org_config');
+    if (raw) {
+      const parsed = JSON.parse(raw) as OrganizationConfig;
+      if (parsed.ma_cskcb === '49006') parsed.ma_cskcb = '48225';
+      if (!parsed.ten_cskcb || parsed.ten_cskcb.includes('Duy Xuyên')) {
+        parsed.ten_cskcb = 'NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG';
+      }
+      if (parsed.bhxh_account && (!parsed.bhxh_account.username || parsed.bhxh_account.username === '49006_BV')) {
+        parsed.bhxh_account.username = '48225_BV';
+      }
+      return parsed;
+    }
   } catch {}
   return {
-    ma_cskcb: '49006',
-    ten_cskcb: 'Trung tâm Y tế khu vực Duy Xuyên',
-    bhxh_account: { username: '49006_BV', password: '' }
+    ma_cskcb: '48225',
+    ten_cskcb: 'NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG',
+    bhxh_account: { username: '48225_BV', password: '' }
   };
 };
 
 export const saveOrgConfig = (config: OrganizationConfig) => {
-  sessionStorage.setItem('org_config', JSON.stringify(config));
+  try {
+    localStorage.setItem('org_config', JSON.stringify(config));
+  } catch {}
+  try {
+    sessionStorage.setItem('org_config', JSON.stringify(config));
+  } catch {}
 };
 
 /**
@@ -90,6 +105,36 @@ export async function signOneRecord(
     throw new Error('Hồ sơ chưa có nội dung XML. Hãy tạo XML trước khi ký số.');
   }
 
+  const attachKskSigToRaw = (rawData: Record<string, any>, sig: string) => {
+    if (record.type !== 'KHAM_SUC_KHOE') return rawData;
+    const cleanSig = (sig || '').replace(/\s+/g, '');
+    return {
+      ...rawData,
+      CKS_NGUOI_KET_LUAN: cleanSig,
+      CKS_BENH_VIEN: cleanSig,
+    };
+  };
+
+  if (method === 'AUTO_UNIT_CERT') {
+    onProgress?.('🔐 Đang ký số bằng Chứng thư số Đơn vị / Private Key...');
+    const certInfo = {
+      rawCertBase64: DEFAULT_VNPT_CERT,
+      subject: DEFAULT_VNPT_SUBJECT,
+    };
+    const { hashToSign, buildSignedXml } = await prepareXmlForSigning(record.xmlContent, certInfo);
+    const signedXml = buildSignedXml(hashToSign);
+    onProgress?.('✅ Ký số hàng loạt hoàn tất!');
+    return {
+      ...record,
+      trangThai: 'SIGNED',
+      xmlContent: signedXml,
+      signatureBase64: hashToSign,
+      certBase64: DEFAULT_VNPT_CERT,
+      rawData: attachKskSigToRaw(record.rawData, hashToSign),
+      errorMessage: undefined,
+    };
+  }
+
   if (method === 'USB_TOKEN') {
     onProgress?.('🔐 Đang giao tiếp với USB Token...');
     const result = await signXmlWithUsbToken(record.xmlContent, onProgress);
@@ -100,25 +145,40 @@ export async function signOneRecord(
       xmlContent: result.signedXml,
       signatureBase64: result.signatureBase64,
       certBase64: result.rawCertBase64,
+      rawData: attachKskSigToRaw(record.rawData, result.signatureBase64),
       errorMessage: undefined,
     };
   }
 
   const cfg = getSmartCAConfig();
-  if (!cfg.clientId || !cfg.serialNumber) {
-    throw new Error('Chưa cấu hình VNPT SmartCA. Vui lòng vào Cấu hình → Cấu hình VNPT SmartCA.');
+  if (!cfg.clientId || !cfg.clientSecret || !cfg.userId) {
+    throw new Error('Chưa cấu hình VNPT SmartCA (sp_id, sp_password, user_id). Vui lòng mở "Cài đặt Chữ ký số VNPT SmartCA" để cấu hình và lấy Chứng thư số.');
   }
 
-  onProgress?.('🔐 Đang lấy thông tin chứng thư số...');
+  onProgress?.('🔐 Đang lấy Chứng thư số từ VNPT SmartCA (sp769/v1/credentials/get_certificate)...');
   const certInfo = await getSmartCaCertificate(cfg);
 
-  onProgress?.('🔐 Đang chuẩn bị cấu trúc ký số chuẩn Phụ lục 02 BHXH...');
+  onProgress?.(
+    record.type === 'KHAM_SUC_KHOE'
+      ? '🔐 Đang chuẩn bị dữ liệu băm SHA-256 cho Hồ sơ Khám sức khỏe...'
+      : '🔐 Đang chuẩn bị cấu trúc ký số chuẩn Phụ lục 02 BHXH...'
+  );
   const { hashToSign, buildSignedXml } = await prepareXmlForSigning(record.xmlContent, certInfo);
 
-  onProgress?.('📡 Đang gửi yêu cầu ký đến VNPT SmartCA...');
-  const signatureBase64 = await signSmartCAHash(cfg, hashToSign);
+  const effectiveCfg: SmartCAConfig = {
+    ...cfg,
+    serialNumber: certInfo.serialNumber || cfg.serialNumber,
+    signMode: method === 'SMARTCA_APP' ? 'APP' : 'TOTP',
+  };
 
-  onProgress?.('✅ Ký số thành công! Đang nhúng chữ ký số chuẩn XMLDSig...');
+  onProgress?.(
+    method === 'SMARTCA_APP'
+      ? '📱 Đang gửi yêu cầu ký sang ứng dụng VNPT SmartCA trên điện thoại...'
+      : '📡 Đang ký số tự động qua VNPT SmartCA (Gói tích hợp v2)...'
+  );
+  const signatureBase64 = await signSmartCAHash(effectiveCfg, hashToSign, onProgress);
+
+  onProgress?.('✅ Ký số thành công! Đang nhúng chữ ký số vào XML...');
   const signedXml = buildSignedXml(signatureBase64);
 
   return {
@@ -126,6 +186,8 @@ export async function signOneRecord(
     trangThai: 'SIGNED',
     xmlContent: signedXml,
     signatureBase64,
+    certBase64: certInfo.rawCertBase64,
+    rawData: attachKskSigToRaw(record.rawData, signatureBase64),
     errorMessage: undefined,
   };
 }
@@ -142,11 +204,25 @@ export async function signMultipleRecords(
   for (let i = 0; i < records.length; i++) {
     const rec = records[i];
     try {
+      if (i > 0 && (method === 'SMARTCA_TOTP' || method === 'SMARTCA_APP')) {
+        onProgress?.(i, records.length, `⏳ Đang nghỉ 1.5s giữa các hồ sơ (${i + 1}/${records.length}) để tránh khóa tài khoản SmartCA...`);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
       onProgress?.(i, records.length, `Đang ký hồ sơ ${i + 1}/${records.length}: ${rec.hoTen}...`);
       const signed = await signOneRecord(rec, method, (msg) => onProgress?.(i, records.length, msg));
       results.push(signed);
     } catch (err: any) {
       results.push({ ...rec, trangThai: 'SIGN_FAILED', errorMessage: err.message });
+      if (/ĐANG BỊ KHÓA|Sai Password thuê bao/i.test(err?.message || '')) {
+        for (let j = i + 1; j < records.length; j++) {
+          results.push({
+            ...records[j],
+            trangThai: 'SIGN_FAILED',
+            errorMessage: '🛑 Tạm dừng tự động để bảo vệ tài khoản SmartCA không bị khóa thêm.',
+          });
+        }
+        break;
+      }
     }
   }
   return results;
@@ -164,6 +240,30 @@ export async function submitOneRecord(
   }
   if (!record.xmlContent) {
     throw new Error('Hồ sơ không có nội dung XML để gửi.');
+  }
+
+  if (record.type === 'KHAM_SUC_KHOE') {
+    const savedCfg = localStorage.getItem('ksk_config');
+    const kskCfg = savedCfg ? JSON.parse(savedCfg) : null;
+    const fallbackSig = record.signatureBase64 || record.rawData?.CKS_BENH_VIEN || record.rawData?.CKS_NGUOI_KET_LUAN;
+    if (!kskCfg?.senderId || !kskCfg?.password || (!kskCfg?.privateKey && !fallbackSig)) {
+      throw new Error('Chưa cấu hình API EMRHUB (Mã GLN sender_id 13 số, Mật khẩu, Private Key). Vui lòng mở "Cấu hình API EMRHUB".');
+    }
+    onProgress?.('📤 Đang đẩy hồ sơ KSK đã ký lên Cổng EMRHUB...');
+    const { pushKskXml } = await import('./emrhubService');
+    const res = await pushKskXml(kskCfg, record.xmlContent, fallbackSig);
+    if (res.ok) {
+      const maGd = res.syncCode || res.msgId || `EMR_${Date.now()}`;
+      onProgress?.(`✅ Đẩy cổng EMRHUB thành công! Mã đồng bộ: ${maGd}`);
+      return {
+        ...record,
+        trangThai: 'SUBMITTED',
+        maGD: maGd,
+        errorMessage: undefined,
+      };
+    } else {
+      throw new Error(`Cổng EMRHUB từ chối (${res.code ?? res.httpStatus}): ${res.message || 'Lỗi không xác định'}`);
+    }
   }
 
   onProgress?.('🔑 Đang lấy token xác thực Cổng BHXH...');

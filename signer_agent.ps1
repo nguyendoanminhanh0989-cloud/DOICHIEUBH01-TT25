@@ -45,19 +45,37 @@ function Get-UsbCertificate {
     }
 
     if ($certs.Count -eq 1) {
+        $script:cachedCert = $certs[0]
         return $certs[0]
     }
 
-    # Neu co nhieu chung thu, hien hop thoai chon
-    [System.Reflection.Assembly]::LoadWithPartialName("System.Security") | Out-Null
-    $selected = [System.Security.Cryptography.X509Certificates.X509Certificate2UI]::SelectFromCollection(
-        $certs, "Chon chung thu so USB Token", "Chon chung thu so cua don vi / ca nhan de ky:", 
-        [System.Security.Cryptography.X509Certificates.X509SelectionFlag]::SingleSelection
-    )
-    if ($selected.Count -gt 0) {
-        return $selected[0]
+    # Khi chi ping kiem tra (non-interactive), uu tien lay CKS con han xa nhat
+    if (-not $interactive) {
+        return ($certs | Sort-Object NotAfter -Descending | Select-Object -First 1)
     }
-    return $certs[0]
+
+    # Khi ky thuc te, cho nguoi dung chon CKS neu co nhieu hon 1
+    [System.Reflection.Assembly]::LoadWithPartialName("System.Security") | Out-Null
+    $collection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+    foreach ($c in $certs) {
+        $collection.Add($c) | Out-Null
+    }
+
+    try {
+        $selected = [System.Security.Cryptography.X509Certificates.X509Certificate2UI]::SelectFromCollection(
+            $collection, "Chon chung thu so USB Token", "Chon chung thu so cua don vi / ca nhan de ky:", 
+            [System.Security.Cryptography.X509Certificates.X509SelectionFlag]::SingleSelection
+        )
+        if ($selected.Count -gt 0) {
+            $script:cachedCert = $selected[0]
+            return $selected[0]
+        }
+    } catch {
+        Write-Host " [CANH BAO]: Khong mo duoc hop thoai chon CKS: $_" -ForegroundColor Yellow
+    }
+
+    $script:cachedCert = $certs | Sort-Object NotAfter -Descending | Select-Object -First 1
+    return $script:cachedCert
 }
 
 function Invoke-TokenSignHash($cert, [byte[]]$hash) {
@@ -136,10 +154,10 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $is01BH = ($root.LocalName -eq "HSTH01BH")
     
     # Tim Id ho so (THONGTINHOSO hoac DS_CHITIET hoac the co attribute Id)
-    $hoSoNode = $root.SelectSingleNode("//*[@Id]")
     $hoSoId = if ($hoSoNode) { $hoSoNode.GetAttribute("Id") } else { "Id-" + [Guid]::NewGuid().ToString() }
 
     $signedXml = New-Object System.Security.Cryptography.Xml.SignedXml($xmlDoc)
+    $signedXml.Signature.Id = "CHUKYDONVI-$hoSoId"
     
     # Lay Private Key tuong thich SHA-256 tu USB Token
     $dummyKey = New-Object System.Security.Cryptography.RSACryptoServiceProvider(2048)
@@ -148,30 +166,52 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $signedXml.SignedInfo.CanonicalizationMethod = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
     $signedXml.SignedInfo.SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
 
-    # Reference duy nhat theo chuan mau cong BHXH: Enveloped signature tren toan bo file (URI="")
-    $ref = New-Object System.Security.Cryptography.Xml.Reference("")
-    $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
-    $ref.AddTransform($env)
-    $ref.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
-    $signedXml.AddReference($ref)
-
     # KeyInfo chua Certificate va SubjectName
     $keyInfo = New-Object System.Security.Cryptography.Xml.KeyInfo
     $kix = New-Object System.Security.Cryptography.Xml.KeyInfoX509Data
-    $kix.AddCertificate($cert)
     $kix.AddSubjectName($cert.Subject)
+    $kix.AddCertificate($cert)
     $keyInfo.AddClause($kix)
     $signedXml.KeyInfo = $keyInfo
 
-    # Tao DataObject SigningTime chuan mau cong BHXH
-    $objDoc = New-Object System.Xml.XmlDocument
-    $signingTime = (Get-Date).ToString("yyyyMMddHHmmss")
-    $objXml = "<SignatureProperties Id=`"proid`" xmlns=`"`"><SignatureProperty><SigningTime xmlns=`"http://example.org/#signatureProperties`">$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
-    $objDoc.LoadXml($objXml)
+    if ($is01BH) {
+        # Mau 01BH: Enveloped signature tren toan bo file (URI="")
+        $objDoc = New-Object System.Xml.XmlDocument
+        $signingTime = (Get-Date).ToString("yyyyMMddHHmmss")
+        $objXml = "<SignatureProperties Id=`"proid`" xmlns=`"`"><SignatureProperty><SigningTime xmlns=`"http://example.org/#signatureProperties`">$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
+        $objDoc.LoadXml($objXml)
 
-    $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
-    $dataObj.Data = $objDoc.ChildNodes
-    $signedXml.AddObject($dataObj)
+        $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
+        $dataObj.Data = $objDoc.ChildNodes
+        $signedXml.AddObject($dataObj)
+
+        $ref = New-Object System.Security.Cryptography.Xml.Reference("")
+        $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
+        $ref.AddTransform($env)
+        $ref.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($ref)
+    } else {
+        # Ho so chung tu (CT03, CT04, CT05, CT06, CT07... theo Phu luc 02 BHXH)
+        $objDoc = New-Object System.Xml.XmlDocument
+        $signingTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+        $objXml = "<SignatureProperties xmlns=`"`"><SignatureProperty Target=`"#CHUKYDONVI-$hoSoId`" Id=`"SignatureProperty-CHUKYDONVI-$hoSoId`"><SigningTime>$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
+        $objDoc.LoadXml($objXml)
+
+        $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
+        $dataObj.Id = "Object-CHUKYDONVI-$hoSoId"
+        $dataObj.Data = $objDoc.ChildNodes
+        $signedXml.AddObject($dataObj)
+
+        # Reference 1: Object SigningTime
+        $refObj = New-Object System.Security.Cryptography.Xml.Reference("#Object-CHUKYDONVI-$hoSoId")
+        $refObj.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($refObj)
+
+        # Reference 2: THONGTINHOSO Id
+        $refHoSo = New-Object System.Security.Cryptography.Xml.Reference("#$hoSoId")
+        $refHoSo.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($refHoSo)
+    }
 
     # Tinh toan chu ky chuan XMLDSig W3C
     $signedXml.ComputeSignature()
@@ -224,6 +264,7 @@ while ($listener.IsListening) {
         $response.Headers.Add("Access-Control-Allow-Origin", "*")
         $response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         $response.Headers.Add("Access-Control-Allow-Headers", "Content-Type")
+        $response.Headers.Add("Access-Control-Allow-Private-Network", "true")
 
         if ($request.HttpMethod -eq "OPTIONS") {
             $response.StatusCode = 200
@@ -232,7 +273,7 @@ while ($listener.IsListening) {
         }
 
         if ($request.Url.AbsolutePath -eq "/ping") {
-            $cert = Get-UsbCertificate
+            $cert = Get-UsbCertificate -interactive $false
             $info = @{
                 status = "ok"
                 subject = if ($cert) { $cert.Subject } else { "Chua cam USB Token hoac chua cai Driver" }
@@ -247,6 +288,80 @@ while ($listener.IsListening) {
             continue
         }
 
+        # Proxy trung gian VNPT SmartCA cho Web App (giup web tren Vercel vuot qua chan IP nuoc ngoai va chan CORS)
+        if ($request.Url.AbsolutePath -eq "/smartca-proxy" -and $request.HttpMethod -eq "POST") {
+            $targetUrl = $request.QueryString["url"]
+            if (-not $targetUrl) {
+                $targetUrl = "https://gwsca.vnpt.vn/sca/sp769/v1/credentials/get_certificate"
+            }
+
+            $reader = New-Object System.IO.StreamReader($request.InputStream, $request.ContentEncoding)
+            $postData = $reader.ReadToEnd()
+            $reader.Close()
+
+            try {
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls
+
+                $httpReq = [System.Net.HttpWebRequest]::Create($targetUrl)
+                $httpReq.Method = "POST"
+                $httpReq.ContentType = "application/json; charset=utf-8"
+                $httpReq.Accept = "application/json"
+                $httpReq.Timeout = 15000
+                $httpReq.KeepAlive = $false
+
+                if ($postData) {
+                    $postBytes = [System.Text.Encoding]::UTF8.GetBytes($postData)
+                    $httpReq.ContentLength = $postBytes.Length
+                    $postStream = $httpReq.GetRequestStream()
+                    $postStream.Write($postBytes, 0, $postBytes.Length)
+                    $postStream.Close()
+                }
+
+                $httpResp = $httpReq.GetResponse()
+                $respStream = $httpResp.GetResponseStream()
+                $respReader = New-Object System.IO.StreamReader($respStream, [System.Text.Encoding]::UTF8)
+                $respText = $respReader.ReadToEnd()
+                $respReader.Close()
+                $httpResp.Close()
+
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($respText)
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $response.Close()
+                Write-Host " [OK] SmartCA Proxy thanh cong: $targetUrl" -ForegroundColor Green
+                continue
+            } catch [System.Net.WebException] {
+                $webEx = $_.Exception
+                $errRespText = ""
+                if ($webEx.Response) {
+                    $errStream = $webEx.Response.GetResponseStream()
+                    $errReader = New-Object System.IO.StreamReader($errStream, [System.Text.Encoding]::UTF8)
+                    $errRespText = $errReader.ReadToEnd()
+                    $errReader.Close()
+                    $webEx.Response.Close()
+                }
+                $errJson = if ($errRespText) { $errRespText } else { (ConvertTo-Json @{ status_code = 502; message = $webEx.Message }) }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($errJson)
+                $response.StatusCode = 200
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $response.Close()
+                Write-Host " [CANH BAO] SmartCA tra ve loi: $($webEx.Message)" -ForegroundColor Yellow
+                continue
+            } catch {
+                $errJson = ConvertTo-Json @{ status_code = 502; message = $_.ToString() }
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($errJson)
+                $response.StatusCode = 200
+                $response.ContentType = "application/json; charset=utf-8"
+                $response.ContentLength64 = $buffer.Length
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $response.Close()
+                continue
+            }
+        }
+
         if ($request.Url.AbsolutePath -eq "/sign" -and $request.HttpMethod -eq "POST") {
             $reader = New-Object System.IO.StreamReader($request.InputStream, $request.ContentEncoding)
             $body = $reader.ReadToEnd()
@@ -259,7 +374,7 @@ while ($listener.IsListening) {
                 throw "Khong tim thay truong xml trong du lieu gui len."
             }
 
-            $cert = Get-UsbCertificate
+            $cert = Get-UsbCertificate -interactive $true
             if (-not $cert) {
                 throw "Khong tim thay chung thu so USB Token nao tren may tinh. Vui long cam USB Token vao may va kiem tra driver."
             }

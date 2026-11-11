@@ -381,7 +381,7 @@ export default function TaoHoSoModal({ onClose, onRecordsCreated }: TaoHoSoModal
                 </span>
               </div>
               <div className="text-xs text-slate-500 mt-0.5">
-                Đơn vị KCB: <strong className="text-blue-600">49006</strong> - Trung tâm Y tế khu vực Duy Xuyên
+                <strong className="text-blue-600">NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG</strong>
               </div>
             </div>
           </div>

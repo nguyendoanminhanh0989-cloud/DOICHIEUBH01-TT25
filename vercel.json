@@ -1,8 +1,24 @@
 {
   "rewrites": [
     {
-      "source": "/api/vnpt/:match*",
-      "destination": "https://gwsca.vnpt.vn/:match*"
+      "source": "/api/vnpt-uat/(.*)",
+      "destination": "/api/vnpt-proxy?t=uat&p=$1"
+    },
+    {
+      "source": "/api/vnpt/(.*)",
+      "destination": "/api/vnpt-proxy?t=prod&p=$1"
+    },
+    {
+      "source": "/api/emrhub-prod/:match*",
+      "destination": "https://api.emrhub.vn/:match*"
+    },
+    {
+      "source": "/api/emrhub-sandbox/:match*",
+      "destination": "https://api-sandbox.emrhub.vn/:match*"
+    },
+    {
+      "source": "/api/users",
+      "destination": "/api/users"
     },
     {
       "source": "/(.*)",

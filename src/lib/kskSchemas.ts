@@ -2,7 +2,7 @@
  * SCHEMA 3 MẪU KHÁM SỨC KHỎE (KSK)
  * -------------------------------------------------------------------------
  * Là "nguồn sự thật" duy nhất cho:
- *   - Form nhập thủ công (KskFormShell render trực tiếp từ schema)
+ *   - Form nhập thủ công (KskDynamicForm render trực tiếp từ schema)
  *   - Chuẩn hóa dữ liệu (kskRecord.ts: ánh xạ tên -> mã theo options)
  * Key của mỗi trường TRÙNG với dòng khóa (row 2) của file Excel Import_KSK_*.xlsm
  * và với tên thẻ XML trong "sample xml (final).xml" => nhập thủ công, import
@@ -37,6 +37,8 @@ export interface KskField {
   placeholder?: string;
   hint?: string;
   hideLabel?: boolean;
+  /** Giá trị mặc định khi tạo phiếu mới */
+  defaultValue?: string;
   /** Số cột chiếm trong lưới 12 cột */
   span?: 2 | 3 | 4 | 6 | 7 | 8 | 9 | 12;
 }
@@ -69,10 +71,14 @@ export const OPT_YESNO: KskOption[] = [
   { value: '1', label: 'Có' },
 ];
 
+export const OPT_BT_KBT: KskOption[] = [
+  { value: '1', label: 'Bình thường' },
+  { value: '0', label: 'Không bình thường' },
+];
+
 export const OPT_GIOI_TINH: KskOption[] = [
   { value: '1', label: 'Nam' },
   { value: '2', label: 'Nữ' },
-  { value: '3', label: 'Khác' },
 ];
 
 export const OPT_PHAN_LOAI: KskOption[] = [
@@ -84,57 +90,58 @@ export const OPT_PHAN_LOAI: KskOption[] = [
 ];
 
 export const OPT_TIEM_CHUNG: KskOption[] = [
-  { value: '0', label: 'Không được tiêm' },
-  { value: '1', label: 'Được tiêm' },
-  { value: '99', label: 'Không nhớ rõ' },
+  { value: '0', label: '0 - Không được tiêm' },
+  { value: '1', label: '1 - Được tiêm' },
+  { value: '99', label: '99 - Không nhớ rõ' },
 ];
 
 export const OPT_MOI_QUAN_HE: KskOption[] = [
-  { value: '1', label: 'Cha' },
-  { value: '2', label: 'Mẹ' },
-  { value: '3', label: 'Ông/Bà' },
-  { value: '4', label: 'Anh/Chị' },
-  { value: '5', label: 'Họ hàng' },
-  { value: '9', label: 'Khác' },
+  { value: '1', label: '1 - Cha' },
+  { value: '2', label: '2 - Mẹ' },
+  { value: '3', label: '3 - Ông/Bà' },
+  { value: '4', label: '4 - Anh/Chị' },
+  { value: '5', label: '5 - Họ hàng' },
+  { value: '9', label: '9 - Khác' },
 ];
 
 export const OPT_SAN_KHOA_KHONG_BT: KskOption[] = [
-  { value: '1', label: 'Đẻ thiếu tháng' },
-  { value: '2', label: 'Đẻ thừa cân' },
-  { value: '3', label: 'Đẻ có can thiệp' },
-  { value: '4', label: 'Đẻ ngạt' },
-  { value: '5', label: 'Mẹ bị bệnh trong thời kỳ mang thai' },
+  { value: '1', label: '1 - Đẻ thiếu tháng' },
+  { value: '2', label: '2 - Đẻ thừa cân' },
+  { value: '3', label: '3 - Đẻ có can thiệp' },
+  { value: '4', label: '4 - Đẻ ngạt' },
+  { value: '5', label: '5 - Mẹ bị bệnh trong thời kỳ mang thai' },
 ];
 
 export const OPT_DOI_TUONG: KskOption[] = [
-  { value: '1', label: 'Người cao tuổi' },
-  { value: '2', label: 'Người khuyết tật' },
-  { value: '3', label: 'Người thuộc hộ nghèo, cận nghèo' },
-  { value: '4', label: 'Người có công' },
-  { value: '5', label: 'Người mắc bệnh mạn tính' },
-  { value: '6', label: 'Người sống tại vùng đồng bào dân tộc thiểu số và miền núi' },
-  { value: '7', label: 'Người sống tại vùng có điều kiện kinh tế - xã hội khó khăn, đặc biệt khó khăn' },
-  { value: '8', label: 'Người sống tại xã đảo' },
-  { value: '9', label: 'Người sống tại đặc khu' },
-  { value: '10', label: 'Trẻ em trong cơ sở giáo dục mầm non' },
-  { value: '11', label: 'Học sinh trong các cơ sở giáo dục phổ thông' },
-  { value: '12', label: 'Sinh viên' },
-  { value: '13', label: 'Người lao động' },
-  { value: '14', label: 'Người lao động không chính thức' },
-  { value: '15', label: 'Người chưa có Bảo hiểm y tế' },
-  { value: '16', label: 'Các đối tượng khác' },
+  { value: '1', label: '1 - Người cao tuổi' },
+  { value: '2', label: '2 - Người khuyết tật' },
+  { value: '3', label: '3 - Người thuộc hộ nghèo, cận nghèo' },
+  { value: '4', label: '4 - Người có công' },
+  { value: '5', label: '5 - Người mắc bệnh mạn tính' },
+  { value: '6', label: '6 - Người sống tại vùng đồng bào dân tộc thiểu số và miền núi' },
+  { value: '7', label: '7 - Người sống tại vùng có điều kiện kinh tế - xã hội khó khăn, đặc biệt khó khăn' },
+  { value: '8', label: '8 - Người sống tại xã đảo' },
+  { value: '9', label: '9 - Người sống tại đặc khu' },
+  { value: '10', label: '10 - Trẻ em trong cơ sở giáo dục mầm non' },
+  { value: '11', label: '11 - Học sinh trong các cơ sở giáo dục phổ thông' },
+  { value: '12', label: '12 - Sinh viên' },
+  { value: '13', label: '13 - Người lao động' },
+  { value: '14', label: '14 - Người lao động không chính thức' },
+  { value: '15', label: '15 - Người chưa có Bảo hiểm y tế' },
+  { value: '16', label: '16 - Các đối tượng khác' },
 ];
 
 export const OPT_NGUON_CHI_TRA: KskOption[] = [
-  { value: '1', label: 'Ngân sách trung ương' },
-  { value: '2', label: 'Ngân sách địa phương' },
-  { value: '3', label: 'Quỹ bảo hiểm y tế' },
-  { value: '4', label: 'Người sử dụng lao động' },
-  { value: '5', label: 'Xã hội hóa' },
-  { value: '9', label: 'Chưa xác định' },
+  { value: '1', label: '1 - Ngân sách trung ương' },
+  { value: '2', label: '2 - Ngân sách địa phương' },
+  { value: '3', label: '3 - Quỹ bảo hiểm y tế' },
+  { value: '4', label: '4 - Người sử dụng lao động' },
+  { value: '5', label: '5 - Xã hội hóa' },
+  { value: '9', label: '9 - Khác / Chưa xác định' },
 ];
 
 export const OPT_NGHE_NGHIEP: KskOption[] = [
+  { value: '00', label: '00 - Không xác định' },
   { value: '0', label: '0 - Lực lượng vũ trang' },
   { value: '01', label: '01 - Lực lượng quân đội' },
   { value: '02', label: '02 - Lực lượng công an' },
@@ -204,7 +211,7 @@ export const OPT_NHOM_MAU: KskOption[] = [
 
 export const OPT_TINH: KskOption[] = Object.entries(PROVINCES).map(([value, label]) => ({
   value,
-  label
+  label,
 }));
 
 export const OPT_MA_LOAI_KCB: KskOption[] = [
@@ -227,6 +234,116 @@ export const OPT_MA_LOAI_KCB: KskOption[] = [
   { value: '99', label: '99 - Kiểm tra sức khỏe học sinh' },
 ];
 
+/* -------- Danh mục đặc thù mẫu Trẻ dưới 6 tuổi (Import_KSK_Duoi 6.xlsm) -------- */
+
+export const OPT_NHIET_DO: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Sốt' },
+  { value: '3', label: '3 - Hạ thân nhiệt' },
+];
+
+export const OPT_MACH_TRE: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Nhanh' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_NHIP_THO_TRE: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Thở nhanh' },
+  { value: '3', label: '3 - Thở chậm' },
+];
+
+export const OPT_VONG_DAU: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Đầu to' },
+  { value: '3', label: '3 - Đầu nhỏ' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_MAU_SAC_DA: KskOption[] = [
+  { value: '1', label: '1 - Hồng hào' },
+  { value: '2', label: '2 - Nhợt' },
+  { value: '3', label: '3 - Tím' },
+  { value: '4', label: '4 - Vàng' },
+  { value: '5', label: '5 - Sạm da' },
+];
+
+export const OPT_LONG_BAN_TAY: KskOption[] = [
+  { value: '1', label: '1 - Bình thường (không nhợt)' },
+  { value: '2', label: '2 - Không bình thường (nhợt)' },
+];
+
+export const OPT_THOP: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Rộng' },
+  { value: '3', label: '3 - Hẹp' },
+  { value: '4', label: '4 - Thóp phồng' },
+];
+
+export const OPT_VAN_DONG_CO: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Giới hạn' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_VI_TRI_HAI_MAT: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Hai mắt xa nhau' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_MI_MAT_KET_MAC: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Sưng/đỏ' },
+  { value: '3', label: '3 - Chảy ghèn/mủ' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_HINH_DANG_MUI: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Mũi to, dày' },
+  { value: '3', label: '3 - Bất sản xương mũi' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_HINH_DANG_MIENG: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Sứt môi, chẻ vòm' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_HINH_DANG_LUOI: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Lưỡi to bè' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_NHIP_THO_KHONG_DEU: KskOption[] = [
+  { value: '0', label: 'Không' },
+  { value: '1', label: 'Có cơn ngưng thở >5 giây' },
+];
+
+export const OPT_MACH_NGOAI_VI: KskOption[] = [
+  { value: '1', label: '1 - Bắt rõ' },
+  { value: '2', label: '2 - Mạch nhẹ' },
+  { value: '3', label: '3 - Không bắt được' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_TRUONG_LUC_CO: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Tăng' },
+  { value: '3', label: '3 - Giảm' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
+export const OPT_KHOP_HANG: KskOption[] = [
+  { value: '1', label: '1 - Bình thường' },
+  { value: '2', label: '2 - Trật khớp háng' },
+  { value: '0', label: '0 - Không bình thường' },
+];
+
 /* ------------------------------ Helpers ------------------------------ */
 
 type Extra = Partial<Omit<KskField, 'key' | 'label' | 'kind'>>;
@@ -235,14 +352,31 @@ const t = (key: string, label: string, extra: Extra = {}): KskField => ({ key, l
 const ta = (key: string, label: string, extra: Extra = {}): KskField => ({ key, label, kind: 'textarea', span: 12, ...extra });
 const d = (key: string, label: string, extra: Extra = {}): KskField => ({ key, label, kind: 'date', span: 4, ...extra });
 const dt = (key: string, label: string, extra: Extra = {}): KskField => ({ key, label, kind: 'datetime', span: 4, ...extra });
-const yn = (key: string, label: string, extra: Extra = {}): KskField => ({ key, label, kind: 'yesno', options: OPT_YESNO, span: 4, ...extra });
+const yn = (key: string, label: string, extra: Extra = {}): KskField => ({
+  key,
+  label,
+  kind: 'yesno',
+  options: OPT_YESNO,
+  defaultValue: '0',
+  span: 4,
+  ...extra,
+});
+const btkbt = (key: string, label: string, extra: Extra = {}): KskField => ({
+  key,
+  label,
+  kind: 'yesno',
+  options: OPT_BT_KBT,
+  defaultValue: '1',
+  span: 4,
+  ...extra,
+});
 const sel = (key: string, label: string, options: KskOption[], extra: Extra = {}): KskField => ({
   key, label, kind: 'select', options, span: 4, ...extra,
 });
 const pl = (key: string, label = 'Phân loại', extra: Extra = {}): KskField => ({
   key, label, kind: 'phanloai', options: OPT_PHAN_LOAI, span: 4, ...extra,
 });
-const tc = (key: string, label: string): KskField => sel(key, label, OPT_TIEM_CHUNG);
+const tc = (key: string, label: string): KskField => sel(key, label, OPT_TIEM_CHUNG, { defaultValue: '1' });
 
 /** Kết quả khám + phân loại + chữ ký */
 const kq = (key: string, label: string, plKey?: string, sigKey?: string, isFirstSigInGroup = false): KskField[] => {
@@ -258,17 +392,17 @@ const kq = (key: string, label: string, plKey?: string, sigKey?: string, isFirst
   else if (!hasPl && hasSig) { textSpan = 9; plSpan = 0; sigSpan = 3; }
 
   const fields: KskField[] = [
-    t(key, label, { span: textSpan, placeholder: 'Nhập kết quả khám' })
+    t(key, label, { span: textSpan, placeholder: 'Nhập kết quả khám (VD: Bình thường)' })
   ];
 
   if (hasPl) fields.push(pl(plKey!, 'Phân loại', { span: plSpan }));
-  
+
   if (hasSig) {
-    fields.push({ 
-      key: sigKey!, 
-      label: isFirstSigInGroup ? 'Họ tên và chữ ký Bác sĩ' : 'Chữ ký Bác sĩ', 
-      kind: 'signature', 
-      span: sigSpan 
+    fields.push({
+      key: sigKey!,
+      label: isFirstSigInGroup ? 'Họ tên và chữ ký Bác sĩ' : 'Chữ ký Bác sĩ',
+      kind: 'signature',
+      span: sigSpan,
     });
   }
 
@@ -283,19 +417,19 @@ const lanKham = (): KskSection => ({
     t('MA_CSKCB', 'Mã cơ sở KCB (5 ký tự)', { required: true, span: 4 }),
     t('MA_GTIN_CSKCB', 'Mã cơ sở KCB theo chuẩn GLN (13 ký tự)', { required: true, span: 4 }),
     dt('NGAY_VAO', 'Ngày khám sức khỏe', { required: true }),
-    sel('MA_LOAI_KCB', 'Loại hình khám bệnh, chữa bệnh', OPT_MA_LOAI_KCB, { span: 4 }),
-    sel('DOI_TUONG', 'Đối tượng khám', OPT_DOI_TUONG),
-    sel('NGUON_CHI_TRA', 'Nguồn chi trả', OPT_NGUON_CHI_TRA),
+    sel('MA_LOAI_KCB', 'Loại hình khám bệnh, chữa bệnh', OPT_MA_LOAI_KCB, { span: 4, defaultValue: '15' }),
+    sel('DOI_TUONG', 'Đối tượng khám', OPT_DOI_TUONG, { defaultValue: '16' }),
+    sel('NGUON_CHI_TRA', 'Nguồn chi trả', OPT_NGUON_CHI_TRA, { defaultValue: '4' }),
     t('MA_LK', 'Mã liên kết (tự sinh nếu để trống)', { span: 6 }),
-    t('LY_DO_VV', 'Lý do khám sức khỏe', { span: 6, placeholder: 'VD: Khám sức khỏe định kỳ' }),
+    t('LY_DO_VV', 'Lý do khám sức khỏe', { span: 6, placeholder: 'VD: Khám sức khỏe định kỳ', defaultValue: 'Khám sức khỏe định kỳ' }),
   ],
 });
 
-const diaChi = (): KskField[] => [
-  sel('MATINH_CU_TRU', 'Tỉnh/Thành phố', OPT_TINH, { span: 4 }),
-  sel('MAXA_CU_TRU', 'Phường/Xã', [], { span: 4 }),
+const diaChi = (required = false): KskField[] => [
+  sel('MATINH_CU_TRU', 'Tỉnh/Thành phố', OPT_TINH, { span: 4, required }),
+  sel('MAXA_CU_TRU', 'Phường/Xã', [], { span: 4, required }),
   sel('NHOM_MAU', 'Nhóm máu', OPT_NHOM_MAU),
-  t('DIA_CHI', 'Địa chỉ hiện tại (số nhà, thôn, xóm...)', { span: 12 }),
+  t('DIA_CHI', 'Địa chỉ hiện tại (số nhà, thôn, xóm...)', { span: 12, required }),
 ];
 
 const theLuc = (): KskSection => ({
@@ -309,48 +443,49 @@ const theLuc = (): KskSection => ({
   ],
 });
 
-const OPT_THI_LUC = Array.from({ length: 11 }, (_, i) => ({ value: `${i}/10`, label: `${i}/10` }));
+export const OPT_THI_LUC = Array.from({ length: 11 }, (_, i) => ({ value: `${i}/10`, label: `${i}/10` }));
 
-const matTmhRhm = (withPl: boolean): KskSection[] => [
-  {
-    title: 'Khám mắt',
-    fields: [
-      sel('KHONG_KINH_MAT_PHAI', 'Thị lực không kính - Phải', OPT_THI_LUC, { span: 3 }),
-      sel('KHONG_KINH_MAT_TRAI', 'Thị lực không kính - Trái', OPT_THI_LUC, { span: 3 }),
-      sel('CO_KINH_MAT_PHAI', 'Thị lực có kính - Phải', OPT_THI_LUC, { span: 3 }),
-      sel('CO_KINH_MAT_TRAI', 'Thị lực có kính - Trái', OPT_THI_LUC, { span: 3 }),
-      ...(withPl
-        ? kq('BENH_KHAC_MAT', 'Các bệnh về mắt (nếu có)', 'KHAM_MAT_PL', 'CKDT_KHAM_MAT', true)
-        : kq('BENH_KHAC_MAT', 'Các bệnh về mắt (nếu có)', undefined, 'CKDT_KHAM_MAT', true)),
-    ],
-  },
-  {
-    title: 'Khám tai - mũi - họng',
-    fields: [
-      t('TAI_TRAI_NOI_THUONG', 'Tai trái - nói thường (m)', { span: 3, placeholder: '5' }),
-      t('TAI_TRAI_NOI_THAM', 'Tai trái - nói thầm (m)', { span: 3, placeholder: '0.5' }),
-      t('TAI_PHAI_NOI_THUONG', 'Tai phải - nói thường (m)', { span: 3, placeholder: '5' }),
-      t('TAI_PHAI_NOI_THAM', 'Tai phải - nói thầm (m)', { span: 3, placeholder: '0.5' }),
-      ...(withPl
-        ? kq('BENH_KHAC_TAI_MUI_HONG', 'Các bệnh về tai mũi họng (nếu có)', 'KHAM_TAI_MUI_HONG_PL', 'CKDT_KHAM_TAI_MUI_HONG', true)
-        : kq('BENH_KHAC_TAI_MUI_HONG', 'Các bệnh về tai mũi họng (nếu có)', undefined, 'CKDT_KHAM_TAI_MUI_HONG', true)),
-    ],
-  },
-  {
-    title: 'Khám răng - hàm - mặt',
-    fields: [
-      t('HAM_TREN', 'Hàm trên', { span: 6 }),
-      t('HAM_DUOI', 'Hàm dưới', { span: 6 }),
-      ...(withPl
-        ? kq('BENH_KHAC_RANG_HAM_MAT', 'Các bệnh về răng - hàm - mặt (nếu có)', 'KHAM_RANG_HAM_MAT_PL', 'CKDT_KHAM_RANG_HAM_MAT', true)
-        : kq('BENH_KHAC_RANG_HAM_MAT', 'Các bệnh về răng - hàm - mặt (nếu có)', undefined, 'CKDT_KHAM_RANG_HAM_MAT', true)),
-    ],
-  },
-];
+/**
+ * adult = true: theo đặc tả EMRHub & Import_KSK_Tren 18.xlsm, hỗ trợ cả phân loại Mắt/TMH/RHM
+ */
+const matTmhRhm = (adult: boolean): KskSection[] => {
+  const tmhKey = adult ? 'BENH_TAI_MUI_HONG' : 'BENH_KHAC_TAI_MUI_HONG';
+  const rhmKey = adult ? 'BENH_RANG_HAM_MAT' : 'BENH_KHAC_RANG_HAM_MAT';
+  return [
+    {
+      title: 'Khám mắt',
+      fields: [
+        sel('KHONG_KINH_MAT_PHAI', 'Thị lực không kính - Phải', OPT_THI_LUC, { span: 3 }),
+        sel('KHONG_KINH_MAT_TRAI', 'Thị lực không kính - Trái', OPT_THI_LUC, { span: 3 }),
+        sel('CO_KINH_MAT_PHAI', 'Thị lực có kính - Phải', OPT_THI_LUC, { span: 3 }),
+        sel('CO_KINH_MAT_TRAI', 'Thị lực có kính - Trái', OPT_THI_LUC, { span: 3 }),
+        ...kq('BENH_KHAC_MAT', 'Các bệnh về mắt (nếu có)', adult ? 'KHAM_MAT_PL' : undefined, 'CKDT_KHAM_MAT', true),
+      ],
+    },
+    {
+      title: 'Khám tai - mũi - họng',
+      fields: [
+        t('TAI_TRAI_NOI_THUONG', 'Tai trái - nói thường (m)', { span: 3, placeholder: '5' }),
+        t('TAI_TRAI_NOI_THAM', 'Tai trái - nói thầm (m)', { span: 3, placeholder: '0.5' }),
+        t('TAI_PHAI_NOI_THUONG', 'Tai phải - nói thường (m)', { span: 3, placeholder: '5' }),
+        t('TAI_PHAI_NOI_THAM', 'Tai phải - nói thầm (m)', { span: 3, placeholder: '0.5' }),
+        ...kq(tmhKey, 'Các bệnh về tai mũi họng (nếu có)', adult ? 'KHAM_TAI_MUI_HONG_PL' : undefined, 'CKDT_KHAM_TAI_MUI_HONG', true),
+      ],
+    },
+    {
+      title: 'Khám răng - hàm - mặt',
+      fields: [
+        t('HAM_TREN', 'Hàm trên', { span: 6 }),
+        t('HAM_DUOI', 'Hàm dưới', { span: 6 }),
+        ...kq(rhmKey, 'Các bệnh về răng - hàm - mặt (nếu có)', adult ? 'KHAM_RANG_HAM_MAT_PL' : undefined, 'CKDT_KHAM_RANG_HAM_MAT', true),
+      ],
+    },
+  ];
+};
 
 /* ======================= MẪU TRÊN 18 TUỔI (Adult) ======================= */
 
-const ADULT_TSBT: Array<[string, string]> = [
+export const ADULT_TSBT: Array<[string, string]> = [
   ['TSBT_BENH_TRONG_5_NAM_QUA', 'Có bệnh hay bị thương trong 5 năm qua'],
   ['TSBT_BENH_THAN_KINH', 'Có bệnh thần kinh hay bị thương ở đầu'],
   ['TSBT_BENH_MAT', 'Bệnh mắt hoặc giảm thị lực (trừ đeo kính thuốc)'],
@@ -391,13 +526,13 @@ const ADULT: KskSchema = {
             sel('GIOI_TINH', 'Giới tính', OPT_GIOI_TINH, { required: true, span: 3 }),
             d('NGAY_SINH', 'Ngày sinh', { required: true, span: 3 }),
             t('SO_CCCD', 'Số CMND/CCCD/Mã định danh', { required: true, span: 4 }),
-            d('NGAYCAP_CCCD', 'Ngày cấp CCCD'),
-            t('NOICAP_CCCD', 'Nơi cấp CCCD', { span: 4 }),
-            t('MA_DAN_TOC', 'Mã dân tộc', { span: 4, placeholder: 'VD: 01 (Kinh)' }),
+            d('NGAYCAP_CCCD', 'Ngày cấp CCCD', { required: true }),
+            t('NOICAP_CCCD', 'Nơi cấp CCCD', { span: 4, required: true, placeholder: 'Cục Cảnh sát QLHC về TTXH', defaultValue: 'Cục Cảnh sát QLHC về TTXH' }),
+            t('MA_DAN_TOC', 'Mã dân tộc', { span: 4, required: true, placeholder: 'VD: 01 (Kinh)', defaultValue: '01' }),
             sel('MA_NGHE_NGHIEP', 'Nghề nghiệp', OPT_NGHE_NGHIEP, { span: 4 }),
-            t('DIEN_THOAI', 'Điện thoại', { span: 4 }),
+            t('DIEN_THOAI', 'Điện thoại', { span: 4, required: true, placeholder: '10 chữ số' }),
             t('NOI_LAM_VIEC_HOC_TAP', 'Nơi làm việc, học tập', { span: 12 }),
-            ...diaChi(),
+            ...diaChi(true),
           ],
         },
       ],
@@ -410,16 +545,16 @@ const ADULT: KskSchema = {
         {
           title: '1. Tiền sử gia đình',
           fields: [
-            yn('TSGD_MAC_BENH', 'Gia đình có người mắc bệnh truyền nhiễm, tim mạch, ĐTĐ, lao, hen, ung thư, động kinh, rối loạn tâm thần?', { span: 6 }),
+            yn('TSGD_MAC_BENH', 'Gia đình có người mắc bệnh truyền nhiễm, tim mạch, ĐTĐ, lao, hen, ung thư, động kinh, rối loạn tâm thần?', { span: 6, defaultValue: '0' }),
             t('TSGD_MA_BENH', 'Tên/mã bệnh (ICD-10, cách nhau dấu ;)', { span: 6, placeholder: 'VD: J45;J30' }),
           ],
         },
         {
           title: '2. Tiền sử bản thân',
           fields: [
-            ...ADULT_TSBT.map(([k, l]) => yn(k, l, { span: 4 })),
+            ...ADULT_TSBT.map(([k, l]) => yn(k, l, { span: 4, defaultValue: '0' })),
             t('TSBT_MA_BENH_KHAC', 'Ghi rõ tên bệnh khác', { span: 12 }),
-            yn('TSBT_DANG_DIEU_TRI_BENH', 'Hiện tại có đang điều trị bệnh gì không?', { span: 6 }),
+            yn('TSBT_DANG_DIEU_TRI_BENH', 'Hiện tại có đang điều trị bệnh gì không?', { span: 6, defaultValue: '0' }),
             t('TSBT_MA_BENH', 'Tên/mã bệnh tiền sử bản thân (ICD-10)', { span: 6 }),
             t('TSBT_TEN_THUOC_LIEU_LUONG', 'Thuốc đang sử dụng và liều lượng', { span: 12 }),
           ],
@@ -427,7 +562,7 @@ const ADULT: KskSchema = {
         {
           title: '3. Tiền sử thai sản (nếu có)',
           fields: [
-            yn('TSBT_THAI_SAN', 'Có bệnh thai sản?', { span: 4 }),
+            yn('TSBT_THAI_SAN', 'Có bệnh thai sản?', { span: 4, defaultValue: '0' }),
             t('TSBT_MA_BENH_THAI_SAN', 'Tên bệnh thai sản (ICD-10)', { span: 4 }),
             t('TSBT_TEN_THUOC_THAI_SAN', 'Thuốc đang dùng điều trị bệnh thai sản', { span: 4 }),
           ],
@@ -464,11 +599,18 @@ const ADULT: KskSchema = {
       label: 'Kết luận',
       sections: [
         {
-          title: 'Kết luận',
+          title: 'Kết luận và tư vấn (XML12)',
           fields: [
-            t('KET_LUAN_BENH', 'Kết luận bệnh (ICD-10)', { span: 6 }),
-            t('CAC_BENH_TAT_NEU_CO', 'Tình trạng sức khỏe; mắc các bệnh, tật (nếu có)', { span: 6 }),
-            pl('PHAN_LOAI_SK', 'Phân loại sức khỏe', { required: true, span: 6 }),
+            yn('BINH_THUONG', 'Sức khỏe bình thường', { span: 4, defaultValue: '1' }),
+            yn('NGUY_CO_MAC_LAO', 'Có nguy cơ mắc lao (tiền sử tiếp xúc)', { span: 4, defaultValue: '0' }),
+            yn('VAN_DE_SUC_KHOE', 'Có vấn đề về sức khỏe', { span: 4, defaultValue: '0' }),
+            t('KET_LUAN_BENH', 'Kết luận chẩn đoán bệnh lý (ICD-10)', { span: 6, required: true, placeholder: 'Hiện tại chưa phát hiện bệnh lý', defaultValue: 'Hiện tại chưa phát hiện bệnh lý' }),
+            pl('PHAN_LOAI_SK', 'Phân loại sức khỏe tổng thể', { required: true, span: 6, defaultValue: '1' }),
+            t('CAC_VAN_DE_SUC_KHOE', 'Tình trạng sức khỏe / Điều kiện lao động', { span: 6, required: true, placeholder: 'VD: Đủ sức khỏe làm việc', defaultValue: 'Đủ sức khỏe làm việc' }),
+            t('CAC_BENH_TAT_NEU_CO', 'Các bệnh, tật mắc phải (nếu có)', { span: 6, placeholder: 'Không' }),
+            t('GHI_RO_VAN_DE_SUC_KHOE', 'Ghi rõ vấn đề sức khỏe cần lưu ý', { span: 4 }),
+            yn('HEN_KHAM_LAN_SAU', 'Hẹn khám lần sau', { span: 4, defaultValue: '0' }),
+            yn('CHUYEN_CSKCB', 'Chuyển cơ sở khám bệnh, chữa bệnh', { span: 4, defaultValue: '0' }),
           ],
         },
       ],
@@ -496,7 +638,7 @@ const MINOR: KskSchema = {
             t('SO_CCCD', 'Số CMND/CCCD/Mã định danh', { span: 4 }),
             d('NGAYCAP_CCCD', 'Ngày cấp CCCD'),
             t('NOICAP_CCCD', 'Nơi cấp CCCD', { span: 4 }),
-            t('MA_DAN_TOC', 'Mã dân tộc', { span: 4, placeholder: 'VD: 01 (Kinh)' }),
+            t('MA_DAN_TOC', 'Mã dân tộc', { span: 4, placeholder: 'VD: 01 (Kinh)', defaultValue: '01' }),
             t('DIEN_THOAI', 'Điện thoại của người khám', { span: 4 }),
             ...diaChi(),
           ],
@@ -504,9 +646,10 @@ const MINOR: KskSchema = {
         {
           title: 'Bố, mẹ hoặc người giám hộ',
           fields: [
-            t('NGUOI_GIAM_HO', 'Họ và tên bố, mẹ hoặc người giám hộ', { span: 4 }),
-            t('SO_CCCD_NGH', 'Mã định danh (CCCD) của người giám hộ', { span: 4 }),
-            t('DIEN_THOAI_NGH', 'Điện thoại người giám hộ', { span: 4 }),
+            t('NGUOI_GIAM_HO', 'Họ và tên bố, mẹ hoặc người giám hộ', { span: 3 }),
+            sel('MOI_QUAN_HE_VOI_TRE', 'Mối quan hệ với trẻ', OPT_MOI_QUAN_HE, { span: 3 }),
+            t('SO_CCCD_NGH', 'Mã định danh (CCCD) của người giám hộ', { span: 3 }),
+            t('DIEN_THOAI_NGH', 'Điện thoại người giám hộ', { span: 3 }),
           ],
         },
       ],
@@ -519,19 +662,19 @@ const MINOR: KskSchema = {
         {
           title: '1. Tiền sử gia đình',
           fields: [
-            yn('TSGD_MAC_BENH', 'Trong gia đình có người mắc bệnh bẩm sinh hoặc bệnh truyền nhiễm?', { span: 6 }),
+            yn('TSGD_MAC_BENH', 'Trong gia đình có người mắc bệnh bẩm sinh hoặc bệnh truyền nhiễm?', { span: 6, defaultValue: '0' }),
             t('TSGD_MA_BENH', 'Tên/mã bệnh (ICD-10)', { span: 6 }),
           ],
         },
         {
           title: '2. Tiền sử bản thân',
           fields: [
-            yn('SAN_KHOA', 'Sản khoa bình thường?', { span: 4 }),
+            yn('SAN_KHOA', 'Sản khoa bình thường?', { span: 4, defaultValue: '1' }),
             sel('SAN_KHOA_KHONG_BT', 'Sản khoa không bình thường', OPT_SAN_KHOA_KHONG_BT),
             t('MA_BENH_SAN_KHOA_KHONG_BT', 'Bệnh gây sản khoa không bình thường (ICD-10)', { span: 4 }),
-            yn('TSBT_MAC_BENH', 'Đang mắc bệnh bẩm sinh và mãn tính?', { span: 6 }),
+            yn('TSBT_MAC_BENH', 'Đang mắc bệnh bẩm sinh và mãn tính?', { span: 6, defaultValue: '0' }),
             t('TSBT_MA_BENH', 'Tên/mã bệnh tiền sử bản thân (ICD-10)', { span: 6 }),
-            yn('TSBT_DANG_DIEU_TRI_BENH', 'Hiện tại có đang điều trị bệnh gì không?', { span: 6 }),
+            yn('TSBT_DANG_DIEU_TRI_BENH', 'Hiện tại có đang điều trị bệnh gì không?', { span: 6, defaultValue: '0' }),
             t('BENH_DANG_DIEU_TRI', 'Tên bệnh và các thuốc đang dùng', { span: 6 }),
           ],
         },
@@ -576,11 +719,18 @@ const MINOR: KskSchema = {
       label: 'Kết luận',
       sections: [
         {
-          title: 'Kết luận',
+          title: 'Kết luận và tư vấn (XML12)',
           fields: [
+            yn('BINH_THUONG', 'Sức khỏe bình thường', { span: 4, defaultValue: '1' }),
+            yn('NGUY_CO_MAC_LAO', 'Có nguy cơ mắc lao (tiền sử tiếp xúc)', { span: 4, defaultValue: '0' }),
+            yn('VAN_DE_SUC_KHOE', 'Có vấn đề về sức khỏe', { span: 4, defaultValue: '0' }),
             t('KET_LUAN_BENH', 'Kết luận bệnh (ICD-10)', { span: 6 }),
+            pl('PHAN_LOAI_SK', 'Phân loại sức khỏe', { required: true, span: 6, defaultValue: '1' }),
             t('CAC_VAN_DE_SUC_KHOE', 'Tình trạng sức khỏe; mắc các bệnh, tật (nếu có)', { span: 6 }),
-            pl('PHAN_LOAI_SK', 'Phân loại sức khỏe', { required: true, span: 6 }),
+            t('CAC_BENH_TAT_NEU_CO', 'Các bệnh, tật (nếu có)', { span: 6 }),
+            t('GHI_RO_VAN_DE_SUC_KHOE', 'Ghi rõ vấn đề sức khỏe', { span: 4 }),
+            yn('HEN_KHAM_LAN_SAU', 'Hẹn khám lần sau', { span: 4, defaultValue: '0' }),
+            yn('CHUYEN_CSKCB', 'Chuyển cơ sở khám bệnh, chữa bệnh', { span: 4, defaultValue: '0' }),
           ],
         },
       ],
@@ -606,9 +756,9 @@ const CHILD: KskSchema = {
             sel('GIOI_TINH', 'Giới tính', OPT_GIOI_TINH, { required: true, span: 3 }),
             d('NGAY_SINH', 'Ngày sinh', { required: true, span: 3 }),
             t('SO_CCCD', 'Số định danh cá nhân', { span: 4 }),
-            t('MA_DAN_TOC', 'Mã dân tộc', { span: 4, placeholder: 'VD: 01 (Kinh)' }),
+            t('MA_DAN_TOC', 'Mã dân tộc', { span: 4, placeholder: 'VD: 01 (Kinh)', defaultValue: '01' }),
             t('TUAN_THAI', 'Tuần thai khi sinh (tuần)', { span: 2, placeholder: '38' }),
-            yn('SINH_NON', 'Sinh non', { span: 2 }),
+            yn('SINH_NON', 'Sinh non', { span: 2, defaultValue: '0' }),
             ...diaChi(),
           ],
         },
@@ -624,11 +774,11 @@ const CHILD: KskSchema = {
         {
           title: 'Tiền sử',
           fields: [
-            yn('TSBT_MAC_BENH', 'Bản thân có bệnh tiền sử không?', { span: 6 }),
+            yn('TSBT_MAC_BENH', 'Bản thân có bệnh tiền sử không?', { span: 6, defaultValue: '0' }),
             t('TSBT_MA_BENH', 'Tên/mã bệnh tiền sử bản thân (ICD-10)', { span: 6 }),
-            yn('TSGD_MAC_BENH', 'Gia đình có bệnh tiền sử không?', { span: 6 }),
+            yn('TSGD_MAC_BENH', 'Gia đình có bệnh tiền sử không?', { span: 6, defaultValue: '0' }),
             t('TSGD_MA_BENH', 'Tên/mã bệnh tiền sử gia đình (ICD-10)', { span: 6 }),
-            yn('TS_TIEP_XUC_LAO', 'Tiền sử tiếp xúc với người bệnh lao', { span: 6 }),
+            yn('TS_TIEP_XUC_LAO', 'Tiền sử tiếp xúc với người bệnh lao', { span: 6, defaultValue: '0' }),
           ],
         },
       ],
@@ -639,14 +789,14 @@ const CHILD: KskSchema = {
       label: 'Dấu hiệu sinh tồn',
       sections: [
         {
-          title: 'Đánh giá dấu hiệu sinh tồn',
+          title: 'Đánh giá dấu hiệu sinh tồn (XML3)',
           fields: [
             t('NHIET_DO', 'Nhiệt độ (°C)', { span: 4, placeholder: '36.8' }),
-            t('DGDHST_NHIET_DO', 'Đánh giá qua nhiệt độ', { span: 8 }),
-            t('MACH', 'Mạch (lần/phút)', { span: 4 }),
-            t('DGDHST_MACH', 'Đánh giá qua mạch', { span: 8 }),
-            t('NHIP_THO', 'Nhịp thở (lần/phút)', { span: 4 }),
-            t('DGDHST_NHIP_THO', 'Đánh giá qua nhịp thở', { span: 8 }),
+            sel('DGDHST_NHIET_DO', 'Đánh giá qua nhiệt độ', OPT_NHIET_DO, { span: 8, defaultValue: '1' }),
+            t('MACH', 'Mạch (lần/phút)', { span: 4, placeholder: '90-100' }),
+            sel('DGDHST_MACH', 'Đánh giá qua mạch', OPT_MACH_TRE, { span: 8, defaultValue: '1' }),
+            t('NHIP_THO', 'Nhịp thở (lần/phút)', { span: 4, placeholder: '25' }),
+            sel('DGDHST_NHIP_THO', 'Đánh giá qua nhịp thở', OPT_NHIP_THO_TRE, { span: 8, defaultValue: '1' }),
           ],
         },
       ],
@@ -656,21 +806,21 @@ const CHILD: KskSchema = {
       label: 'Dinh dưỡng',
       sections: [
         {
-          title: 'Đánh giá dinh dưỡng',
+          title: 'Đánh giá dinh dưỡng (XML4)',
           fields: [
             t('CHIEU_DAI', 'Chiều dài (cm)', { span: 3 }),
             t('CHIEU_DAI_TUOI_SD', 'Chiều dài / Tuổi (SD)', { span: 3 }),
             t('CAN_NANG', 'Cân nặng (kg)', { span: 3 }),
             t('CAN_NANG_TUOI_SD', 'Cân nặng / Tuổi (SD)', { span: 3 }),
             t('VONG_DAU', 'Vòng đầu (cm)', { span: 4 }),
-            t('DG_VONG_DAU', 'Đánh giá vòng đầu', { span: 4 }),
+            sel('DG_VONG_DAU', 'Đánh giá vòng đầu', OPT_VONG_DAU, { span: 4, defaultValue: '1' }),
             t('CHU_VI_VONG_CANH_TAY', 'Chu vi vòng cánh tay (mm)', { span: 4 }),
-            yn('DGDD_BINH_THUONG', 'Bình thường'),
-            yn('PHU_DINH_DUONG', 'Phù dinh dưỡng'),
-            yn('DGDD_THIEU_MAU', 'Dấu hiệu thiếu máu'),
-            yn('DGDD_COI_XUONG', 'Dấu hiệu còi xương'),
-            yn('SUY_DINH_DUONG', 'Suy dinh dưỡng'),
-            yn('THUA_CAN_BEO_PHI', 'Thừa cân / béo phì'),
+            yn('DGDD_BINH_THUONG', 'Bình thường', { defaultValue: '1' }),
+            yn('PHU_DINH_DUONG', 'Phù dinh dưỡng', { defaultValue: '0' }),
+            yn('DGDD_THIEU_MAU', 'Dấu hiệu thiếu máu', { defaultValue: '0' }),
+            yn('DGDD_COI_XUONG', 'Dấu hiệu còi xương', { defaultValue: '0' }),
+            yn('SUY_DINH_DUONG', 'Suy dinh dưỡng', { defaultValue: '0' }),
+            yn('THUA_CAN_BEO_PHI', 'Thừa cân / béo phì', { defaultValue: '0' }),
           ],
         },
       ],
@@ -680,11 +830,11 @@ const CHILD: KskSchema = {
       label: 'Tinh thần - vận động',
       sections: [
         {
-          title: 'Đánh giá phát triển tinh thần - vận động',
+          title: 'Đánh giá phát triển tinh thần - vận động (XML5)',
           fields: [
-            yn('PT_TTBT_THEO_DO_TUOI', 'Phát triển tinh thần bình thường theo độ tuổi', { span: 6 }),
-            yn('PT_VDBT_THEO_DO_TUOI', 'Phát triển vận động bình thường theo độ tuổi', { span: 6 }),
-            yn('NGUY_CO_TU_KY', 'Trẻ có nguy cơ tự kỷ (trẻ 16-30 tháng tuổi)', { span: 6 }),
+            yn('PT_TTBT_THEO_DO_TUOI', 'Phát triển tinh thần bình thường theo độ tuổi', { span: 6, defaultValue: '1' }),
+            yn('PT_VDBT_THEO_DO_TUOI', 'Phát triển vận động bình thường theo độ tuổi', { span: 6, defaultValue: '1' }),
+            yn('NGUY_CO_TU_KY', 'Trẻ có nguy cơ tự kỷ (trẻ 16-30 tháng tuổi)', { span: 6, defaultValue: '0' }),
           ],
         },
       ],
@@ -694,11 +844,11 @@ const CHILD: KskSchema = {
       label: 'Tiêm chủng',
       sections: [
         {
-          title: 'Đánh giá tiêm chủng',
+          title: 'Đánh giá tiêm chủng (XML6)',
           fields: [
-            yn('TIEM_CHUNG_BCG_SS', 'Lao (sơ sinh)', { span: 4 }),
-            yn('TIEM_CHUNG_VGB_SS_MUI1', 'Viêm gan B mũi 1 (sơ sinh)', { span: 4 }),
-            yn('TIEM_CHUNG_DAY_DU_THEO_DO_TUOI', 'Tiêm chủng đầy đủ theo độ tuổi', { span: 4 }),
+            yn('TIEM_CHUNG_BCG_SS', 'Lao (sơ sinh)', { span: 4, defaultValue: '1' }),
+            yn('TIEM_CHUNG_VGB_SS_MUI1', 'Viêm gan B mũi 1 (sơ sinh)', { span: 4, defaultValue: '1' }),
+            yn('TIEM_CHUNG_DAY_DU_THEO_DO_TUOI', 'Tiêm chủng đầy đủ theo độ tuổi', { span: 4, defaultValue: '1' }),
           ],
         },
       ],
@@ -708,87 +858,87 @@ const CHILD: KskSchema = {
       label: 'Khám lâm sàng',
       sections: [
         {
-          title: 'Da - đầu - cổ',
+          title: '1. Da - đầu - cổ',
           fields: [
-            t('MAU_SAC_DA', 'Màu sắc da', { span: 4 }),
-            t('LONG_BAN_TAY', 'Lòng bàn tay', { span: 4 }),
-            t('THOP', 'Thóp (trẻ nhỏ còn thóp)', { span: 4 }),
-            t('HINH_DANG_DAU', 'Kích thước và hình dạng đầu', { span: 4 }),
-            t('VAN_DONG_CO', 'Vận động cổ', { span: 4 }),
-            t('KHOI_BAT_THUONG_DAU_CO', 'Khối bất thường (đầu, cổ)', { span: 4 }),
-            { key: 'CKDT_DA_DAU_CO', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
+            sel('MAU_SAC_DA', 'Màu sắc da', OPT_MAU_SAC_DA, { span: 4, defaultValue: '1' }),
+            sel('LONG_BAN_TAY', 'Lòng bàn tay', OPT_LONG_BAN_TAY, { span: 4, defaultValue: '1' }),
+            sel('THOP', 'Thóp (trẻ nhỏ còn thóp)', OPT_THOP, { span: 4, defaultValue: '1' }),
+            btkbt('HINH_DANG_DAU', 'Kích thước và hình dạng đầu', { span: 4 }),
+            sel('VAN_DONG_CO', 'Vận động cổ', OPT_VAN_DONG_CO, { span: 4, defaultValue: '1' }),
+            yn('KHOI_BAT_THUONG_DAU_CO', 'Khối bất thường (đầu, cổ)', { span: 4, defaultValue: '0' }),
+            { key: 'CKDT_DA_DAU_CO', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4 },
           ],
         },
         {
-          title: 'Mắt - tai - mũi - họng',
+          title: '2. Mắt - tai - mũi - họng',
           fields: [
-            t('VI_TRI_HAI_MAT', 'Vị trí 2 mắt', { span: 4 }),
-            t('MI_MAT_KET_MAC', 'Mí mắt và kết mạc', { span: 4 }),
-            t('LAC_MAT', 'Lác mắt', { span: 4 }),
-            t('DONG_TU', 'Đồng tử (kích thước, phản xạ)', { span: 4 }),
-            t('TAI_MANG_NHI', 'Tai và màng nhĩ', { span: 4 }),
-            t('DAP_UNG_AM_THANH', 'Đáp ứng với âm thanh', { span: 4 }),
-            t('KHOI_SUNG_SAU_TAI', 'Có khối sưng sau tai', { span: 4 }),
-            t('CHAY_MU_NUOC_TAI', 'Dấu hiệu chảy mủ, nước tai', { span: 4 }),
-            t('HINH_DANG_MUI', 'Hình dạng mũi', { span: 4 }),
-            t('CHAY_NUOC_MUI', 'Chảy nước mũi', { span: 4 }),
-            t('NGHET_MUI', 'Nghẹt mũi', { span: 4 }),
-            t('HONG', 'Họng', { span: 4 }),
-            { key: 'CKDT_MAT_TAI_MUI_HONG', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
+            sel('VI_TRI_HAI_MAT', 'Vị trí 2 mắt', OPT_VI_TRI_HAI_MAT, { span: 4, defaultValue: '1' }),
+            sel('MI_MAT_KET_MAC', 'Mí mắt và kết mạc', OPT_MI_MAT_KET_MAC, { span: 4, defaultValue: '1' }),
+            yn('LAC_MAT', 'Lác mắt', { span: 4, defaultValue: '0' }),
+            btkbt('DONG_TU', 'Đồng tử (kích thước, phản xạ)', { span: 4 }),
+            btkbt('TAI_MANG_NHI', 'Tai và màng nhĩ', { span: 4 }),
+            btkbt('DAP_UNG_AM_THANH', 'Đáp ứng với âm thanh', { span: 4 }),
+            yn('KHOI_SUNG_SAU_TAI', 'Có khối sưng sau tai', { span: 4, defaultValue: '0' }),
+            yn('CHAY_MU_NUOC_TAI', 'Dấu hiệu chảy mủ, nước tai', { span: 4, defaultValue: '0' }),
+            sel('HINH_DANG_MUI', 'Hình dạng mũi', OPT_HINH_DANG_MUI, { span: 4, defaultValue: '1' }),
+            yn('CHAY_NUOC_MUI', 'Chảy nước mũi', { span: 4, defaultValue: '0' }),
+            yn('NGHET_MUI', 'Nghẹt mũi', { span: 4, defaultValue: '0' }),
+            btkbt('HONG', 'Họng', { span: 4 }),
+            { key: 'CKDT_MAT_TAI_MUI_HONG', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4 },
           ],
         },
         {
-          title: 'Miệng - răng',
+          title: '3. Miệng - răng',
           fields: [
-            t('HINH_DANG_MIENG', 'Hình dạng miệng', { span: 4 }),
-            t('RANG_SUA_SO_SINH', 'Răng sữa sơ sinh', { span: 4 }),
-            t('HINH_DANG_LUOI', 'Hình dạng lưỡi', { span: 4 }),
-            t('DINH_THANG_LUOI', 'Dính thắng lưỡi', { span: 4 }),
-            t('NAM_MIENG', 'Nấm miệng', { span: 4 }),
-            t('CAM_NHO_TUT_VE_SAU', 'Cằm nhỏ, tụt về sau', { span: 4 }),
-            t('SAU_MANG_BAM_LO', 'Vết sâu, mảng bám, lỗ trên răng', { span: 4 }),
-            { key: 'CKDT_MIENG_RANG', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
+            sel('HINH_DANG_MIENG', 'Hình dạng miệng', OPT_HINH_DANG_MIENG, { span: 4, defaultValue: '1' }),
+            yn('RANG_SUA_SO_SINH', 'Răng sữa sơ sinh', { span: 4, defaultValue: '0' }),
+            sel('HINH_DANG_LUOI', 'Hình dạng lưỡi', OPT_HINH_DANG_LUOI, { span: 4, defaultValue: '1' }),
+            yn('DINH_THANG_LUOI', 'Dính thắng lưỡi', { span: 4, defaultValue: '0' }),
+            yn('NAM_MIENG', 'Nấm miệng', { span: 4, defaultValue: '0' }),
+            yn('CAM_NHO_TUT_VE_SAU', 'Cằm nhỏ, tụt về sau', { span: 4, defaultValue: '0' }),
+            yn('SAU_MANG_BAM_LO', 'Vết sâu, mảng bám, lỗ trên răng', { span: 4, defaultValue: '0' }),
+            { key: 'CKDT_MIENG_RANG', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4 },
           ],
         },
         {
-          title: 'Hô hấp - tim mạch',
+          title: '4. Hô hấp - tim mạch',
           fields: [
-            t('NHIP_THO_KHONG_DEU', 'Nhịp thở không đều', { span: 4 }),
-            t('THO_RUT_LOM_LONG_NGUC', 'Thở rút lõm lồng ngực', { span: 4 }),
-            t('TIENG_THO_BAT_THUONG', 'Tiếng thở bất thường', { span: 4 }),
-            t('SUY_HO_HAP', 'Dấu hiệu suy hô hấp', { span: 4 }),
-            t('NGHE_PHOI', 'Nghe phổi', { span: 4 }),
-            t('VI_TRI_MOM_TIM', 'Vị trí mỏm tim', { span: 4 }),
-            t('MACH_NGOAI_VI', 'Mạch ngoại vi (mạch quay - bẹn)', { span: 4 }),
-            t('TIENG_TIM', 'Nghe tim (loạn nhịp, tiếng thổi)', { span: 4 }),
-            { key: 'CKDT_HO_HAP_TIM_MACH', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
+            yn('NHIP_THO_KHONG_DEU', 'Nhịp thở không đều', { options: OPT_NHIP_THO_KHONG_DEU, span: 4, defaultValue: '0' }),
+            yn('THO_RUT_LOM_LONG_NGUC', 'Thở rút lõm lồng ngực', { span: 4, defaultValue: '0' }),
+            yn('TIENG_THO_BAT_THUONG', 'Tiếng thở bất thường', { span: 4, defaultValue: '0' }),
+            yn('SUY_HO_HAP', 'Dấu hiệu suy hô hấp', { span: 4, defaultValue: '0' }),
+            btkbt('NGHE_PHOI', 'Nghe phổi', { span: 4 }),
+            btkbt('VI_TRI_MOM_TIM', 'Vị trí mỏm tim', { span: 4 }),
+            sel('MACH_NGOAI_VI', 'Mạch ngoại vi (mạch quay - bẹn)', OPT_MACH_NGOAI_VI, { span: 4, defaultValue: '1' }),
+            yn('TIENG_TIM', 'Nghe tim (loạn nhịp, tiếng thổi)', { span: 4, defaultValue: '0' }),
+            { key: 'CKDT_HO_HAP_TIM_MACH', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4 },
           ],
         },
         {
-          title: 'Bụng - sinh dục',
+          title: '5. Bụng - sinh dục',
           fields: [
-            t('HINH_DANG_BUNG_RON', 'Hình dáng bụng, rốn', { span: 4 }),
-            t('GAN_LACH_TO', 'Gan, lách to', { span: 4 }),
-            t('KHOI_BAT_THUONG', 'Khối bất thường (bụng)', { span: 4 }),
-            t('LO_HAU_MON', 'Lỗ hậu môn', { span: 4 }),
-            t('CO_QUAN_SINH_DUC_NGOAI', 'Cơ quan sinh dục ngoài', { span: 4 }),
-            { key: 'CKDT_BUNG_SINH_DUC', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
+            btkbt('HINH_DANG_BUNG_RON', 'Hình dáng bụng, rốn', { span: 4 }),
+            yn('GAN_LACH_TO', 'Gan, lách to', { span: 4, defaultValue: '0' }),
+            yn('KHOI_BAT_THUONG', 'Khối bất thường (bụng)', { span: 4, defaultValue: '0' }),
+            btkbt('LO_HAU_MON', 'Lỗ hậu môn', { span: 4 }),
+            btkbt('CO_QUAN_SINH_DUC_NGOAI', 'Cơ quan sinh dục ngoài', { span: 4 }),
+            { key: 'CKDT_BUNG_SINH_DUC', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4 },
           ],
         },
         {
-          title: 'Thần kinh - cơ xương khớp',
+          title: '6. Thần kinh - cơ xương khớp',
           fields: [
-            t('VAN_DONG_KHONG_DOI_XUNG', 'Vận động không đối xứng', { span: 4 }),
-            t('PHAN_XA_BU', 'Phản xạ bú', { span: 4 }),
-            t('PHAN_XA_NAM', 'Phản xạ nắm', { span: 4 }),
-            t('PHAN_XA_MORO', 'Phản xạ Moro', { span: 4 }),
-            t('TRUONG_LUC_CO', 'Trương lực cơ', { span: 4 }),
-            t('KHOP_HANG', 'Khớp háng', { span: 4 }),
-            t('PHAN_XA_CO', 'Phản xạ cơ', { span: 4 }),
-            t('KIEM_TRA_LUNG_COT_SONG', 'Kiểm tra lưng, cột sống', { span: 4 }),
-            t('TU_CHI_KHOP', 'Khám tứ chi và khớp', { span: 4 }),
-            t('QUAN_SAT_DANG_DI', 'Quan sát dáng đi', { span: 4 }),
-            { key: 'CKDT_THAN_KINH_CO_XUONG_KHOP', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4, hideLabel: true },
+            yn('VAN_DONG_KHONG_DOI_XUNG', 'Vận động không đối xứng', { span: 4, defaultValue: '0' }),
+            yn('PHAN_XA_BU', 'Phản xạ bú', { span: 4, defaultValue: '1' }),
+            yn('PHAN_XA_NAM', 'Phản xạ nắm', { span: 4, defaultValue: '1' }),
+            yn('PHAN_XA_MORO', 'Phản xạ Moro', { span: 4, defaultValue: '1' }),
+            sel('TRUONG_LUC_CO', 'Trương lực cơ', OPT_TRUONG_LUC_CO, { span: 4, defaultValue: '1' }),
+            sel('KHOP_HANG', 'Khớp háng', OPT_KHOP_HANG, { span: 4, defaultValue: '1' }),
+            btkbt('PHAN_XA_CO', 'Phản xạ cơ', { span: 4 }),
+            btkbt('KIEM_TRA_LUNG_COT_SONG', 'Kiểm tra lưng, cột sống', { span: 4 }),
+            btkbt('TU_CHI_KHOP', 'Khám tứ chi và khớp', { span: 4 }),
+            btkbt('QUAN_SAT_DANG_DI', 'Quan sát dáng đi', { span: 4 }),
+            { key: 'CKDT_THAN_KINH_CO_XUONG_KHOP', label: 'Họ tên và chữ ký Bác sĩ', kind: 'signature', span: 4 },
           ],
         },
       ],
@@ -798,15 +948,15 @@ const CHILD: KskSchema = {
       label: 'Kết luận và tư vấn',
       sections: [
         {
-          title: 'Kết luận và tư vấn',
+          title: 'Kết luận và tư vấn (XML8)',
           fields: [
-            yn('BINH_THUONG', 'Bình thường', { span: 4 }),
-            yn('NGUY_CO_MAC_LAO', 'Có nguy cơ mắc lao (tiền sử tiếp xúc)', { span: 4 }),
-            yn('VAN_DE_SUC_KHOE', 'Có vấn đề về sức khỏe', { span: 4 }),
+            yn('BINH_THUONG', 'Bình thường', { span: 4, defaultValue: '1' }),
+            yn('NGUY_CO_MAC_LAO', 'Có nguy cơ mắc lao (tiền sử tiếp xúc)', { span: 4, defaultValue: '0' }),
+            yn('VAN_DE_SUC_KHOE', 'Có vấn đề về sức khỏe', { span: 4, defaultValue: '0' }),
             t('KET_LUAN_BENH', 'Kết luận bệnh (ICD-10)', { span: 6 }),
             t('GHI_RO_VAN_DE_SUC_KHOE', 'Ghi rõ vấn đề sức khỏe', { span: 6 }),
-            t('HEN_KHAM_LAN_SAU', 'Hẹn khám lần sau', { span: 6 }),
-            yn('CHUYEN_CSKCB', 'Chuyển cơ sở khám bệnh, chữa bệnh', { span: 6 }),
+            yn('HEN_KHAM_LAN_SAU', 'Hẹn khám lần sau', { span: 6, defaultValue: '0' }),
+            yn('CHUYEN_CSKCB', 'Chuyển cơ sở khám bệnh, chữa bệnh', { span: 6, defaultValue: '0' }),
           ],
         },
       ],
@@ -823,6 +973,17 @@ export const KSK_SCHEMAS: Record<KskType, KskSchema> = {
 /** Toàn bộ trường (phẳng) của 1 mẫu */
 export function getAllFields(type: KskType): KskField[] {
   return KSK_SCHEMAS[type].tabs.flatMap(tab => tab.sections.flatMap(s => s.fields));
+}
+
+/** Tạo bộ giá trị mặc định chuẩn cho phiếu khám mới */
+export function getDefaultKskFormData(type: KskType): Record<string, any> {
+  const defaults: Record<string, any> = { TYPE: type };
+  for (const field of getAllFields(type)) {
+    if (field.defaultValue !== undefined) {
+      defaults[field.key] = field.defaultValue;
+    }
+  }
+  return defaults;
 }
 
 /** Xác định loại mẫu từ tên sheet Excel */

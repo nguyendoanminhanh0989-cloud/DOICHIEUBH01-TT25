@@ -30,7 +30,8 @@ export default function SearchableSelect({ options, value, onChange, placeholder
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedOption = options.find(o => o.value === value);
+  const strVal = String(value ?? '').trim();
+  const selectedOption = options.find(o => String(o.value) === strVal);
   
   const filteredOptions = options.filter(o => 
     (o.label ? String(o.label).toLowerCase() : '').includes((searchTerm || '').toLowerCase()) || 
@@ -74,7 +75,7 @@ export default function SearchableSelect({ options, value, onChange, placeholder
                   key={opt.value}
                   className={cn(
                     "px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-700 transition-colors",
-                    value === opt.value ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700"
+                    String(opt.value) === strVal ? "bg-blue-50 text-blue-700 font-medium" : "text-slate-700"
                   )}
                   onClick={() => {
                     onChange(opt.value);

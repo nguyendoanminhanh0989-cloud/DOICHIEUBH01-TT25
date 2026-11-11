@@ -10,3 +10,6 @@ coverage/
 .vercel
 .env*.local
 .env*
+
+TAILIEU/
+scratch_check.ts

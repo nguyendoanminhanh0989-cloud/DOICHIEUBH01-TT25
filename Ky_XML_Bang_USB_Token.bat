@@ -66,12 +66,18 @@ if (-not $certs -or $certs.Count -eq 0) {
 $cert = $certs[0]
 if ($certs.Count -gt 1) {
     [System.Reflection.Assembly]::LoadWithPartialName("System.Security") | Out-Null
-    $selected = [System.Security.Cryptography.X509Certificates.X509Certificate2UI]::SelectFromCollection(
-        $certs, "Chon chung thu so USB Token", "Chon chung thu so cua don vi/ca nhan de ky:", 
-        [System.Security.Cryptography.X509Certificates.X509SelectionFlag]::SingleSelection
-    )
-    if ($selected.Count -gt 0) {
-        $cert = $selected[0]
+    $collection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+    foreach ($c in $certs) { $collection.Add($c) | Out-Null }
+    try {
+        $selected = [System.Security.Cryptography.X509Certificates.X509Certificate2UI]::SelectFromCollection(
+            $collection, "Chon chung thu so USB Token", "Chon chung thu so cua don vi/ca nhan de ky:", 
+            [System.Security.Cryptography.X509Certificates.X509SelectionFlag]::SingleSelection
+        )
+        if ($selected.Count -gt 0) {
+            $cert = $selected[0]
+        }
+    } catch {
+        $cert = $certs | Sort-Object NotAfter -Descending | Select-Object -First 1
     }
 }
 
@@ -120,22 +126,15 @@ function Invoke-TokenSignHash($cert, [byte[]]$hash) {
 function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $isKsk = $xmlString.Contains("<KHAMSUCKHOE")
     if ($isKsk) {
+        $cleanKsk = [regex]::Replace($xmlString, "(?s)\s*<CHUKYDONVI>.*?</CHUKYDONVI>", "")
         $sha256 = [System.Security.Cryptography.SHA256]::Create()
-        $dataBytes = [System.Text.Encoding]::UTF8.GetBytes($xmlString)
+        $dataBytes = [System.Text.Encoding]::UTF8.GetBytes($cleanKsk)
         $hash = $sha256.ComputeHash($dataBytes)
-        $sigBytes = $null
-        try {
-            $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-            if ($rsa) { $sigBytes = $rsa.SignHash($hash, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1) }
-        } catch {}
-        if (-not $sigBytes) {
-            $csp = [System.Security.Cryptography.RSACryptoServiceProvider]$cert.PrivateKey
-            $sigBytes = $csp.SignHash($hash, [System.Security.Cryptography.CryptoConfig]::MapNameToOID("SHA256"))
-        }
+        $sigBytes = Invoke-TokenSignHash $cert $hash
         $sigB64 = [Convert]::ToBase64String($sigBytes)
-        $kskBlock = "<CHUKYDONVI><CKS_NGUOI_KET_LUAN>$sigB64</CKS_NGUOI_KET_LUAN><CKS_BENH_VIEN>$sigB64</CKS_BENH_VIEN></CHUKYDONVI>"
+        $kskBlock = "  <CHUKYDONVI>`n    <CKS_NGUOI_KET_LUAN>$sigB64</CKS_NGUOI_KET_LUAN>`n    <CKS_BENH_VIEN>$sigB64</CKS_BENH_VIEN>`n  </CHUKYDONVI>`n</KHAMSUCKHOE>"
         return @{
-            SignedXml = $xmlString.Replace("</KHAMSUCKHOE>", $kskBlock + "</KHAMSUCKHOE>")
+            SignedXml = $cleanKsk.Replace("</KHAMSUCKHOE>", $kskBlock)
             Signature = $sigB64
             Certificate = [Convert]::ToBase64String($cert.RawData)
             Subject = $cert.Subject
@@ -161,6 +160,7 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $hoSoId = if ($hoSoNode) { $hoSoNode.GetAttribute("Id") } else { "Id-" + [Guid]::NewGuid().ToString() }
 
     $signedXml = New-Object System.Security.Cryptography.Xml.SignedXml($xmlDoc)
+    $signedXml.Signature.Id = "CHUKYDONVI-$hoSoId"
     
     # Lay Private Key tuong thich SHA-256 tu USB Token
     $dummyKey = New-Object System.Security.Cryptography.RSACryptoServiceProvider(2048)
@@ -169,30 +169,52 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $signedXml.SignedInfo.CanonicalizationMethod = "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
     $signedXml.SignedInfo.SignatureMethod = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
 
-    # Reference duy nhat theo chuan mau cong BHXH: Enveloped signature tren toan bo file (URI="")
-    $ref = New-Object System.Security.Cryptography.Xml.Reference("")
-    $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
-    $ref.AddTransform($env)
-    $ref.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
-    $signedXml.AddReference($ref)
-
     # KeyInfo chua Certificate va SubjectName
     $keyInfo = New-Object System.Security.Cryptography.Xml.KeyInfo
     $kix = New-Object System.Security.Cryptography.Xml.KeyInfoX509Data
-    $kix.AddCertificate($cert)
     $kix.AddSubjectName($cert.Subject)
+    $kix.AddCertificate($cert)
     $keyInfo.AddClause($kix)
     $signedXml.KeyInfo = $keyInfo
 
-    # Tao DataObject SigningTime chuan mau cong BHXH
-    $objDoc = New-Object System.Xml.XmlDocument
-    $signingTime = (Get-Date).ToString("yyyyMMddHHmmss")
-    $objXml = "<SignatureProperties Id=`"proid`" xmlns=`"`"><SignatureProperty><SigningTime xmlns=`"http://example.org/#signatureProperties`">$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
-    $objDoc.LoadXml($objXml)
+    if ($is01BH) {
+        # Mau 01BH: Enveloped signature tren toan bo file (URI="")
+        $objDoc = New-Object System.Xml.XmlDocument
+        $signingTime = (Get-Date).ToString("yyyyMMddHHmmss")
+        $objXml = "<SignatureProperties Id=`"proid`" xmlns=`"`"><SignatureProperty><SigningTime xmlns=`"http://example.org/#signatureProperties`">$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
+        $objDoc.LoadXml($objXml)
 
-    $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
-    $dataObj.Data = $objDoc.ChildNodes
-    $signedXml.AddObject($dataObj)
+        $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
+        $dataObj.Data = $objDoc.ChildNodes
+        $signedXml.AddObject($dataObj)
+
+        $ref = New-Object System.Security.Cryptography.Xml.Reference("")
+        $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
+        $ref.AddTransform($env)
+        $ref.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($ref)
+    } else {
+        # Ho so chung tu (CT03, CT04, CT05, CT06, CT07... theo Phu luc 02 BHXH)
+        $objDoc = New-Object System.Xml.XmlDocument
+        $signingTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+        $objXml = "<SignatureProperties xmlns=`"`"><SignatureProperty Target=`"#CHUKYDONVI-$hoSoId`" Id=`"SignatureProperty-CHUKYDONVI-$hoSoId`"><SigningTime>$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
+        $objDoc.LoadXml($objXml)
+
+        $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
+        $dataObj.Id = "Object-CHUKYDONVI-$hoSoId"
+        $dataObj.Data = $objDoc.ChildNodes
+        $signedXml.AddObject($dataObj)
+
+        # Reference 1: Object SigningTime
+        $refObj = New-Object System.Security.Cryptography.Xml.Reference("#Object-CHUKYDONVI-$hoSoId")
+        $refObj.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($refObj)
+
+        # Reference 2: THONGTINHOSO Id
+        $refHoSo = New-Object System.Security.Cryptography.Xml.Reference("#$hoSoId")
+        $refHoSo.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($refHoSo)
+    }
 
     # Tinh toan chu ky chuan XMLDSig W3C
     $signedXml.ComputeSignature()

@@ -17,7 +17,11 @@ import {
   Building,
   Trash2,
   Cloud,
-  Usb
+  Usb,
+  Send,
+  AlertTriangle,
+  Loader2,
+  XCircle
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import TaoHoSoModal from './TaoHoSoModal';
@@ -34,11 +38,11 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const [showTaoHoSoModal, setShowTaoHoSoModal] = useState(false);
   const [cskcbConfig, setCskcbConfig] = useState<CskcbConfig | null>(() => {
     try {
-      const saved = sessionStorage.getItem('cskcb_config');
+      const saved = localStorage.getItem('cskcb_config') || sessionStorage.getItem('cskcb_config');
       if (saved) return JSON.parse(saved);
 
       // Chưa có cskcb_config → thử lấy từ org_config đã lưu bởi ConfigModal
-      const orgRaw = sessionStorage.getItem('org_config');
+      const orgRaw = localStorage.getItem('org_config') || sessionStorage.getItem('org_config');
       if (orgRaw) {
         const org = JSON.parse(orgRaw);
         if (org.ma_cskcb) {
@@ -64,13 +68,29 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const [filterStatus, setFilterStatus] = useState('ALL');
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // Dữ liệu chứng từ chỉ lưu trên RAM trong phiên thao tác hiện tại; tuyệt đối không lưu vào sessionStorage / localStorage
+  // Khi F5, đăng xuất hoặc thoát về Trang chủ sẽ tự động xóa sạch dữ liệu, không cần xóa thủ công
   const [records, setRecords] = useState<HoSoRecord[]>([]);
+
+  React.useEffect(() => {
+    try {
+      sessionStorage.removeItem('hoso_chungtu_records');
+      localStorage.removeItem('hoso_chungtu_records');
+    } catch {}
+  }, []);
+
   const [cskcbMismatch, setCskcbMismatch] = useState<{ excelMa: string; configMa: string } | null>(null);
 
+  // Helper xác định chính xác trạng thái
+  const isRecordSubmitted = (r: HoSoRecord) => r.trangThai === 'SUBMITTED' || Boolean(r.maGD);
+  const isRecordSigned = (r: HoSoRecord) => !isRecordSubmitted(r) && (
+    r.trangThai === 'SIGNED' || Boolean(r.signatureBase64) || Boolean(r.xmlContent?.includes('<SignatureValue>'))
+  );
+
   const selectedRecords = records.filter(r => selectedIds.has(r.id));
-  const signedCount = records.filter(r => r.trangThai === 'SIGNED').length;
-  const submittedCount = records.filter(r => r.trangThai === 'SUBMITTED').length;
-  const draftCount = records.filter(r => r.trangThai === 'DRAFT' || r.trangThai === 'UNSIGNED').length;
+  const signedCount = records.filter(isRecordSigned).length;
+  const submittedCount = records.filter(isRecordSubmitted).length;
+  const draftCount = records.filter(r => !isRecordSubmitted(r) && !isRecordSigned(r) && r.trangThai !== 'SIGN_FAILED' && r.trangThai !== 'SUBMIT_FAILED' && r.trangThai !== 'INVALID_FORMAT').length;
   const errorCount = records.filter(r => r.trangThai === 'SIGN_FAILED' || r.trangThai === 'SUBMIT_FAILED' || r.trangThai === 'INVALID_FORMAT').length;
 
   const toggleSelect = (id: string) => {
@@ -99,6 +119,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
     if (!window.confirm('Bạn có chắc chắn muốn xóa TẤT CẢ hồ sơ trong danh sách?')) return;
     setRecords([]);
     setSelectedIds(new Set());
+    sessionStorage.removeItem('hoso_chungtu_records');
   };
 
   const handleDeleteRecord = (id: string) => {
@@ -114,10 +135,19 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const handleKySoComplete = (updated: HoSoRecord[]) => {
     setRecords(prev => {
       const map = new Map(prev.map(r => [r.id, r]));
-      updated.forEach(r => map.set(r.id, r));
+      updated.forEach(r => {
+        // Đảm bảo trạng thái luôn chính xác: nếu có xmlContent chứa SignatureValue thì ít nhất là SIGNED
+        const hasSig = Boolean(r.signatureBase64) || Boolean(r.xmlContent?.includes('<SignatureValue>'));
+        let finalStatus = r.trangThai;
+        if (r.maGD || r.trangThai === 'SUBMITTED') {
+          finalStatus = 'SUBMITTED';
+        } else if (hasSig && (r.trangThai === 'UNSIGNED' || r.trangThai === 'DRAFT')) {
+          finalStatus = 'SIGNED';
+        }
+        map.set(r.id, { ...r, trangThai: finalStatus });
+      });
       return Array.from(map.values());
     });
-    setKySoMode(null);
   };
 
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -228,7 +258,8 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
         };
       });
 
-      setRecords(prev => [...mappedRecords, ...prev]);
+      setRecords(mappedRecords);
+      setSelectedIds(new Set());
       if (fileInputRef.current) fileInputRef.current.value = '';
 
       // Thông báo kết quả nhận dạng
@@ -359,7 +390,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
       const { buildXml, buildHSCHUNGTU, xmlToBase64, LOAI_HOSO_XML_NAME } = await import('../lib/xmlBuilder');
       const { getOrgConfig } = await import('../lib/signAndSubmitService');
       const org = getOrgConfig();
-      const maCskcb = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '49006').trim();
+      const maCskcb = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '48225').trim();
 
       if (list.length === 1) {
         // Xuất 1 file XML đơn lẻ
@@ -420,9 +451,9 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
     if (filterType !== 'ALL' && r.type !== filterType) return false;
     // Filter by Status
     if (filterStatus !== 'ALL') {
-      if (filterStatus === 'SUBMITTED' && r.trangThai !== 'SUBMITTED') return false;
-      if (filterStatus === 'SIGNED' && r.trangThai !== 'SIGNED') return false;
-      if (filterStatus === 'UNSIGNED' && r.trangThai !== 'UNSIGNED' && r.trangThai !== 'DRAFT') return false;
+      if (filterStatus === 'SUBMITTED' && !isRecordSubmitted(r)) return false;
+      if (filterStatus === 'SIGNED' && !isRecordSigned(r)) return false;
+      if (filterStatus === 'UNSIGNED' && (isRecordSubmitted(r) || isRecordSigned(r))) return false;
       if (filterStatus === 'ERROR' && r.trangThai !== 'SIGN_FAILED' && r.trangThai !== 'SUBMIT_FAILED' && r.trangThai !== 'INVALID_FORMAT') return false;
     }
     return true;
@@ -452,9 +483,9 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 </span>
               </div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded">MÃ: {cskcbConfig?.cskcb.ma || '49006'}</span>
+                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded">MÃ: {cskcbConfig?.cskcb.ma && cskcbConfig.cskcb.ma !== '49006' ? cskcbConfig.cskcb.ma : '48225'}</span>
               </div>
-              <h2 className="text-xl font-bold text-slate-800 mb-4">{cskcbConfig?.cskcb.ten || 'Trung tâm Y tế khu vực Duy Xuyên'}</h2>
+              <h2 className="text-xl font-bold text-slate-800 mb-4">{cskcbConfig?.cskcb.ten && !cskcbConfig.cskcb.ten.includes('Duy Xuyên') ? cskcbConfig.cskcb.ten : 'NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG'}</h2>
 
               <div className="flex items-center gap-2">
                 <button
@@ -609,7 +640,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             </div>
           </div>
           <div className="text-3xl font-black text-slate-800 mb-1">{records.length}</div>
-          <div className="text-[11px] text-slate-400">Mã CSKCB: {cskcbConfig?.cskcb.ma || '49006'}</div>
+          <div className="text-[11px] text-slate-400">Mã CSKCB: {cskcbConfig?.cskcb.ma && cskcbConfig.cskcb.ma !== '49006' ? cskcbConfig.cskcb.ma : '48225'}</div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -802,13 +833,13 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                   onClick={() => setKySoMode('submit')}
                   className={cn(
                     "px-4 py-2 text-sm font-bold flex items-center gap-2 border rounded-lg transition",
-                    selectedRecords.some(r => r.trangThai === 'SIGNED')
+                    selectedRecords.some(isRecordSigned)
                       ? 'text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
                       : 'text-slate-400 border-slate-100 bg-slate-50 cursor-not-allowed'
                   )}
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  Gửi BHXH ({selectedRecords.filter(r => r.trangThai === 'SIGNED').length})
+                  Gửi BHXH ({selectedRecords.filter(isRecordSigned).length})
                 </button>
                 <button
                   onClick={() => setKySoMode('sign_then_submit')}
@@ -964,54 +995,106 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                         </div>
                       )}
                     </td>
+                    {/* Cột TRẠNG THÁI - Báo rõ ràng 2 trạng thái: Ký số & Cổng BHXH */}
                     <td className="px-4 py-3 align-top">
-                      <span className={cn(
-                        "px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg border inline-block mt-0.5",
-                        r.trangThai === 'SUBMITTED' && 'bg-emerald-100 text-emerald-700 border-emerald-200',
-                        r.trangThai === 'SIGNED' && 'bg-blue-100 text-blue-700 border-blue-200',
-                        (r.trangThai === 'UNSIGNED' || r.trangThai === 'DRAFT') && 'bg-amber-50 text-amber-700 border-amber-200',
-                        (r.trangThai === 'SIGN_FAILED' || r.trangThai === 'SUBMIT_FAILED' || r.trangThai === 'INVALID_FORMAT') && 'bg-rose-100 text-rose-700 border-rose-200',
-                        r.trangThai === 'SIGNING' && 'bg-blue-50 text-blue-600 border-blue-100 animate-pulse',
-                      )}>
-                        {r.trangThai === 'SUBMITTED' ? '✅ Đã gửi Cổng' :
-                          r.trangThai === 'SIGNED' ? '🔒 Đã ký số' :
-                            r.trangThai === 'INVALID_FORMAT' ? '❌ Lỗi định dạng' :
-                              r.trangThai === 'SIGN_FAILED' ? '❌ Lỗi ký' :
-                                r.trangThai === 'SUBMIT_FAILED' ? '❌ Lỗi gửi' :
-                                  r.trangThai === 'SIGNING' ? '⏳ Đang ký...' : '⚠️ Chưa ký số'}
-                      </span>
-                      {r.errors && r.errors.length > 0 && (
-                        <details className="mt-1 relative group cursor-pointer text-[10px] w-full">
-                          <summary className="text-rose-600 font-semibold leading-tight list-none outline-none select-none [&::-webkit-details-marker]:hidden flex items-center gap-1">
-                            <span className="truncate max-w-[100px] border-b border-dashed border-rose-300">
-                              {r.errors[0]} {r.errors.length > 1 && `(+${r.errors.length - 1} lỗi)`}
-                            </span>
-                            <ChevronDown className="w-3 h-3 text-rose-400 group-open:rotate-180 transition-transform" />
-                          </summary>
-                          <div className="absolute z-50 left-0 top-full mt-1 min-w-[200px] bg-white border border-rose-200 shadow-xl rounded-lg p-2 text-rose-700 font-medium space-y-1 text-left">
-                            {r.errors.map((err, i) => (
-                              <div key={i}>- {err}</div>
-                            ))}
+                      {(() => {
+                        const submitted = isRecordSubmitted(r);
+                        const signed = isRecordSigned(r);
+                        return (
+                          <div className="flex flex-col gap-1 items-start">
+                            {/* Trạng thái KÝ SỐ */}
+                            {signed || submitted ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-100 text-blue-700 border border-blue-200 flex items-center gap-1 shadow-xs" title="Hồ sơ đã được ký số hợp lệ">
+                                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                                🔒 ĐÃ KÝ SỐ
+                              </span>
+                            ) : r.trangThai === 'SIGN_FAILED' ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-rose-100 text-rose-700 border border-rose-200 flex items-center gap-1" title={r.errorMessage || 'Lỗi ký số'}>
+                                <XCircle className="w-3.5 h-3.5 text-rose-600" />
+                                ❌ KÝ LỖI
+                              </span>
+                            ) : r.trangThai === 'SIGNING' ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-50 text-blue-600 border border-blue-200 flex items-center gap-1 animate-pulse">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ⏳ ĐANG KÝ...
+                              </span>
+                            ) : r.trangThai === 'INVALID_FORMAT' ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-500" />
+                                LỖI ĐỊNH DẠNG
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                                ⚠️ CHƯA KÝ SỐ
+                              </span>
+                            )}
+
+                            {/* Trạng thái CỔNG BHXH */}
+                            {submitted ? (
+                              <div className="flex flex-col gap-0.5 w-full">
+                                <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-xs">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  ✅ ĐÃ GỬI CỔNG
+                                </span>
+                                {r.maGD && (
+                                  <div className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60 truncate max-w-[150px]" title={`Mã giao dịch: ${r.maGD}`}>
+                                    GD: {r.maGD}
+                                  </div>
+                                )}
+                              </div>
+                            ) : r.trangThai === 'SUBMIT_FAILED' ? (
+                              <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1" title={r.errorMessage || 'Lỗi gửi cổng'}>
+                                <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                                ❌ GỬI CỔNG LỖI
+                              </span>
+                            ) : signed ? (
+                              <span className="px-2 py-0.5 text-[9.5px] font-semibold rounded-md bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                Chưa gửi Cổng
+                              </span>
+                            ) : null}
+
+                            {/* Lỗi chi tiết (nếu có) */}
+                            {r.errorMessage && (
+                              <div className="text-[10px] text-rose-600 font-medium max-w-[150px] truncate" title={r.errorMessage}>
+                                {r.errorMessage}
+                              </div>
+                            )}
+                            {r.errors && r.errors.length > 0 && (
+                              <details className="mt-0.5 relative group cursor-pointer text-[10px] w-full">
+                                <summary className="text-rose-600 font-semibold leading-tight list-none outline-none select-none flex items-center gap-1">
+                                  <span className="truncate max-w-[120px] border-b border-dashed border-rose-300">
+                                    {r.errors[0]} {r.errors.length > 1 && `(+${r.errors.length - 1} lỗi)`}
+                                  </span>
+                                  <ChevronDown className="w-3 h-3 text-rose-400 group-open:rotate-180 transition-transform" />
+                                </summary>
+                                <div className="absolute z-50 left-0 top-full mt-1 min-w-[200px] bg-white border border-rose-200 shadow-xl rounded-lg p-2 text-rose-700 font-medium space-y-1 text-left">
+                                  {r.errors.map((err, i) => (
+                                    <div key={i}>- {err}</div>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
                           </div>
-                        </details>
-                      )}
-                      {r.maGD && <div className="text-[9px] text-emerald-600 font-bold mt-1">Mã GD: {r.maGD}</div>}
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 align-top text-center">
                       <div className="flex items-center justify-center gap-2 mt-0.5">
-                        {r.trangThai === 'SUBMITTED' ? (
-                          <span className="p-1.5 text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg flex items-center gap-1 text-[10px] font-bold" title="Đã hoàn thành đẩy">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Xong
+                        {isRecordSubmitted(r) ? (
+                          <span className="px-2.5 py-1 text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-1 text-[11px] font-bold" title="Hồ sơ đã được gửi thành công lên Cổng BHXH">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Đã gửi
                           </span>
                         ) : (
                           <>
-                            {r.trangThai === 'SIGNED' ? (
+                            {isRecordSigned(r) ? (
                               <button
                                 onClick={() => { toggleSelect(r.id); setKySoMode('submit'); }}
-                                title="Đã ký số. Nhấn để gửi BHXH"
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition border border-blue-100 bg-white"
+                                title="Đã ký số thành công. Nhấn để gửi Cổng BHXH"
+                                className="px-2.5 py-1 text-emerald-700 hover:bg-emerald-100 rounded-lg transition border border-emerald-300 bg-emerald-50 flex items-center gap-1 text-xs font-bold shadow-xs"
                               >
-                                <ShieldCheck className="w-4 h-4" />
+                                <Send className="w-3.5 h-3.5 -rotate-45" /> Gửi
                               </button>
                             ) : r.trangThai === 'INVALID_FORMAT' ? (
                               <button
@@ -1023,18 +1106,18 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                             ) : (
                               <button
                                 onClick={() => { toggleSelect(r.id); setKySoMode('sign'); }}
-                                title="Chưa ký. Nhấn để ký số"
-                                className="p-1.5 text-amber-500 hover:bg-amber-50 rounded-lg transition border border-amber-100 bg-white"
+                                title="Chưa ký số. Nhấn để ký số VNPT SmartCA / USB Token"
+                                className="px-2.5 py-1 text-blue-700 hover:bg-blue-100 rounded-lg transition border border-blue-300 bg-blue-50 flex items-center gap-1 text-xs font-bold shadow-xs"
                               >
-                                <ShieldCheck className="w-4 h-4" />
+                                <ShieldCheck className="w-3.5 h-3.5" /> Ký
                               </button>
                             )}
                             <button
                               onClick={() => { if (r.trangThai !== 'INVALID_FORMAT') { toggleSelect(r.id); setKySoMode('sign_then_submit'); } }}
-                              title={r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng không thể ký' : 'Ký & Gửi BHXH'}
+                              title={r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng không thể ký' : 'Ký & Gửi BHXH 1-click'}
                               className={cn(
-                                "p-1.5 rounded-lg transition",
-                                r.trangThai === 'INVALID_FORMAT' ? "text-slate-300 cursor-not-allowed" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50"
+                                "p-1.5 rounded-lg transition border",
+                                r.trangThai === 'INVALID_FORMAT' ? "text-slate-300 border-slate-100 cursor-not-allowed" : "text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border-slate-200"
                               )}
                             >
                               <CheckCircle2 className="w-4 h-4" />

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
 import { motion, AnimatePresence } from 'motion/react';
@@ -24,7 +24,12 @@ import {
   LayoutGrid,
   FileCode2,
   Building2,
-  Home
+  Home,
+  Users,
+  LogOut,
+  UserCheck,
+  Lock,
+  KeyRound
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from './lib/utils';
@@ -37,7 +42,18 @@ import {
 } from './types';
 import HoSoChungTu from './components/HoSoChungTu';
 import KhamSucKhoe from './components/KhamSucKhoe';
+import Xml3176Module from './components/Xml3176Module';
+import ChungTuTt12Module from './components/ChungTuTt12Module';
 import QuickLinksSidebar from './components/QuickLinksSidebar';
+import AuthScreen from './components/AuthScreen';
+import UserManagementModal from './components/UserManagementModal';
+import {
+  AppUser,
+  AppModuleId,
+  getCurrentSession,
+  verifyActiveSession,
+  logoutUser,
+} from './lib/authService';
 
 // Default mappings
 const DEFAULT_MAPPING: ColumnMapping = {
@@ -151,9 +167,95 @@ const TableRow21 = ({ row }: { row: TemplateRow }) => (
 );
 
 export default function App() {
-  const [mainTab, setMainTab] = useState<'HOME' | 'DOI_SOAT' | 'CHUNG_TU' | 'KHAM_SUC_KHOE'>('HOME');
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    return getCurrentSession()?.user || null;
+  });
+  const [showUserManagementModal, setShowUserManagementModal] = useState(false);
+  const [forcedLogoutMessage, setForcedLogoutMessage] = useState<string | null>(null);
+
+  const [mainTab, setMainTab] = useState<'HOME' | 'DOI_SOAT' | 'CHUNG_TU' | 'KHAM_SUC_KHOE' | 'XML_3176' | 'TT12_BH01_BH02'>('HOME');
   const [bhxhData, setBhxhData] = useState<any[]>([]);
   const [hisData, setHisData] = useState<any[]>([]);
+
+  // Kiểm tra định kỳ trạng thái tài khoản từ Cloud (nếu bị Admin tạm ngưng hoặc xóa thì tự động văng ra màn hình đăng nhập)
+  useEffect(() => {
+    if (!currentUser) return;
+    let mounted = true;
+    const checkSessionStatus = async () => {
+      try {
+        const res = await verifyActiveSession();
+        if (!mounted) return;
+        if (!res.valid) {
+          setCurrentUser(null);
+          if (res.reason) {
+            setForcedLogoutMessage(res.reason);
+          }
+        } else if (res.user) {
+          setCurrentUser(res.user);
+        }
+      } catch {}
+    };
+    checkSessionStatus();
+    const timer = setInterval(checkSessionStatus, 20000);
+    return () => {
+      mounted = false;
+      clearInterval(timer);
+    };
+  }, [currentUser?.id, mainTab]);
+
+  const resetDoiSoatData = () => {
+    setBhxhData([]);
+    setHisData([]);
+    setBhxhConverted([]);
+    setHisConverted([]);
+    setBhxhFiles([]);
+    setHisFiles([]);
+    setResults([]);
+    setSummary(null);
+    setActiveTab('upload');
+    setFilterType('ALL');
+    try {
+      sessionStorage.removeItem('hoso_chungtu_records');
+      localStorage.removeItem('hoso_chungtu_records');
+    } catch {}
+  };
+
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem('hoso_chungtu_records');
+      localStorage.removeItem('hoso_chungtu_records');
+    } catch {}
+  }, []);
+
+  const handleSelectModuleTab = (tab: 'HOME' | AppModuleId) => {
+    if (tab === 'HOME') {
+      resetDoiSoatData();
+      setMainTab('HOME');
+      return;
+    }
+    if (
+      tab !== 'TT12_BH01_BH02' &&
+      currentUser &&
+      currentUser.role !== 'ADMIN' &&
+      Array.isArray(currentUser.allowedModules) &&
+      !currentUser.allowedModules.includes(tab)
+    ) {
+      alert('⛔ Tài khoản của bạn chưa được Quản trị viên cấp quyền sử dụng phân hệ này!');
+      return;
+    }
+    if (tab !== 'DOI_SOAT') {
+      resetDoiSoatData();
+    }
+    setMainTab(tab);
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    resetDoiSoatData();
+    setCurrentUser(null);
+    setForcedLogoutMessage(null);
+    setMainTab('HOME');
+  };
   
   const [bhxhConverted, setBhxhConverted] = useState<TemplateRow[]>([]);
   const [hisConverted, setHisConverted] = useState<TemplateRow[]>([]);
@@ -565,9 +667,21 @@ export default function App() {
     return results.filter(r => r.type === filterType);
   }, [results, filterType]);
 
+  if (!currentUser) {
+    return (
+      <AuthScreen
+        onLoginSuccess={user => {
+          setCurrentUser(user);
+          setForcedLogoutMessage(null);
+        }}
+        forcedLogoutMessage={forcedLogoutMessage}
+      />
+    );
+  }
+
   return (
     <div 
-      className="min-h-screen text-slate-900 font-sans selection:bg-lime-300 selection:text-lime-900 bg-cover bg-center bg-fixed relative"
+      className="min-h-screen text-slate-900 font-sans selection:bg-lime-300 selection:text-lime-900 bg-cover bg-center bg-fixed relative pb-12"
       style={{ 
         backgroundImage: "url('/hinh_nen.png')",
         backgroundColor: "rgba(57, 255, 20, 0.15)", // Neon green overlay
@@ -577,76 +691,157 @@ export default function App() {
       {/* Sidebar liên kết nhanh - chỉ hiện trên trang HOME */}
       {mainTab === 'HOME' && <QuickLinksSidebar />}
 
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-[1600px] mx-auto px-4 h-16 flex items-center justify-between">
+      <header className="bg-white border-b border-slate-300 sticky top-0 z-50 shadow-sm">
+        <div className="max-w-[1600px] mx-auto px-3 h-11 flex items-center justify-between gap-3">
           {/* Logo + Home button */}
           <button
             onClick={() => setMainTab('HOME')}
             className={cn(
-              "flex items-center gap-2 group transition-all rounded-xl px-2 py-1 -ml-2",
-              mainTab === 'HOME' ? "bg-blue-50" : "hover:bg-slate-50"
+              "flex items-center gap-1.5 group transition-all rounded-md px-2 py-1 border shrink-0",
+              mainTab === 'HOME' ? "bg-blue-50 border-blue-300" : "border-slate-200 hover:bg-slate-50 hover:border-slate-300"
             )}
             title="Trang chủ"
           >
             <div className={cn(
-              "w-8 h-8 rounded flex items-center justify-center text-white transition-all",
+              "w-6 h-6 rounded flex items-center justify-center text-white transition-all",
               mainTab === 'HOME' ? "bg-blue-700" : "bg-blue-600 group-hover:bg-blue-700"
             )}>
-              <Home className="w-4 h-4" />
+              <Home className="w-3.5 h-3.5" />
             </div>
-            <h1 className="text-lg font-black tracking-tight text-slate-800 flex items-center gap-2">
-              ĐỐI CHIẾU VÀ CHỨNG TỪ <span className="bg-slate-100 text-[10px] px-2 py-0.5 rounded text-slate-500 font-bold border border-slate-200">ENTERPRISE</span>
+            <h1 className="text-[12px] font-extrabold tracking-tight text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+              ĐỐI CHIẾU & CHỨNG TỪ <span className="bg-slate-100 text-[9px] px-1.5 py-px rounded text-slate-500 font-bold border border-slate-200">ENTERPRISE</span>
             </h1>
           </button>
-          
+
           {mainTab !== 'HOME' && (
-          <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-xl">
+          <nav className="flex items-center gap-1.5 flex-1 justify-center min-w-0">
             <button
-              onClick={() => setMainTab('DOI_SOAT')}
+              onClick={() => handleSelectModuleTab('DOI_SOAT')}
               className={cn(
-                "px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                mainTab === 'DOI_SOAT' ? "bg-white text-slate-800 shadow-sm" : "hover:bg-slate-100 text-slate-500"
+                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                mainTab === 'DOI_SOAT'
+                  ? "bg-slate-800 text-white border-slate-800 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50 hover:border-slate-400"
               )}
             >
-              <BarChart3 className="w-4 h-4" />
+              <BarChart3 className="w-3.5 h-3.5" />
               ĐỐI CHIẾU BH01
             </button>
             <button
-              onClick={() => setMainTab('CHUNG_TU')}
+              onClick={() => handleSelectModuleTab('CHUNG_TU')}
               className={cn(
-                "px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                mainTab === 'CHUNG_TU' ? "bg-white text-blue-700 shadow-sm ring-1 ring-blue-100" : "hover:bg-slate-100 text-slate-500"
+                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                mainTab === 'CHUNG_TU'
+                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-300 hover:bg-blue-50 hover:border-blue-300"
               )}
             >
-              <FileCode2 className="w-4 h-4" />
+              <FileCode2 className="w-3.5 h-3.5" />
               HỒ SƠ CHỨNG TỪ
-              <span className="bg-blue-100 text-blue-700 text-[10px] px-1.5 py-0.5 rounded ml-1">TT25</span>
+              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'CHUNG_TU' ? "bg-white/20 text-white border-white/30" : "bg-blue-50 text-blue-700 border-blue-200")}>TT25</span>
             </button>
             <button
-              onClick={() => setMainTab('KHAM_SUC_KHOE')}
+              onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
               className={cn(
-                "px-6 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
-                mainTab === 'KHAM_SUC_KHOE' ? "bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-100" : "hover:bg-slate-100 text-slate-500"
+                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                mainTab === 'KHAM_SUC_KHOE'
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300"
               )}
             >
-              <FileCode2 className="w-4 h-4" />
+              <FileCode2 className="w-3.5 h-3.5" />
               KHÁM SỨC KHỎE
-              <span className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0.5 rounded ml-1">EMRHUB</span>
+              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'KHAM_SUC_KHOE' ? "bg-white/20 text-white border-white/30" : "bg-emerald-50 text-emerald-700 border-emerald-200")}>EMRHUB</span>
             </button>
-          </div>
+            <button
+              onClick={() => handleSelectModuleTab('XML_3176')}
+              className={cn(
+                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                mainTab === 'XML_3176'
+                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-300 hover:bg-amber-50 hover:border-amber-300"
+              )}
+            >
+              <FileCode2 className="w-3.5 h-3.5" />
+              ĐỌC & KÝ XML 3176
+              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'XML_3176' ? "bg-white/20 text-white border-white/30" : "bg-amber-50 text-amber-800 border-amber-200")}>15 BẢNG</span>
+            </button>
+            <button
+              onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
+              className={cn(
+                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                mainTab === 'TT12_BH01_BH02'
+                  ? "bg-purple-600 text-white border-purple-600 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-300 hover:bg-purple-50 hover:border-purple-300"
+              )}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              CHỨNG TỪ TT12 BHXH - BH01 - BH02
+              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'TT12_BH01_BH02' ? "bg-white/20 text-white border-white/30" : "bg-purple-50 text-purple-800 border-purple-200")}>TT12 & PDF</span>
+            </button>
+          </nav>
           )}
 
-          <div className="flex items-center gap-4 text-xs font-semibold">
-            <div className="flex items-center gap-2 text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              <Building2 className="w-4 h-4 text-blue-500" />
-              <span className="text-blue-600 font-bold">Ánh Kận</span>
-              <span className="hidden md:inline">- IT Đà Nẵng</span>
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold shrink-0">
+            <div className="hidden xl:flex items-center gap-1.5 text-slate-600 bg-slate-50 px-2 py-1 rounded-md border border-slate-300">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+              <span>SmartCA: <span className="font-bold text-slate-800">Sẵn sàng</span></span>
             </div>
-            <div className="w-px h-6 bg-slate-200 hidden md:block"></div>
-            <div className="hidden md:flex items-center gap-2 text-slate-600">
-              <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-              <span>VNPT SmartCA: <span className="font-bold text-slate-800">Sẵn sàng</span> <span className="text-slate-400 font-normal">(Phụ lục 02/TT25)</span></span>
+
+            {/* Badge Thông tin tài khoản đang đăng nhập */}
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-300 text-slate-700">
+              <div className={cn(
+                "w-4 h-4 rounded flex items-center justify-center text-[9px] font-black text-white shrink-0",
+                currentUser.role === 'ADMIN' ? "bg-indigo-600" : "bg-blue-600"
+              )}>
+                {(currentUser.fullName || currentUser.username || 'U').charAt(0).toUpperCase()}
+              </div>
+              <span className="font-bold text-slate-800 max-w-[130px] truncate" title={currentUser.fullName || currentUser.username}>
+                {currentUser.fullName || currentUser.username}
+              </span>
+              <span className={cn(
+                "text-[9px] px-1 py-px rounded font-extrabold border",
+                currentUser.role === 'ADMIN'
+                  ? "bg-indigo-100 text-indigo-700 border-indigo-200"
+                  : "bg-blue-50 text-blue-700 border-blue-200"
+              )}>
+                {currentUser.role === 'ADMIN' ? 'ADMIN' : `@${currentUser.username}`}
+              </span>
             </div>
+
+            {/* Nút Quản lý Người dùng (Admin) / Đổi mật khẩu (User) */}
+            <button
+              onClick={() => setShowUserManagementModal(true)}
+              className={cn(
+                "px-2.5 py-1 rounded-md font-bold flex items-center gap-1 border transition-all cursor-pointer",
+                currentUser.role === 'ADMIN'
+                  ? "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700 shadow-xs"
+                  : "bg-white hover:bg-slate-50 text-slate-700 border-slate-300"
+              )}
+              title={currentUser.role === 'ADMIN' ? "Mở Bảng Quản Trị Người Dùng (Duyệt, Tạo TK, Reset MK, Tạm ngưng, Xóa)" : "Cài đặt tài khoản & Đổi mật khẩu"}
+            >
+              {currentUser.role === 'ADMIN' ? (
+                <>
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Quản lý User</span>
+                </>
+              ) : (
+                <>
+                  <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Đổi MK</span>
+                </>
+              )}
+            </button>
+
+            {/* Nút Đăng xuất */}
+            <button
+              onClick={handleLogout}
+              className="px-2 py-1 rounded-md font-bold flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Thoát</span>
+            </button>
           </div>
         </div>
       </header>
@@ -678,38 +873,80 @@ export default function App() {
                 <p className="text-white/70 text-sm font-semibold tracking-widest">BHYT · TT25 · ENTERPRISE</p>
               </div>
             </div>
-            <div className="flex gap-4 mt-4">
+            <div className="flex flex-wrap justify-center gap-4 mt-4">
               <button
-                onClick={() => setMainTab('DOI_SOAT')}
-                className="flex items-center gap-2 bg-white/90 hover:bg-white text-slate-800 font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm"
+                onClick={() => handleSelectModuleTab('DOI_SOAT')}
+                className="flex items-center gap-2 bg-white/90 hover:bg-white text-slate-800 font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
               >
                 <BarChart3 className="w-5 h-5 text-indigo-600" />
                 ĐỐI CHIẾU BH01
               </button>
               <button
-                onClick={() => setMainTab('CHUNG_TU')}
-                className="flex items-center gap-2 bg-blue-600/90 hover:bg-blue-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm"
+                onClick={() => handleSelectModuleTab('CHUNG_TU')}
+                className="flex items-center gap-2 bg-blue-600/90 hover:bg-blue-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
               >
                 <FileCode2 className="w-5 h-5" />
                 HỒ SƠ CHỨNG TỪ
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">TT25</span>
               </button>
               <button
-                onClick={() => setMainTab('KHAM_SUC_KHOE')}
-                className="flex items-center gap-2 bg-emerald-600/90 hover:bg-emerald-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm"
+                onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
+                className="flex items-center gap-2 bg-emerald-600/90 hover:bg-emerald-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
               >
                 <FileCode2 className="w-5 h-5" />
                 KHÁM SỨC KHỎE
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">API</span>
               </button>
+              <button
+                onClick={() => handleSelectModuleTab('XML_3176')}
+                className="flex items-center gap-2 bg-amber-600/90 hover:bg-amber-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
+              >
+                <FileCode2 className="w-5 h-5" />
+                ĐỌC & KÝ XML 3176
+                <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">15 BẢNG</span>
+              </button>
+              <button
+                onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
+                className="flex items-center gap-2 bg-purple-600/90 hover:bg-purple-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
+              >
+                <ShieldCheck className="w-5 h-5" />
+                CHỨNG TỪ TT12 BHXH - BH01 - BH02
+                <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">BẢNG 1-6 • 01/BH • PDF 02/BH</span>
+              </button>
             </div>
-            <p className="text-white/50 text-xs mt-2 font-medium">Ánh Kận · IT Đà Nẵng · VNPT SmartCA</p>
+            <div className="flex items-center gap-2 mt-1 bg-slate-900/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/15 text-xs text-white/90">
+              <span>Xin chào, <strong className="text-amber-300">{currentUser.fullName}</strong> ({currentUser.role === 'ADMIN' ? 'Quản trị viên' : `@${currentUser.username}`})</span>
+              <span className="text-white/30">|</span>
+              <button
+                onClick={() => setShowUserManagementModal(true)}
+                className="text-blue-300 hover:text-blue-200 font-bold underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5" />
+                {currentUser.role === 'ADMIN' ? 'Quản lý Người dùng' : 'Đổi mật khẩu'}
+              </button>
+              <span className="text-white/30">|</span>
+              <button
+                onClick={handleLogout}
+                className="text-rose-300 hover:text-rose-200 font-bold underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Đăng xuất
+              </button>
+            </div>
           </div>
         </motion.div>
       ) : mainTab === 'CHUNG_TU' ? (
         <HoSoChungTu onGoHome={() => setMainTab('HOME')} />
       ) : mainTab === 'KHAM_SUC_KHOE' ? (
         <KhamSucKhoe onGoHome={() => setMainTab('HOME')} />
+      ) : mainTab === 'XML_3176' ? (
+        <main className="max-w-[1600px] mx-auto p-6">
+          <Xml3176Module />
+        </main>
+      ) : mainTab === 'TT12_BH01_BH02' ? (
+        <main className="max-w-[1600px] mx-auto p-6">
+          <ChungTuTt12Module />
+        </main>
       ) : (
         <main className="max-w-[1600px] mx-auto p-8">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -1102,12 +1339,55 @@ export default function App() {
         </main>
       )}
 
-      {/* Footer - Heading cuối trang */}
-      <footer className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-sm border-t border-slate-200 px-6 py-1.5 flex items-center justify-between text-[10px]">
-        <span className="text-slate-400 font-medium">ĐỐI CHIẾU 01 VÀ CHỨNG TỪ TT25</span>
-        <span className="text-slate-500 font-bold tracking-wide">NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG</span>
-        <span className="text-slate-400">v2.0 · egw.baohiemxahoi.gov.vn</span>
+      {/* Footer - Hàng chân trang nền lon bia Tiger Bạc xếp ngang, cố định sát mép dưới cùng */}
+      <footer 
+        className="fixed bottom-0 left-0 right-0 z-50 h-[38px] border-t border-slate-300 shadow-lg flex items-center justify-between px-4 text-[10.5px] select-none overflow-hidden"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 50
+        }}
+      >
+        {/* Lớp nền hàng lon bia Tiger Crystal bạc xếp ngang liên tục */}
+        <div 
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "url('/tiger_crystal.png')",
+            backgroundRepeat: 'repeat-x',
+            backgroundSize: 'auto 100%',
+            backgroundPosition: 'left center',
+            backgroundColor: '#ffffff',
+            zIndex: 0
+          }}
+          title="Tiger Crystal Bạc"
+        />
+
+        {/* Lớp phủ mỏng nhẹ để lon bia nổi bật nhưng chữ luôn sắc nét */}
+        <div className="absolute inset-0 bg-white/10 backdrop-blur-[0.3px]" style={{ zIndex: 1 }} />
+
+        {/* Giữ nguyên các nội dung chữ trên hàng */}
+        <div className="relative flex items-center justify-between w-full" style={{ zIndex: 2 }}>
+          <span className="font-semibold text-slate-800 bg-white/90 backdrop-blur-md px-2.5 py-0.5 rounded shadow-xs border border-slate-300/80 tracking-tight">
+            ĐỐI CHIẾU 01 VÀ CHỨNG TỪ TT25
+          </span>
+          <span className="font-extrabold text-blue-900 bg-white/95 backdrop-blur-md px-3 py-0.5 rounded shadow-xs border border-blue-300/80 tracking-wide">
+            NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG
+          </span>
+          <span className="font-semibold text-slate-700 bg-white/90 backdrop-blur-md px-2.5 py-0.5 rounded shadow-xs border border-slate-300/80">
+            v2.0 · egw.baohiemxahoi.gov.vn
+          </span>
+        </div>
       </footer>
+
+      {/* Modal Quản trị người dùng (Admin) & Đổi mật khẩu (User) */}
+      <UserManagementModal
+        isOpen={showUserManagementModal}
+        onClose={() => setShowUserManagementModal(false)}
+        currentUser={currentUser}
+        onCurrentUserUpdated={updated => setCurrentUser(updated)}
+      />
     </div>
   );
 }

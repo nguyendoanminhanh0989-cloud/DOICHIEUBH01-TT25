@@ -174,8 +174,9 @@ export default function CskcbSetupModal({ onClose, onSave, initialConfig }: Prop
       cskcb,
       bhxhAccount: { username, password: '', passwordRaw: password },
     };
-    // Lưu vào sessionStorage
-    sessionStorage.setItem('cskcb_config', JSON.stringify(cfg));
+    // Lưu vào cả localStorage và sessionStorage để không mất khi F5 hoặc tắt trình duyệt
+    try { localStorage.setItem('cskcb_config', JSON.stringify(cfg)); } catch {}
+    try { sessionStorage.setItem('cskcb_config', JSON.stringify(cfg)); } catch {}
     onSave(cfg);
   };
 
