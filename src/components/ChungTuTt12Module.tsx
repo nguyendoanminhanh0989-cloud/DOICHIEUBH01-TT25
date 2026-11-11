@@ -57,6 +57,120 @@ import {
   setSessionSync,
 } from '../lib/sessionCache';
 
+const TT12_COLUMN_LABELS: Record<string, string> = {
+  STT: 'Số thứ tự',
+  MA_KHOA: 'Mã khoa/phòng',
+  TEN_KHOA: 'Tên khoa/phòng',
+  BAN_KHAM: 'Số bàn khám',
+  GIUONG_PD: 'Giường phê duyệt',
+  GIUONG_TK: 'Giường thực kê',
+  GIUONG_HSTC: 'Giường HSTC',
+  GIUONG_HSCC: 'Giường HSCC',
+  TU_NGAY: 'Từ ngày hiệu lực',
+  DEN_NGAY: 'Đến ngày hiệu lực',
+  MA_CSKCB: 'Mã CSKCB',
+  HO_TEN: 'Họ và tên',
+  GIOI_TINH: 'Giới tính',
+  SO_DINH_DANH: 'Số CCCD/Định danh',
+  CHUCDANH_NN: 'Chức danh nghề nghiệp',
+  VI_TRI: 'Vị trí chuyên môn',
+  MACCHN: 'Mã CCHN / GPHN',
+  NGAYCAP_CCHN: 'Ngày cấp CCHN',
+  NOICAP_CCHN: 'Nơi cấp CCHN',
+  PHAMVI_CM: 'Phạm vi chuyên môn',
+  PHAMVI_CMBS: 'Phạm vi CM bổ sung',
+  DVKT_KHAC: 'DVKT khác thực hiện',
+  VB_PHANCONG: 'Văn bản phân công',
+  THOIGIAN_DK: 'Thời gian đăng ký',
+  THOIGIAN_NGAY: 'TG làm việc/ngày',
+  THOIGIAN_TUAN: 'TG làm việc/tuần',
+  CSKCB_KHAC: 'CSKCB khác',
+  CSKCB_CGKT: 'CSKCB chuyển giao KT',
+  QD_CGKT: 'Quyết định CGKT',
+  MA_THUOC: 'Mã thuốc/chế phẩm',
+  TEN_HOAT_CHAT: 'Tên hoạt chất',
+  TEN_THUOC: 'Tên thuốc/chế phẩm',
+  DON_VI_TINH: 'Đơn vị tính',
+  HAM_LUONG: 'Hàm lượng',
+  DUONG_DUNG: 'Đường dùng',
+  MA_DUONG_DUNG: 'Mã đường dùng',
+  DANG_BAO_CHE: 'Dạng bào chế',
+  SO_DANG_KY: 'Số đăng ký',
+  SO_LUONG: 'Số lượng',
+  DON_GIA: 'Đơn giá',
+  DON_GIA_BH: 'Đơn giá BHYT',
+  QUY_CACH: 'Quy cách đóng gói',
+  NHA_SX: 'Nhà sản xuất',
+  NUOC_SX: 'Nước sản xuất',
+  NHA_THAU: 'Nhà thầu',
+  TT_THAU: 'Thông tin thầu',
+  TU_NGAY_HD: 'Từ ngày hợp đồng',
+  DEN_NGAY_HD: 'Đến ngày hợp đồng',
+  LOAI_THUOC: 'Loại thuốc',
+  LOAI_THAU: 'Loại thầu',
+  HT_THAU: 'Hình thức thầu',
+  MA_DVKT: 'Mã DVKT',
+  TCCL: 'Tiêu chuẩn chất lượng',
+  BO_PHAN_VT: 'Bộ phận dùng (VT)',
+  TEN_KHOA_HOC: 'Tên khoa học',
+  NGUON_GOC: 'Nguồn gốc',
+  PP_CHEBIEN: 'Phương pháp chế biến',
+  MA_DL_NHAP: 'Mã dược liệu nhập',
+  MA_DL_CB: 'Mã dược liệu chế biến',
+  TLHH_CB: 'Tỷ lệ hư hao CB',
+  TLHH_BQ: 'Tỷ lệ hư hao BQ',
+  MA_CSKCB_THUOC: 'Mã CSKCB thuốc',
+  MA_TBYT: 'Mã thiết bị y tế',
+  TEN_TBYT: 'Tên thiết bị y tế',
+  TEN_TB: 'Tên thiết bị',
+  KY_HIEU: 'Ký hiệu (Model)',
+  CONGTY_SX: 'Công ty sản xuất',
+  NAM_SX: 'Năm sản xuất',
+  NAM_SD: 'Năm sử dụng',
+  MA_MAY: 'Mã máy',
+  SO_LUU_HANH: 'Số lưu hành',
+  HD_TU: 'Hợp đồng từ ngày',
+  HD_DEN: 'Hợp đồng đến ngày',
+  MA_DICH_VU: 'Mã dịch vụ KCB',
+  TEN_DICH_VU: 'Tên dịch vụ KCB',
+  TEN_DVKT_GIA: 'Tên DVKT theo giá',
+  QUY_TRINH: 'Quy trình chuyên môn',
+  SO_LUONG_CGKT: 'Số lượng CGKT',
+  CSKCB_CLS: 'CSKCB thực hiện CLS',
+  QD_DVKT: 'Quyết định DVKT',
+  QD_PD_GIA: 'Quyết định phê duyệt giá',
+  GHI_CHU: 'Ghi chú',
+  GIA_THANH_TOAN: 'Giá thanh toán BHYT',
+  THUOCPX_STT: 'STT thuốc phóng xạ',
+  THUOCPX_MA_THUOC: 'Mã thuốc phóng xạ',
+  THUOCPX_TEN_THUOC: 'Tên thuốc phóng xạ',
+  THUOCPX_SO_DANG_KY: 'SĐK thuốc phóng xạ',
+  THUOCPX_DON_VI_TINH: 'ĐVT thuốc phóng xạ',
+  THUOCPX_TT_THAU: 'TT thầu thuốc PX',
+  THUOCPX_DON_GIA_THUOC: 'Đơn giá thuốc PX',
+  THUOCPX_DM_NSX_CDD: 'Định mức NSX',
+  THUOCPX_DM_THUCTE_CDD: 'Định mức thực tế',
+  THUOCPX_LIEU_BQ_PX: 'Liều bình quân PX',
+  THUOCPX_TL_THUCTE_BQ_PX: 'Tỷ lệ thực tế/BQ PX',
+  THUOCPX_THANH_TIEN_THUOC: 'Thành tiền thuốc PX',
+  NGAY_SINH: 'Ngày sinh',
+  MA_THE_BHYT: 'Mã thẻ BHYT',
+  MA_BENH_CHINH: 'Mã bệnh chính',
+  NGAY_VAO: 'Ngày vào viện',
+  NGAY_VAO_NOI_TRU: 'Ngày vào nội trú',
+  NGAY_RA: 'Ngày ra viện',
+  SO_NGAY_DTRI: 'Số ngày điều trị',
+  MA_LOAI_KCB: 'Mã loại KCB',
+  T_TONGCHI_BV: 'Tổng chi phí BV',
+  T_TONGCHI_BH: 'Tổng chi phí BHYT',
+  T_BHTT: 'Quỹ BHYT thanh toán',
+  T_BNCCT: 'BN cùng chi trả',
+  T_BNTT: 'BN tự trả',
+  T_NGUONKHAC: 'Nguồn khác',
+  NAM_QT: 'Năm quyết toán',
+  THANG_QT: 'Tháng quyết toán',
+};
+
 export default function ChungTuTt12Module() {
   const [subTab, setSubTab] = useState<'XML_TT12_01BH' | 'PDF_02BH'>(() =>
     getSessionSync('tt12_sub_tab', 'XML_TT12_01BH')
@@ -1117,104 +1231,127 @@ export default function ChungTuTt12Module() {
               </div>
             </div>
 
-            {rows.length === 0 ? (
-              <div className="flex-1 min-h-0 overflow-auto p-8 text-center flex flex-col items-center justify-center space-y-2.5">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-                  <FileSpreadsheet className="w-6 h-6" />
+            <div className="flex-1 min-h-0 overflow-auto flex flex-col">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs">
+                  <tr>
+                    <th className="px-2.5 py-2 border-b border-r border-slate-200 text-center font-black text-slate-600 w-10">
+                      Xóa
+                    </th>
+                    {currentConfig.targetXmlColumns.map((col, idx) => (
+                      <th
+                        key={col}
+                        className="px-2.5 py-2 border-b border-r border-slate-200 whitespace-nowrap min-w-[120px]"
+                      >
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1 py-px rounded border border-indigo-200">
+                            {idx + 1}
+                          </span>
+                          <span className="font-extrabold text-slate-800 font-mono text-[11px]">
+                            {col}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-semibold text-slate-500 mt-0.5">
+                          {TT12_COLUMN_LABELS[col] || col}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {rows.length === 0 ? (
+                    <tr className="bg-slate-50/40">
+                      <td className="px-2 py-2 border-b border-r border-slate-200 text-center text-slate-300">
+                        —
+                      </td>
+                      {currentConfig.targetXmlColumns.map((col, idx) => (
+                        <td
+                          key={col}
+                          className="px-2.5 py-2 border-b border-r border-slate-200 text-[11px] text-slate-400 italic whitespace-nowrap"
+                        >
+                          (Cột {idx + 1}: {col})
+                        </td>
+                      ))}
+                    </tr>
+                  ) : (
+                    paginatedRows.map(({ row, globalIdx }) => (
+                      <tr key={globalIdx} className="hover:bg-blue-50/40 transition-colors">
+                        <td className="px-2 py-1 border-r border-slate-200 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRow(globalIdx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                            title="Xóa dòng này"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                        {currentConfig.targetXmlColumns.map(col => (
+                          <td key={col} className="p-0 border-r border-slate-200 min-w-[110px]">
+                            <input
+                              type="text"
+                              value={row[col] ?? ''}
+                              onChange={e => handleCellEdit(globalIdx, col, e.target.value)}
+                              className="w-full px-2.5 py-1.5 text-xs bg-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-800"
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+
+              {rows.length === 0 && (
+                <div className="flex-1 min-h-[160px] p-6 text-center flex flex-col items-center justify-center space-y-2">
+                  <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div className="text-sm font-bold text-slate-700">
+                    Chưa có dữ liệu cho {currentConfig.tableName} ({currentConfig.targetXmlColumns.length} cột hiển thị phía trên)
+                  </div>
+                  <p className="text-xs text-slate-500 max-w-lg mx-auto">
+                    Bạn có thể kéo thanh cuộn ngang phía trên để xem đầy đủ <b>{currentConfig.targetXmlColumns.length} tiêu đề cột</b> của bảng này, bấm <b>"Tải Excel Mẫu Trống"</b>, <b>"Nhập Excel"</b>, <b>"Import XML Có Sẵn"</b> hoặc bấm <b>"+ Thêm dòng"</b> để nhập trực tiếp.
+                  </p>
+                  <div className="pt-1 flex justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleDownloadExcelTemplate}
+                      className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                    >
+                      <Download className="w-4 h-4" />
+                      Tải Excel Mẫu Trống ({currentConfig.templateFileName})
+                    </button>
+                  </div>
                 </div>
-                <div className="text-sm font-bold text-slate-700">
-                  Chưa có dữ liệu cho {currentConfig.tableName}
-                </div>
-                <p className="text-xs text-slate-500 max-w-lg mx-auto">
-                  Bạn có thể bấm <b>"Tải Excel Mẫu Trống"</b> để lấy biểu mẫu chuẩn (chỉ gồm dòng tiêu đề cột quy định, không chứa dữ liệu mẫu), sau đó chọn <b>"Nhập Excel"</b> hoặc{' '}
-                  <b>"Import XML Có Sẵn"</b> từ máy tính.
-                </p>
-                <div className="pt-1 flex justify-center gap-2">
+              )}
+            </div>
+
+            {/* Phân trang cố định dưới chân bảng */}
+            {rows.length > 0 && totalPages > 1 && (
+              <div className="shrink-0 px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+                <span className="text-slate-600 font-medium">
+                  Trang <b>{currentPage}</b> / <b>{totalPages}</b> (Hiển thị {paginatedRows.length} dòng)
+                </span>
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={handleDownloadExcelTemplate}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 font-bold flex items-center gap-1 cursor-pointer"
                   >
-                    <Download className="w-4 h-4" />
-                    Tải Excel Mẫu Trống ({currentConfig.templateFileName})
+                    <ChevronLeft className="w-3.5 h-3.5" /> Trước
+                  </button>
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    Sau <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
-            ) : (
-              <>
-                <div className="flex-1 min-h-0 overflow-auto">
-                  <table className="w-full text-left border-collapse text-xs">
-                    <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs">
-                      <tr>
-                        <th className="px-2.5 py-2 border-b border-r border-slate-200 text-center font-black text-slate-600 w-10">
-                          Xóa
-                        </th>
-                        {currentConfig.targetXmlColumns.map(col => (
-                          <th
-                            key={col}
-                            className="px-2.5 py-2 border-b border-r border-slate-200 font-extrabold text-slate-700 whitespace-nowrap font-mono text-[11px]"
-                          >
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      {paginatedRows.map(({ row, globalIdx }) => (
-                        <tr key={globalIdx} className="hover:bg-blue-50/40 transition-colors">
-                          <td className="px-2 py-1 border-r border-slate-200 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteRow(globalIdx)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
-                              title="Xóa dòng này"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                          {currentConfig.targetXmlColumns.map(col => (
-                            <td key={col} className="p-0 border-r border-slate-200 min-w-[110px]">
-                              <input
-                                type="text"
-                                value={row[col] ?? ''}
-                                onChange={e => handleCellEdit(globalIdx, col, e.target.value)}
-                                className="w-full px-2.5 py-1.5 text-xs bg-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-800"
-                              />
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Phân trang cố định dưới chân bảng */}
-                {totalPages > 1 && (
-                  <div className="shrink-0 px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
-                    <span className="text-slate-600 font-medium">
-                      Trang <b>{currentPage}</b> / <b>{totalPages}</b> (Hiển thị {paginatedRows.length} dòng)
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={currentPage <= 1}
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" /> Trước
-                      </button>
-                      <button
-                        type="button"
-                        disabled={currentPage >= totalPages}
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        Sau <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
             )}
           </div>
         </div>

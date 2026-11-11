@@ -1053,9 +1053,12 @@ export default function Xml3176Module() {
   );
 
   const activeColumns = useMemo(() => {
-    if (!doc || activeTab === 'ERRORS') return [];
-    return doc.tableColumns[activeTab] || [];
-  }, [doc, activeTab]);
+    if (activeTab === 'ERRORS') return [];
+    if (doc && doc.tableColumns[activeTab] && doc.tableColumns[activeTab].length > 0) {
+      return doc.tableColumns[activeTab];
+    }
+    return activeTableMeta?.defaultFields || [];
+  }, [doc, activeTab, activeTableMeta]);
 
   return (
     <div className="h-[calc(100vh-56px)] flex flex-col gap-3 overflow-hidden">
@@ -1544,83 +1547,100 @@ export default function Xml3176Module() {
               )}
             </div>
           ) : (
-            /* BẢNG DỮ LIỆU CHI TIẾT CHO BẢNG 1 -> BẢNG 15 */
-            <div className="flex-1 min-h-0 overflow-auto">
-              {currentTableRows.length === 0 ? (
-                <div className="p-12 text-center">
-                  <FileCode2 className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-bold text-slate-700">
-                    Không có dữ liệu trong {activeTableMeta?.fullTitle}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    File XML hiện tại không phát sinh hồ sơ ở bảng này hoặc đang bị giới hạn bởi bộ lọc. Bạn có thể bấm <b>"Thêm dòng {activeTableMeta?.tabLabel}"</b> nếu muốn bổ sung.
-                  </p>
-                </div>
-              ) : (
-                <table className="w-full text-xs border-collapse">
-                  <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-xs">
-                    <tr>
-                      {/* Cột Tích chọn ở Bảng 1 */}
-                      {activeTab === 'XML1' && (
-                        <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-10 sticky left-0 bg-slate-100 z-20">
-                          <input
-                            type="checkbox"
-                            checked={
-                              currentTableRows.length > 0 &&
-                              currentTableRows.every(r => selectedHosoIndices.has(r.hosoIndex))
-                            }
-                            onChange={toggleSelectAllFilteredXml1}
-                            className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
-                            title="Tích chọn / Bỏ chọn tất cả hồ sơ đang hiển thị để Ký số & Xuất XML"
-                          />
-                        </th>
-                      )}
+            /* BẢNG DỮ LIỆU CHI TIẾT CHO BẢNG 1 -> BẢNG 15 (LUÔN HIỂN THỊ TIÊU ĐỀ CỘT) */
+            <div className="flex-1 min-h-0 overflow-auto flex flex-col">
+              <table className="w-full text-xs border-collapse">
+                <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-xs">
+                  <tr>
+                    {/* Cột Tích chọn ở Bảng 1 */}
+                    {activeTab === 'XML1' && (
+                      <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-10 sticky left-0 bg-slate-100 z-20">
+                        <input
+                          type="checkbox"
+                          checked={
+                            currentTableRows.length > 0 &&
+                            currentTableRows.every(r => selectedHosoIndices.has(r.hosoIndex))
+                          }
+                          onChange={toggleSelectAllFilteredXml1}
+                          className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                          title="Tích chọn / Bỏ chọn tất cả hồ sơ đang hiển thị để Ký số & Xuất XML"
+                        />
+                      </th>
+                    )}
 
-                      {/* Cột Trạng thái ký số ở Bảng 1 */}
-                      {activeTab === 'XML1' && (
-                        <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[145px] bg-slate-100">
-                          <div className="font-bold text-slate-900">TRẠNG THÁI KÝ SỐ</div>
-                          <div className="text-[10px] font-normal text-slate-500">Đã ký / Chưa ký</div>
-                        </th>
-                      )}
+                    {/* Cột Trạng thái ký số ở Bảng 1 */}
+                    {activeTab === 'XML1' && (
+                      <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[145px] bg-slate-100">
+                        <div className="font-bold text-slate-900">TRẠNG THÁI KÝ SỐ</div>
+                        <div className="text-[10px] font-normal text-slate-500">Đã ký / Chưa ký</div>
+                      </th>
+                    )}
 
+                    <th
+                      className={`border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[155px] bg-slate-100 ${
+                        activeTab !== 'XML1' ? 'sticky left-0 z-20' : ''
+                      }`}
+                    >
+                      Thao tác
+                    </th>
+
+                    <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-14 bg-slate-100">
+                      Hồ sơ
+                    </th>
+
+                    {activeTab !== 'XML1' && (
+                      <th className="border-b border-r border-slate-300 px-3 py-2 text-left min-w-[160px] bg-blue-50/60">
+                        <div className="font-bold text-blue-900">HỌ TÊN BN (XML1)</div>
+                        <div className="text-[10px] font-normal text-blue-600">Liên kết theo MA_LK</div>
+                      </th>
+                    )}
+
+                    {activeColumns.map((col, idx) => (
                       <th
-                        className={`border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[155px] bg-slate-100 ${
-                          activeTab !== 'XML1' ? 'sticky left-0 z-20' : ''
-                        }`}
+                        key={col}
+                        className="border-b border-r border-slate-300 px-2.5 py-2 text-left min-w-[135px] whitespace-nowrap"
                       >
-                        Thao tác
-                      </th>
-
-                      <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-14 bg-slate-100">
-                        Hồ sơ
-                      </th>
-
-                      {activeTab !== 'XML1' && (
-                        <th className="border-b border-r border-slate-300 px-3 py-2 text-left min-w-[160px] bg-blue-50/60">
-                          <div className="font-bold text-blue-900">HỌ TÊN BN (XML1)</div>
-                          <div className="text-[10px] font-normal text-blue-600">Liên kết theo MA_LK</div>
-                        </th>
-                      )}
-
-                      {activeColumns.map(col => (
-                        <th
-                          key={col}
-                          className="border-b border-r border-slate-300 px-2.5 py-2 text-left min-w-[135px] whitespace-nowrap"
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-1 py-px rounded border border-blue-200">
+                            {idx + 1}
+                          </span>
+                          <span className="font-mono font-bold text-slate-900">{col}</span>
+                        </div>
+                        <div
+                          className="text-[10px] font-normal text-slate-500 truncate max-w-[180px] mt-0.5"
+                          title={FIELD_LABELS_3176[col] || col}
                         >
-                          <div className="font-mono font-bold text-slate-900">{col}</div>
-                          <div
-                            className="text-[10px] font-normal text-slate-500 truncate max-w-[180px]"
-                            title={FIELD_LABELS_3176[col] || col}
-                          >
-                            {FIELD_LABELS_3176[col] || col}
-                          </div>
-                        </th>
+                          {FIELD_LABELS_3176[col] || col}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {currentTableRows.length === 0 ? (
+                    <tr className="bg-slate-50/40">
+                      {activeTab === 'XML1' && (
+                        <>
+                          <td className="border-b border-r border-slate-200 px-2 py-2 text-center text-slate-300">—</td>
+                          <td className="border-b border-r border-slate-200 px-2 py-2 text-center text-slate-300">—</td>
+                        </>
+                      )}
+                      <td className="border-b border-r border-slate-200 px-2 py-2 text-center text-slate-300">—</td>
+                      <td className="border-b border-r border-slate-200 px-2 py-2 text-center text-slate-300">—</td>
+                      {activeTab !== 'XML1' && (
+                        <td className="border-b border-r border-slate-200 px-2 py-2 text-slate-300">—</td>
+                      )}
+                      {activeColumns.map((col, idx) => (
+                        <td
+                          key={col}
+                          className="border-b border-r border-slate-200 px-2.5 py-2 text-[11px] text-slate-400 italic whitespace-nowrap"
+                        >
+                          (Cột {idx + 1}: {col})
+                        </td>
                       ))}
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {pagedRows.map(row => {
+                  ) : (
+                    pagedRows.map(row => {
                       const isRowSelected = selectedHosoIndices.has(row.hosoIndex);
                       const signState = doc.hosoSignStates[row.hosoIndex];
                       const isSigned = signState?.isSigned && !signState?.isModified;
@@ -1768,9 +1788,21 @@ export default function Xml3176Module() {
                           })}
                         </tr>
                       );
-                    })}
-                  </tbody>
-                </table>
+                    })
+                  )}
+                </tbody>
+              </table>
+
+              {currentTableRows.length === 0 && (
+                <div className="p-8 text-center">
+                  <FileCode2 className="w-8 h-8 text-slate-300 mx-auto mb-1.5" />
+                  <p className="text-sm font-bold text-slate-700">
+                    Không có dữ liệu trong {activeTableMeta?.fullTitle} ({activeColumns.length} cột hiển thị phía trên)
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    File XML hiện tại không phát sinh hồ sơ ở bảng này hoặc đang bị giới hạn bởi bộ lọc. Bạn có thể bấm <b>"Thêm dòng {activeTableMeta?.tabLabel}"</b> nếu muốn bổ sung.
+                  </p>
+                </div>
               )}
             </div>
           )}
