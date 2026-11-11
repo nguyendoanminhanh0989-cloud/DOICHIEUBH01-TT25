@@ -708,14 +708,16 @@ export function saveLoginCredentials(username: string, password: string, remembe
 let inMemoryActiveSession: AuthSession | null = null;
 
 /**
- * Lấy phiên đăng nhập hiện tại (lưu vết trên trình duyệt qua F5 & các lần mở trình duyệt)
+ * Lấy phiên đăng nhập hiện tại (chỉ giữ qua F5 trong cùng phiên trình duyệt; tắt trình duyệt là mất phiên)
  */
 export function getCurrentSession(): AuthSession | null {
   if (inMemoryActiveSession) return inMemoryActiveSession;
   try {
-    const raw =
-      sessionStorage.getItem(LOCAL_SESSION_STORAGE_KEY) ||
-      localStorage.getItem(LOCAL_SESSION_STORAGE_KEY);
+    // Dọn phiên cũ từng bị lưu vĩnh viễn trong localStorage ở các bản trước
+    localStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
+  } catch {}
+  try {
+    const raw = sessionStorage.getItem(LOCAL_SESSION_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AuthSession;
       if (parsed && parsed.user && parsed.user.username) {
@@ -728,14 +730,13 @@ export function getCurrentSession(): AuthSession | null {
 }
 
 /**
- * Lưu phiên đăng nhập hiện tại vào trình duyệt (giữ đăng nhập khi bấm F5 hoặc mở lại trình duyệt)
+ * Lưu phiên đăng nhập hiện tại chỉ trong sessionStorage (F5 vẫn giữ, tắt trình duyệt tự đăng xuất)
  */
 export function saveCurrentSession(session: AuthSession): void {
   inMemoryActiveSession = session;
   try {
-    const serialized = JSON.stringify(session);
-    sessionStorage.setItem(LOCAL_SESSION_STORAGE_KEY, serialized);
-    localStorage.setItem(LOCAL_SESSION_STORAGE_KEY, serialized);
+    sessionStorage.setItem(LOCAL_SESSION_STORAGE_KEY, JSON.stringify(session));
+    localStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
   } catch {}
 }
 
