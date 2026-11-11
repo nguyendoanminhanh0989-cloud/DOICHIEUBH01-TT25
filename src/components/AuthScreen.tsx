@@ -6,8 +6,10 @@ import {
 import {
   AppUser,
   fetchAllUsers,
+  getSavedLoginCredentials,
   loginWithCredentials,
   registerUserAccount,
+  saveLoginCredentials,
 } from '../lib/authService';
 
 interface AuthScreenProps {
@@ -25,11 +27,12 @@ export default function AuthScreen({
     fetchAllUsers().catch(() => {});
   }, []);
 
-  // Login form state
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  // Login form state (Tự động điền tài khoản đã lưu vết trên trình duyệt)
+  const savedCreds = getSavedLoginCredentials();
+  const [username, setUsername] = useState(savedCreds.username);
+  const [password, setPassword] = useState(savedCreds.password);
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(savedCreds.remember);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(forcedLogoutMessage || null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -68,6 +71,7 @@ export default function AuthScreen({
     setIsSubmitting(true);
     try {
       const user = await loginWithCredentials(username, password, rememberMe);
+      saveLoginCredentials(username, password, rememberMe);
       onLoginSuccess(user);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
@@ -195,7 +199,7 @@ export default function AuthScreen({
           )}
 
           {tab === 'LOGIN' ? (
-            <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
+            <form onSubmit={handleLogin} autoComplete="on" className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Tên đăng nhập (Username)
@@ -204,9 +208,10 @@ export default function AuthScreen({
                   <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
+                    name="username"
                     required
                     autoFocus
-                    autoComplete="off"
+                    autoComplete="username"
                     value={username}
                     onChange={e => setUsername(e.target.value)}
                     placeholder="Nhập tên đăng nhập..."
@@ -223,8 +228,9 @@ export default function AuthScreen({
                   <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type={showPassword ? 'text' : 'password'}
+                    name="password"
                     required
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Nhập mật khẩu được cấp..."
@@ -242,9 +248,15 @@ export default function AuthScreen({
               </div>
 
               <div className="flex items-center justify-between text-xs">
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 font-semibold">
-                  🔒 Tự động đăng xuất khi F5 hoặc thoát web
-                </span>
+                <label className="inline-flex items-center gap-2 text-xs text-slate-700 font-bold cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={e => setRememberMe(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span>Lưu vết tài khoản trên trình duyệt</span>
+                </label>
                 <button
                   type="button"
                   onClick={() =>

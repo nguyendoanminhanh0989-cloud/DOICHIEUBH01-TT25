@@ -44,6 +44,14 @@ import HoSoChungTu from './components/HoSoChungTu';
 import KhamSucKhoe from './components/KhamSucKhoe';
 import Xml3176Module from './components/Xml3176Module';
 import ChungTuTt12Module from './components/ChungTuTt12Module';
+import {
+  clearAllSessionCache,
+  getSessionCache,
+  getSessionSync,
+  removeSessionCache,
+  setSessionCache,
+  setSessionSync,
+} from './lib/sessionCache';
 import QuickLinksSidebar from './components/QuickLinksSidebar';
 import AuthScreen from './components/AuthScreen';
 import UserManagementModal from './components/UserManagementModal';
@@ -173,9 +181,15 @@ export default function App() {
   const [showUserManagementModal, setShowUserManagementModal] = useState(false);
   const [forcedLogoutMessage, setForcedLogoutMessage] = useState<string | null>(null);
 
-  const [mainTab, setMainTab] = useState<'HOME' | 'DOI_SOAT' | 'CHUNG_TU' | 'KHAM_SUC_KHOE' | 'XML_3176' | 'TT12_BH01_BH02'>('HOME');
+  const [mainTab, setMainTab] = useState<'HOME' | 'DOI_SOAT' | 'CHUNG_TU' | 'KHAM_SUC_KHOE' | 'XML_3176' | 'TT12_BH01_BH02'>(() =>
+    getSessionSync('app_main_tab', 'HOME')
+  );
   const [bhxhData, setBhxhData] = useState<any[]>([]);
   const [hisData, setHisData] = useState<any[]>([]);
+
+  useEffect(() => {
+    setSessionSync('app_main_tab', mainTab);
+  }, [mainTab]);
 
   // Kiểm tra định kỳ trạng thái tài khoản từ Cloud (nếu bị Admin tạm ngưng hoặc xóa thì tự động văng ra màn hình đăng nhập)
   useEffect(() => {
@@ -214,22 +228,11 @@ export default function App() {
     setSummary(null);
     setActiveTab('upload');
     setFilterType('ALL');
-    try {
-      sessionStorage.removeItem('hoso_chungtu_records');
-      localStorage.removeItem('hoso_chungtu_records');
-    } catch {}
+    removeSessionCache('doi_soat_state_v1').catch(() => {});
   };
-
-  useEffect(() => {
-    try {
-      sessionStorage.removeItem('hoso_chungtu_records');
-      localStorage.removeItem('hoso_chungtu_records');
-    } catch {}
-  }, []);
 
   const handleSelectModuleTab = (tab: 'HOME' | AppModuleId) => {
     if (tab === 'HOME') {
-      resetDoiSoatData();
       setMainTab('HOME');
       return;
     }
@@ -243,15 +246,13 @@ export default function App() {
       alert('⛔ Tài khoản của bạn chưa được Quản trị viên cấp quyền sử dụng phân hệ này!');
       return;
     }
-    if (tab !== 'DOI_SOAT') {
-      resetDoiSoatData();
-    }
     setMainTab(tab);
   };
 
   const handleLogout = () => {
     logoutUser();
     resetDoiSoatData();
+    clearAllSessionCache().catch(() => {});
     setCurrentUser(null);
     setForcedLogoutMessage(null);
     setMainTab('HOME');
@@ -268,6 +269,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'upload' | 'mapping' | 'results'>('upload');
   const [filterType, setFilterType] = useState<string>('ALL');
+  const [doiSoatCacheLoaded, setDoiSoatCacheLoaded] = useState(false);
 
   const [bhxhSort, setBhxhSort] = useState<SortConfig>(null);
   const [hisSort, setHisSort] = useState<SortConfig>(null);
@@ -304,6 +306,81 @@ export default function App() {
 
   const [bhxhFiles, setBhxhFiles] = useState<{ name: string; count: number }[]>([]);
   const [hisFiles, setHisFiles] = useState<{ name: string; count: number }[]>([]);
+
+  // Khôi phục dữ liệu Đối chiếu BH01 khi bấm F5 (cùng phiên trình duyệt)
+  useEffect(() => {
+    let mounted = true;
+    getSessionCache<{
+      bhxhData: any[];
+      hisData: any[];
+      bhxhConverted: TemplateRow[];
+      hisConverted: TemplateRow[];
+      bhxhMapping: ColumnMapping;
+      hisMapping: ColumnMapping;
+      bhxhFiles: { name: string; count: number }[];
+      hisFiles: { name: string; count: number }[];
+      results: ComparisonResult[];
+      summary: AuditSummary | null;
+      activeTab: 'upload' | 'mapping' | 'results';
+      filterType: string;
+    }>('doi_soat_state_v1')
+      .then(cached => {
+        if (!mounted) return;
+        if (cached) {
+          if (Array.isArray(cached.bhxhData)) setBhxhData(cached.bhxhData);
+          if (Array.isArray(cached.hisData)) setHisData(cached.hisData);
+          if (Array.isArray(cached.bhxhConverted)) setBhxhConverted(cached.bhxhConverted);
+          if (Array.isArray(cached.hisConverted)) setHisConverted(cached.hisConverted);
+          if (cached.bhxhMapping) setBhxhMapping(cached.bhxhMapping);
+          if (cached.hisMapping) setHisMapping(cached.hisMapping);
+          if (Array.isArray(cached.bhxhFiles)) setBhxhFiles(cached.bhxhFiles);
+          if (Array.isArray(cached.hisFiles)) setHisFiles(cached.hisFiles);
+          if (Array.isArray(cached.results)) setResults(cached.results);
+          if (cached.summary) setSummary(cached.summary);
+          if (cached.activeTab) setActiveTab(cached.activeTab);
+          if (cached.filterType) setFilterType(cached.filterType);
+        }
+      })
+      .finally(() => {
+        if (mounted) setDoiSoatCacheLoaded(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Lưu tự động dữ liệu Đối chiếu BH01 vào cache phiên trình duyệt (giữ qua F5, tắt trình duyệt tự xóa)
+  useEffect(() => {
+    if (!doiSoatCacheLoaded) return;
+    setSessionCache('doi_soat_state_v1', {
+      bhxhData,
+      hisData,
+      bhxhConverted,
+      hisConverted,
+      bhxhMapping,
+      hisMapping,
+      bhxhFiles,
+      hisFiles,
+      results,
+      summary,
+      activeTab,
+      filterType,
+    }).catch(() => {});
+  }, [
+    doiSoatCacheLoaded,
+    bhxhData,
+    hisData,
+    bhxhConverted,
+    hisConverted,
+    bhxhMapping,
+    hisMapping,
+    bhxhFiles,
+    hisFiles,
+    results,
+    summary,
+    activeTab,
+    filterType,
+  ]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'BHXH' | 'HIS') => {
     const files = e.target.files;
@@ -691,105 +768,107 @@ export default function App() {
       {/* Sidebar liên kết nhanh - chỉ hiện trên trang HOME */}
       {mainTab === 'HOME' && <QuickLinksSidebar />}
 
-      <header className="bg-white border-b border-slate-300 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-[1600px] mx-auto px-3 h-11 flex items-center justify-between gap-3">
+      <header className="bg-white/95 backdrop-blur-md border-b border-slate-300 sticky top-0 z-50 shadow-xs">
+        <div className="max-w-[1600px] mx-auto px-3 py-1.5 min-h-11 flex flex-wrap xl:flex-nowrap items-center justify-between gap-2">
           {/* Logo + Home button */}
           <button
             onClick={() => setMainTab('HOME')}
             className={cn(
-              "flex items-center gap-1.5 group transition-all rounded-md px-2 py-1 border shrink-0",
-              mainTab === 'HOME' ? "bg-blue-50 border-blue-300" : "border-slate-200 hover:bg-slate-50 hover:border-slate-300"
+              "flex items-center gap-1.5 group transition-all rounded-lg px-2.5 py-1 border shrink-0 cursor-pointer",
+              mainTab === 'HOME'
+                ? "bg-blue-50 border-blue-300 shadow-2xs"
+                : "bg-white border-slate-200 hover:bg-slate-50 hover:border-slate-300"
             )}
-            title="Trang chủ"
+            title="Về Trang chủ"
           >
             <div className={cn(
-              "w-6 h-6 rounded flex items-center justify-center text-white transition-all",
+              "w-6 h-6 rounded-md flex items-center justify-center text-white transition-all shrink-0",
               mainTab === 'HOME' ? "bg-blue-700" : "bg-blue-600 group-hover:bg-blue-700"
             )}>
               <Home className="w-3.5 h-3.5" />
             </div>
-            <h1 className="text-[12px] font-extrabold tracking-tight text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
-              ĐỐI CHIẾU & CHỨNG TỪ <span className="bg-slate-100 text-[9px] px-1.5 py-px rounded text-slate-500 font-bold border border-slate-200">ENTERPRISE</span>
+            <h1 className="text-[11.5px] font-extrabold tracking-tight text-slate-800 flex items-center gap-1 whitespace-nowrap">
+              <span>TRANG CHỦ</span>
+              {mainTab === 'HOME' && (
+                <span className="bg-blue-100 text-[9px] px-1.5 py-px rounded text-blue-700 font-bold border border-blue-200">
+                  ĐỐI CHIẾU & CHỨNG TỪ
+                </span>
+              )}
             </h1>
           </button>
 
           {mainTab !== 'HOME' && (
-          <nav className="flex items-center gap-1.5 flex-1 justify-center min-w-0">
+          <nav className="flex flex-wrap items-center justify-center gap-1.5 flex-1 min-w-0">
             <button
               onClick={() => handleSelectModuleTab('DOI_SOAT')}
               className={cn(
-                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
                 mainTab === 'DOI_SOAT'
-                  ? "bg-slate-800 text-white border-slate-800 shadow-sm"
+                  ? "bg-slate-800 text-white border-slate-800 shadow-xs"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50 hover:border-slate-400"
               )}
             >
-              <BarChart3 className="w-3.5 h-3.5" />
-              ĐỐI CHIẾU BH01
+              <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+              <span>ĐỐI CHIẾU BH01</span>
             </button>
             <button
               onClick={() => handleSelectModuleTab('CHUNG_TU')}
               className={cn(
-                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
                 mainTab === 'CHUNG_TU'
-                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                  ? "bg-blue-600 text-white border-blue-600 shadow-xs"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-blue-50 hover:border-blue-300"
               )}
             >
-              <FileCode2 className="w-3.5 h-3.5" />
-              HỒ SƠ CHỨNG TỪ
+              <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+              <span>HỒ SƠ CHỨNG TỪ</span>
               <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'CHUNG_TU' ? "bg-white/20 text-white border-white/30" : "bg-blue-50 text-blue-700 border-blue-200")}>TT25</span>
             </button>
             <button
               onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
               className={cn(
-                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
                 mainTab === 'KHAM_SUC_KHOE'
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300"
               )}
             >
-              <FileCode2 className="w-3.5 h-3.5" />
-              KHÁM SỨC KHỎE
+              <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+              <span>KHÁM SỨC KHỎE</span>
               <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'KHAM_SUC_KHOE' ? "bg-white/20 text-white border-white/30" : "bg-emerald-50 text-emerald-700 border-emerald-200")}>EMRHUB</span>
             </button>
             <button
               onClick={() => handleSelectModuleTab('XML_3176')}
               className={cn(
-                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
                 mainTab === 'XML_3176'
-                  ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+                  ? "bg-amber-500 text-white border-amber-500 shadow-xs"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-amber-50 hover:border-amber-300"
               )}
             >
-              <FileCode2 className="w-3.5 h-3.5" />
-              ĐỌC & KÝ XML 3176
+              <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+              <span>ĐỌC & KÝ XML 3176</span>
               <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'XML_3176' ? "bg-white/20 text-white border-white/30" : "bg-amber-50 text-amber-800 border-amber-200")}>15 BẢNG</span>
             </button>
             <button
               onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
               className={cn(
-                "px-3 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap",
+                "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
                 mainTab === 'TT12_BH01_BH02'
-                  ? "bg-purple-600 text-white border-purple-600 shadow-sm"
+                  ? "bg-purple-600 text-white border-purple-600 shadow-xs"
                   : "bg-white text-slate-600 border-slate-300 hover:bg-purple-50 hover:border-purple-300"
               )}
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              CHỨNG TỪ TT12 BHXH - BH01 - BH02
-              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'TT12_BH01_BH02' ? "bg-white/20 text-white border-white/30" : "bg-purple-50 text-purple-800 border-purple-200")}>TT12 & PDF</span>
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>CHỨNG TỪ TT12</span>
+              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'TT12_BH01_BH02' ? "bg-white/20 text-white border-white/30" : "bg-purple-50 text-purple-800 border-purple-200")}>BH01 • BH02</span>
             </button>
           </nav>
           )}
 
           <div className="flex items-center gap-1.5 text-[10px] font-semibold shrink-0">
-            <div className="hidden xl:flex items-center gap-1.5 text-slate-600 bg-slate-50 px-2 py-1 rounded-md border border-slate-300">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-              <span>SmartCA: <span className="font-bold text-slate-800">Sẵn sàng</span></span>
-            </div>
-
             {/* Badge Thông tin tài khoản đang đăng nhập */}
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-md border border-slate-300 text-slate-700">
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-300 text-slate-700">
               <div className={cn(
                 "w-4 h-4 rounded flex items-center justify-center text-[9px] font-black text-white shrink-0",
                 currentUser.role === 'ADMIN' ? "bg-indigo-600" : "bg-blue-600"
@@ -813,7 +892,7 @@ export default function App() {
             <button
               onClick={() => setShowUserManagementModal(true)}
               className={cn(
-                "px-2.5 py-1 rounded-md font-bold flex items-center gap-1 border transition-all cursor-pointer",
+                "px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 border transition-all cursor-pointer",
                 currentUser.role === 'ADMIN'
                   ? "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-700 shadow-xs"
                   : "bg-white hover:bg-slate-50 text-slate-700 border-slate-300"
@@ -836,7 +915,7 @@ export default function App() {
             {/* Nút Đăng xuất */}
             <button
               onClick={handleLogout}
-              className="px-2 py-1 rounded-md font-bold flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
+              className="px-2 py-1 rounded-lg font-bold flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-all cursor-pointer"
               title="Đăng xuất khỏi hệ thống"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -863,7 +942,7 @@ export default function App() {
           {/* Overlay tối nhẹ để text dễ đọc */}
           <div className="absolute inset-0 bg-black/20" />
           {/* Nội dung trung tâm */}
-          <div className="relative z-10 flex flex-col items-center gap-6 text-center px-8">
+          <div className="relative z-10 flex flex-col items-center gap-6 text-center px-6 max-w-[1440px]">
             <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/20 shadow-2xl">
               <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white shadow-lg">
                 <ShieldCheck className="w-7 h-7" />
@@ -873,45 +952,47 @@ export default function App() {
                 <p className="text-white/70 text-sm font-semibold tracking-widest">BHYT · TT25 · ENTERPRISE</p>
               </div>
             </div>
-            <div className="flex flex-wrap justify-center gap-4 mt-4">
+            <div className="flex flex-wrap items-stretch justify-center gap-3.5 mt-4">
               <button
                 onClick={() => handleSelectModuleTab('DOI_SOAT')}
-                className="flex items-center gap-2 bg-white/90 hover:bg-white text-slate-800 font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
+                className="flex items-center gap-2.5 bg-white/95 hover:bg-white text-slate-800 font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
               >
-                <BarChart3 className="w-5 h-5 text-indigo-600" />
-                ĐỐI CHIẾU BH01
+                <BarChart3 className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span>ĐỐI CHIẾU BH01</span>
               </button>
               <button
                 onClick={() => handleSelectModuleTab('CHUNG_TU')}
-                className="flex items-center gap-2 bg-blue-600/90 hover:bg-blue-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
+                className="flex items-center gap-2.5 bg-blue-600/95 hover:bg-blue-600 text-white font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
               >
-                <FileCode2 className="w-5 h-5" />
-                HỒ SƠ CHỨNG TỪ
+                <FileCode2 className="w-5 h-5 shrink-0" />
+                <span>HỒ SƠ CHỨNG TỪ</span>
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">TT25</span>
               </button>
               <button
                 onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
-                className="flex items-center gap-2 bg-emerald-600/90 hover:bg-emerald-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
+                className="flex items-center gap-2.5 bg-emerald-600/95 hover:bg-emerald-600 text-white font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
               >
-                <FileCode2 className="w-5 h-5" />
-                KHÁM SỨC KHỎE
+                <FileCode2 className="w-5 h-5 shrink-0" />
+                <span>KHÁM SỨC KHỎE</span>
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">API</span>
               </button>
               <button
                 onClick={() => handleSelectModuleTab('XML_3176')}
-                className="flex items-center gap-2 bg-amber-600/90 hover:bg-amber-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
+                className="flex items-center gap-2.5 bg-amber-600/95 hover:bg-amber-600 text-white font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
               >
-                <FileCode2 className="w-5 h-5" />
-                ĐỌC & KÝ XML 3176
+                <FileCode2 className="w-5 h-5 shrink-0" />
+                <span>ĐỌC & KÝ XML 3176</span>
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">15 BẢNG</span>
               </button>
               <button
                 onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
-                className="flex items-center gap-2 bg-purple-600/90 hover:bg-purple-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer"
+                className="flex items-center gap-2.5 bg-purple-600/95 hover:bg-purple-600 text-white font-extrabold px-5 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-left"
               >
-                <ShieldCheck className="w-5 h-5" />
-                CHỨNG TỪ TT12 BHXH - BH01 - BH02
-                <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">BẢNG 1-6 • 01/BH • PDF 02/BH</span>
+                <ShieldCheck className="w-5 h-5 shrink-0 text-purple-100" />
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[13px] font-black tracking-tight">CHỨNG TỪ TT12 - BH01 - BH02</span>
+                  <span className="text-[10px] font-bold text-purple-100/90 mt-0.5">Bảng 1–6 • Mẫu 01/BH • Ký PDF 02/BH</span>
+                </div>
               </button>
             </div>
             <div className="flex items-center gap-2 mt-1 bg-slate-900/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/15 text-xs text-white/90">

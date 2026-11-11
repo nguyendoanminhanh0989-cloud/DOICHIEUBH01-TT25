@@ -657,44 +657,90 @@ async function upsertUserEverywhere(user: AppUser): Promise<AppUser> {
   return user;
 }
 
-// Chỉ lưu phiên đăng nhập trên RAM (bộ nhớ tạm của trang hiện tại).
-// Khi F5 (tải lại trang) hoặc tắt trình duyệt/tab, biến RAM tự động về null -> tự động đăng xuất hoàn toàn, không lưu trên trình duyệt!
-let inMemoryActiveSession: AuthSession | null = null;
+const SAVED_CREDENTIALS_STORAGE_KEY = 'bhxh_tt25_saved_credentials_v1';
 
-if (typeof window !== 'undefined') {
+export interface SavedLoginCredentials {
+  username: string;
+  password: string;
+  remember: boolean;
+}
+
+/**
+ * Lấy thông tin tài khoản đã lưu vết trên trình duyệt (dùng cho màn hình Đăng nhập)
+ */
+export function getSavedLoginCredentials(): SavedLoginCredentials {
   try {
-    sessionStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
-    localStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
-    window.addEventListener('beforeunload', () => {
-      inMemoryActiveSession = null;
-      try {
-        sessionStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
-        localStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
-      } catch {}
-    });
+    const raw = localStorage.getItem(SAVED_CREDENTIALS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.username === 'string') {
+        return {
+          username: parsed.username || '',
+          password: parsed.password || '',
+          remember: parsed.remember !== false,
+        };
+      }
+    }
+  } catch {}
+  return { username: '', password: '', remember: true };
+}
+
+/**
+ * Lưu vết tài khoản đăng nhập trên trình duyệt
+ */
+export function saveLoginCredentials(username: string, password: string, remember = true): void {
+  try {
+    if (!remember) {
+      localStorage.removeItem(SAVED_CREDENTIALS_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(
+      SAVED_CREDENTIALS_STORAGE_KEY,
+      JSON.stringify({
+        username: username.trim(),
+        password,
+        remember: true,
+      })
+    );
   } catch {}
 }
 
+let inMemoryActiveSession: AuthSession | null = null;
+
 /**
- * Lấy phiên đăng nhập hiện tại (chỉ lưu trên RAM, F5 hoặc thoát web tự động mất)
+ * Lấy phiên đăng nhập hiện tại (lưu vết trên trình duyệt qua F5 & các lần mở trình duyệt)
  */
 export function getCurrentSession(): AuthSession | null {
-  return inMemoryActiveSession;
+  if (inMemoryActiveSession) return inMemoryActiveSession;
+  try {
+    const raw =
+      sessionStorage.getItem(LOCAL_SESSION_STORAGE_KEY) ||
+      localStorage.getItem(LOCAL_SESSION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as AuthSession;
+      if (parsed && parsed.user && parsed.user.username) {
+        inMemoryActiveSession = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  return null;
 }
 
 /**
- * Lưu phiên đăng nhập hiện tại (chỉ lưu trên RAM, tuyệt đối không lưu vào localStorage / sessionStorage)
+ * Lưu phiên đăng nhập hiện tại vào trình duyệt (giữ đăng nhập khi bấm F5 hoặc mở lại trình duyệt)
  */
 export function saveCurrentSession(session: AuthSession): void {
   inMemoryActiveSession = session;
   try {
-    sessionStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
-    localStorage.removeItem(LOCAL_SESSION_STORAGE_KEY);
+    const serialized = JSON.stringify(session);
+    sessionStorage.setItem(LOCAL_SESSION_STORAGE_KEY, serialized);
+    localStorage.setItem(LOCAL_SESSION_STORAGE_KEY, serialized);
   } catch {}
 }
 
 /**
- * Đăng xuất tài khoản
+ * Đăng xuất tài khoản (xóa phiên đăng nhập hiện tại, nhưng vẫn giữ vết tài khoản gợi ý nếu người dùng đã lưu)
  */
 export function logoutUser(): void {
   inMemoryActiveSession = null;

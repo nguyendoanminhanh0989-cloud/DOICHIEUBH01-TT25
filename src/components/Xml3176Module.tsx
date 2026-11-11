@@ -31,13 +31,19 @@ import {
 } from '../lib/localTokenSignerService';
 import { prepareXmlForSigning } from '../lib/xmlBuilder';
 import ConfigModal from './ConfigModal';
+import { getSessionCache, getSessionSync, removeSessionCache, setSessionCache, setSessionSync } from '../lib/sessionCache';
 
 type ActiveTab = 'ERRORS' | Xml3176TableId;
 
 export default function Xml3176Module() {
-  // Dữ liệu XML hoàn toàn chỉ lưu trên RAM (useState), tuyệt đối không lưu localStorage/sessionStorage (F5 mất hoàn toàn)
-  const [doc, setDoc] = useState<Xml3176ParsedDoc | null>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('XML1');
+  // Lưu cache dữ liệu XML 3176 trong phiên trình duyệt (giữ qua F5, tắt trình duyệt tự xóa)
+  const [doc, setDoc] = useState<Xml3176ParsedDoc | null>(() =>
+    getSessionSync<Xml3176ParsedDoc | null>('xml3176_doc_v1', null)
+  );
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
+    getSessionSync<ActiveTab>('xml3176_active_tab_v1', 'XML1')
+  );
+  const [cacheHydrated, setCacheHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedHosoFilter, setSelectedHosoFilter] = useState<string>('ALL');
@@ -45,7 +51,44 @@ export default function Xml3176Module() {
   const pageSize = 50;
 
   // Danh sách các hosoIndex được tích chọn ở Bảng 1 để Ký số / Xuất XML
-  const [selectedHosoIndices, setSelectedHosoIndices] = useState<Set<number>>(new Set());
+  const [selectedHosoIndices, setSelectedHosoIndices] = useState<Set<number>>(() => {
+    const saved = getSessionSync<number[]>('xml3176_selected_indices_v1', []);
+    return new Set(Array.isArray(saved) ? saved : []);
+  });
+
+  React.useEffect(() => {
+    let mounted = true;
+    getSessionCache<Xml3176ParsedDoc>('xml3176_doc_v1')
+      .then(cachedDoc => {
+        if (!mounted) return;
+        if (cachedDoc && cachedDoc.tables) {
+          setDoc(cachedDoc);
+          setSelectedHosoIndices(prev => {
+            if (prev.size > 0) return prev;
+            const all = new Set<number>();
+            for (let i = 0; i < (cachedDoc.hosoFiles?.length || 0); i++) all.add(i);
+            return all;
+          });
+        }
+      })
+      .finally(() => {
+        if (mounted) setCacheHydrated(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!cacheHydrated) return;
+    if (doc) {
+      setSessionCache('xml3176_doc_v1', doc).catch(() => {});
+    } else {
+      removeSessionCache('xml3176_doc_v1').catch(() => {});
+    }
+    setSessionSync('xml3176_active_tab_v1', activeTab);
+    setSessionSync('xml3176_selected_indices_v1', Array.from(selectedHosoIndices));
+  }, [cacheHydrated, doc, activeTab, selectedHosoIndices]);
 
   // Chỉnh sửa chi tiết 1 dòng
   const [editingRow, setEditingRow] = useState<Xml3176Row | null>(null);

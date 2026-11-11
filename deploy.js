@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 
 const args = process.argv.slice(2);
-const message = args.length > 0 ? args.join(' ') : 'Update auto-deploy';
+const message = args.length > 0 ? args.join(' ') : 'UI balance, browser account remember, F5 session cache & standard 01BH XML export';
 
 try {
   console.log('📦 1/3: Đang stage các file thay đổi...');

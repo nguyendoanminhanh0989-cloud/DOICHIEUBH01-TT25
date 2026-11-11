@@ -30,6 +30,7 @@ import KySoModal from './KySoModal';
 import CskcbSetupModal, { CskcbConfig } from './CskcbSetupModal';
 import type { HoSoRecord } from '../lib/signAndSubmitService';
 import { COLUMN_DISPLAY, HoSoType } from '../lib/importMapper';
+import { getSessionCache, getSessionSync, removeSessionCache, setSessionCache } from '../lib/sessionCache';
 
 export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -68,16 +69,33 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const [filterStatus, setFilterStatus] = useState('ALL');
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  // Dữ liệu chứng từ chỉ lưu trên RAM trong phiên thao tác hiện tại; tuyệt đối không lưu vào sessionStorage / localStorage
-  // Khi F5, đăng xuất hoặc thoát về Trang chủ sẽ tự động xóa sạch dữ liệu, không cần xóa thủ công
-  const [records, setRecords] = useState<HoSoRecord[]>([]);
+  // Lưu cache dữ liệu chứng từ trong phiên trình duyệt (bấm F5 không mất dữ liệu, chỉ khi tắt trình duyệt mới tự xóa)
+  const [records, setRecords] = useState<HoSoRecord[]>(() =>
+    getSessionSync<HoSoRecord[]>('hoso_chungtu_records_v1', [])
+  );
+  const [cacheHydrated, setCacheHydrated] = useState(false);
 
   React.useEffect(() => {
-    try {
-      sessionStorage.removeItem('hoso_chungtu_records');
-      localStorage.removeItem('hoso_chungtu_records');
-    } catch {}
+    let mounted = true;
+    getSessionCache<HoSoRecord[]>('hoso_chungtu_records_v1')
+      .then(cached => {
+        if (!mounted) return;
+        if (Array.isArray(cached) && cached.length > 0) {
+          setRecords(cached);
+        }
+      })
+      .finally(() => {
+        if (mounted) setCacheHydrated(true);
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  React.useEffect(() => {
+    if (!cacheHydrated) return;
+    setSessionCache('hoso_chungtu_records_v1', records).catch(() => {});
+  }, [cacheHydrated, records]);
 
   const [cskcbMismatch, setCskcbMismatch] = useState<{ excelMa: string; configMa: string } | null>(null);
 
@@ -119,7 +137,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
     if (!window.confirm('Bạn có chắc chắn muốn xóa TẤT CẢ hồ sơ trong danh sách?')) return;
     setRecords([]);
     setSelectedIds(new Set());
-    sessionStorage.removeItem('hoso_chungtu_records');
+    removeSessionCache('hoso_chungtu_records_v1').catch(() => {});
   };
 
   const handleDeleteRecord = (id: string) => {

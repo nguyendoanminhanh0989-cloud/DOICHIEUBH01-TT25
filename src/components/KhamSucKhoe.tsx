@@ -17,14 +17,22 @@ import KskDynamicForm from './forms/KskDynamicForm';
 import { type HoSoRecord } from '../lib/signAndSubmitService';
 import { pushKskXml } from '../lib/emrhubService';
 import { exportKskToWord, printKskPaper } from '../lib/kskWordExporter';
+import { getSessionCache, getSessionSync, setSessionCache, setSessionSync } from '../lib/sessionCache';
 
 
 
 export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
-  const [records, setRecords] = useState<HoSoRecord[]>([]);
-  const [waitingRecords, setWaitingRecords] = useState<HoSoRecord[]>([]);
-  const [fileName, setFileName] = useState('');
-  const [activeTab, setActiveTab] = useState<'upload' | 'preview'>('upload');
+  const [records, setRecords] = useState<HoSoRecord[]>(() =>
+    getSessionSync<HoSoRecord[]>('ksk_records_v1', [])
+  );
+  const [waitingRecords, setWaitingRecords] = useState<HoSoRecord[]>(() =>
+    getSessionSync<HoSoRecord[]>('ksk_waiting_records_v1', [])
+  );
+  const [fileName, setFileName] = useState(() => getSessionSync('ksk_file_name_v1', ''));
+  const [activeTab, setActiveTab] = useState<'upload' | 'preview'>(() =>
+    getSessionSync<'upload' | 'preview'>('ksk_active_tab_v1', 'upload')
+  );
+  const [cacheHydrated, setCacheHydrated] = useState(false);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isSmartCaConfigOpen, setIsSmartCaConfigOpen] = useState(false);
   const [config, setConfig] = useState<KskConfig | null>(null);
@@ -47,7 +55,31 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
         setConfig(JSON.parse(saved));
       } catch (e) {}
     }
+    let mounted = true;
+    Promise.all([
+      getSessionCache<HoSoRecord[]>('ksk_records_v1'),
+      getSessionCache<HoSoRecord[]>('ksk_waiting_records_v1'),
+    ])
+      .then(([cachedRecs, cachedWaiting]) => {
+        if (!mounted) return;
+        if (Array.isArray(cachedRecs) && cachedRecs.length > 0) setRecords(cachedRecs);
+        if (Array.isArray(cachedWaiting) && cachedWaiting.length > 0) setWaitingRecords(cachedWaiting);
+      })
+      .finally(() => {
+        if (mounted) setCacheHydrated(true);
+      });
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!cacheHydrated) return;
+    setSessionCache('ksk_records_v1', records).catch(() => {});
+    setSessionCache('ksk_waiting_records_v1', waitingRecords).catch(() => {});
+    setSessionSync('ksk_file_name_v1', fileName);
+    setSessionSync('ksk_active_tab_v1', activeTab);
+  }, [cacheHydrated, records, waitingRecords, fileName, activeTab]);
   
   const processExcelFile = (
     file: File,

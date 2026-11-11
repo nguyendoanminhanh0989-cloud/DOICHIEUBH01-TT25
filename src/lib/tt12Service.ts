@@ -407,7 +407,7 @@ function formatNumericValue(rawVal: any): string {
     if (Math.floor(num) === num) {
       return Math.trunc(num).toString();
     }
-    return num.toFixed(2);
+    return Number(num.toFixed(2)).toString();
   }
   return s;
 }
@@ -422,10 +422,18 @@ function format01BhDateValue(rawVal: any): string {
     return `${rawVal.getFullYear()}${pad(rawVal.getMonth() + 1)}${pad(rawVal.getDate())}${pad(rawVal.getHours())}${pad(rawVal.getMinutes())}`;
   }
   let s = String(rawVal).trim();
-  if (!s) return '';
+  if (!s || s === '0') return '';
 
-  // Nếu là chuỗi 8 chữ số yyyyMMdd -> bù 0000
   const cleanDigits = s.replace(/\s+/g, '');
+  // Nếu chỉ có 4 chữ số năm sinh (VD: 1958 -> 195801010000)
+  if (/^\d{4}$/.test(cleanDigits)) {
+    return cleanDigits + '01010000';
+  }
+  // Nếu có 6 chữ số yyyyMM -> yyyyMM010000
+  if (/^\d{6}$/.test(cleanDigits)) {
+    return cleanDigits + '010000';
+  }
+  // Nếu là chuỗi 8 chữ số yyyyMMdd -> bù 0000
   if (/^\d{8}$/.test(cleanDigits)) {
     return cleanDigits + '0000';
   }
@@ -874,7 +882,9 @@ export function normalizeAndEnrichRow(
     }
   }
 
-  if ((!mapped.STT || !mapped.STT.trim()) && fallbackIndex !== undefined) {
+  if (config.tableCode.includes('01BH') && fallbackIndex !== undefined) {
+    mapped.STT = String(fallbackIndex);
+  } else if ((!mapped.STT || !mapped.STT.trim()) && fallbackIndex !== undefined) {
     mapped.STT = String(fallbackIndex);
   }
 
@@ -893,25 +903,77 @@ export function normalizeAndEnrichRow(
     mapped[col] = val;
   }
 
-  // 3. Tự động bù đắp dữ liệu thiếu cho Mẫu 01/BH
+  // 3. Tự động chuẩn hóa & bù đắp dữ liệu thiếu cho cả Mẫu 01/BH (C79) và Mẫu 01/BH (7980a)
   if (config.tableCode.includes('01BH')) {
-    const curTongChiBh = mapped.T_TONGCHI_BH || '';
-    if (!curTongChiBh || curTongChiBh === '0') {
-      const bhtt = parseFloat((mapped.T_BHTT || '0').replace(/,/g, '.')) || 0;
-      const bncct = parseFloat((mapped.T_BNCCT || '0').replace(/,/g, '.')) || 0;
-      const sumBh = bhtt + bncct;
-      mapped.T_TONGCHI_BH = Math.floor(sumBh) === sumBh ? Math.trunc(sumBh).toString() : sumBh.toFixed(2);
+    // GIOI_TINH: chuẩn hóa Nam -> 1, Nữ -> 2 nếu người dùng nhập chữ
+    const gt = (mapped.GIOI_TINH || '').trim().toUpperCase();
+    if (gt === 'NAM' || gt === 'M') mapped.GIOI_TINH = '1';
+    else if (gt === 'NU' || gt === 'NỮ' || gt === 'F') mapped.GIOI_TINH = '2';
+
+    // SO_NGAY_DTRI: mặc định "0" nếu trống
+    if (!mapped.SO_NGAY_DTRI || !mapped.SO_NGAY_DTRI.trim()) {
+      mapped.SO_NGAY_DTRI = '0';
+    } else {
+      mapped.SO_NGAY_DTRI = formatNumericValue(mapped.SO_NGAY_DTRI) || '0';
     }
 
-    const ngayRa = mapped.NGAY_RA || '';
-    if (ngayRa.length >= 6) {
-      if (!mapped.NAM_QT) {
-        mapped.NAM_QT = ngayRa.substring(0, 4);
+    // MA_LOAI_KCB: bắt buộc 2 chữ số (01, 02, 03...), mặc định "01" nếu trống (giống MainView.xaml.cs dòng 670)
+    const mlkcb = (mapped.MA_LOAI_KCB || '').trim();
+    if (!mlkcb) {
+      mapped.MA_LOAI_KCB = '01';
+    } else if (/^\d$/.test(mlkcb)) {
+      mapped.MA_LOAI_KCB = '0' + mlkcb;
+    }
+
+    // Các trường số tiền của 01/BH: mặc định "0" nếu trống, định dạng số thập phân gọn chuẩn (0.##)
+    const moneyFields = [
+      'T_TONGCHI_BV',
+      'T_TONGCHI_BH',
+      'T_BHTT',
+      'T_BNCCT',
+      'T_BNTT',
+      'T_NGUONKHAC',
+    ] as const;
+    for (const mf of moneyFields) {
+      const formatted = formatNumericValue(mapped[mf]);
+      mapped[mf] = formatted !== '' ? formatted : '0';
+    }
+
+    // Tự động tính T_TONGCHI_BH nếu bị trống hoặc bằng 0 (khi nhập từ file 7980a 42 cột hoặc XML1 chỉ có T_TONGCHI, T_BHTT, T_BNCCT, T_BNTT)
+    const curTongChiBh = parseFloat(mapped.T_TONGCHI_BH || '0') || 0;
+    const bhtt = parseFloat(mapped.T_BHTT || '0') || 0;
+    const bncct = parseFloat(mapped.T_BNCCT || '0') || 0;
+    const tongChiBv = parseFloat(mapped.T_TONGCHI_BV || '0') || 0;
+
+    if (curTongChiBh === 0) {
+      const sumBh = bhtt + bncct;
+      if (sumBh > 0) {
+        mapped.T_TONGCHI_BH = formatNumericValue(sumBh);
+      } else if (tongChiBv > 0) {
+        mapped.T_TONGCHI_BH = formatNumericValue(tongChiBv);
+      } else {
+        mapped.T_TONGCHI_BH = '0';
       }
-      if (!mapped.THANG_QT) {
-        const m = parseInt(ngayRa.substring(4, 6), 10);
-        if (!isNaN(m)) mapped.THANG_QT = String(m);
+    }
+
+    // Tự động trích NAM_QT, THANG_QT từ NGAY_RA (hoặc NGAY_VAO) nếu thiếu, và bỏ số 0 đứng đầu THANG_QT
+    const refDate = (mapped.NGAY_RA && mapped.NGAY_RA.length >= 6)
+      ? mapped.NGAY_RA
+      : (mapped.NGAY_VAO && mapped.NGAY_VAO.length >= 6 ? mapped.NGAY_VAO : '');
+
+    if (refDate.length >= 6) {
+      if (!mapped.NAM_QT || !/^\d{4}$/.test(mapped.NAM_QT.trim())) {
+        mapped.NAM_QT = refDate.substring(0, 4);
       }
+      if (!mapped.THANG_QT || !/^\d{1,2}$/.test(mapped.THANG_QT.trim())) {
+        const m = parseInt(refDate.substring(4, 6), 10);
+        if (!isNaN(m) && m >= 1 && m <= 12) {
+          mapped.THANG_QT = String(m);
+        }
+      }
+    }
+    if (mapped.THANG_QT && /^\d+$/.test(mapped.THANG_QT.trim())) {
+      mapped.THANG_QT = String(parseInt(mapped.THANG_QT.trim(), 10));
     }
   }
 
@@ -1075,11 +1137,59 @@ export function parseTt12ExcelBuffer(
   return parseTt12ExcelBufferWithMeta(buffer, config).rows;
 }
 
+export const MAU_7980A_TEMPLATE_COLUMNS: string[] = [
+  'STT',
+  'MA_BN',
+  'HO_TEN',
+  'NGAY_SINH',
+  'GIOI_TINH',
+  'DIA_CHI',
+  'MA_THE',
+  'MA_DKBD',
+  'GT_THE_TU',
+  'GT_THE_DEN',
+  'MA_BENH',
+  'MA_BENHKHAC',
+  'MA_LYDO_VVIEN',
+  'MA_NOI_CHUYEN',
+  'NGAY_VAO',
+  'NGAY_RA',
+  'SO_NGAY_DTRI',
+  'KET_QUA_DTRI',
+  'TINH_TRANG_RV',
+  'T_TONGCHI',
+  'T_XN',
+  'T_CDHA',
+  'T_THUOC',
+  'T_MAU',
+  'T_PTTT',
+  'T_VTYT',
+  'T_DVKT_TYLE',
+  'T_THUOC_TYLE',
+  'T_VTYT_TYLE',
+  'T_KHAM',
+  'T_GIUONG',
+  'T_VCHUYEN',
+  'T_BNTT',
+  'T_BHTT',
+  'T_NGOAIDS',
+  'MA_KHOA',
+  'NAM_QT',
+  'THANG_QT',
+  'MA_KHUVUC',
+  'MA_LOAIKCB',
+  'MA_CSKCB',
+  'T_NGUONKHAC',
+];
+
 /**
  * Tải về Biểu mẫu Excel trống (Chỉ gồm dòng tiêu đề cột chuẩn theo quy định, không chứa dữ liệu mẫu)
  */
 export function downloadBlankTt12ExcelTemplate(config: TT12TableConfig): void {
-  const cols = config.targetXmlColumns;
+  const cols =
+    config.tableCode === 'MAU_01BH_7980'
+      ? MAU_7980A_TEMPLATE_COLUMNS
+      : config.targetXmlColumns;
   const ws = XLSX.utils.aoa_to_sheet([cols]);
   ws['!cols'] = cols.map(c => ({ wch: Math.max(14, c.length + 4) }));
   const wb = XLSX.utils.book_new();
@@ -1407,12 +1517,13 @@ export function buildTt12XmlChunks(
     const slice = rows.slice(i * maxRecords, (i + 1) * maxRecords);
     const xmlContent = buildTt12Xml(slice, config);
     const suffix = totalParts > 1 ? `_P${i + 1}` : '';
+    const filePrefix = config.tableCode.includes('01BH') ? 'HSTH01BH' : config.tableCode;
     chunks.push({
       partIndex: i + 1,
       totalParts,
       recordCount: slice.length,
       xmlContent,
-      suggestedFileName: `${config.tableCode}_${ts}${suffix}.xml`,
+      suggestedFileName: `${filePrefix}_${ts}${suffix}.xml`,
     });
   }
 

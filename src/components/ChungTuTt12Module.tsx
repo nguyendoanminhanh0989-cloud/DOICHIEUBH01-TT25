@@ -50,26 +50,63 @@ import {
   DEFAULT_VNPT_SUBJECT,
 } from '../lib/vnptSmartCaService';
 import ConfigModal from './ConfigModal';
+import {
+  getSessionCache,
+  getSessionSync,
+  setSessionCache,
+  setSessionSync,
+} from '../lib/sessionCache';
 
 export default function ChungTuTt12Module() {
-  const [subTab, setSubTab] = useState<'XML_TT12_01BH' | 'PDF_02BH'>('XML_TT12_01BH');
+  const [subTab, setSubTab] = useState<'XML_TT12_01BH' | 'PDF_02BH'>(() =>
+    getSessionSync('tt12_sub_tab', 'XML_TT12_01BH')
+  );
   const [showConfigModal, setShowConfigModal] = useState(false);
 
   // ============================================================================
   // STATE TAB 1: DANH MỤC TT12 (BẢNG 1-6) & BÁO CÁO MẪU 01/BH (C79 / 7980a)
   // ============================================================================
-  const [selectedTableCode, setSelectedTableCode] = useState<string>('BANG_1');
+  const [selectedTableCode, setSelectedTableCode] = useState<string>(() =>
+    getSessionSync('tt12_selected_table_code', 'BANG_1')
+  );
   const currentConfig: TT12TableConfig = useMemo(
     () => TT12_CONFIGS.find(c => c.tableCode === selectedTableCode) || TT12_CONFIGS[0],
     [selectedTableCode]
   );
 
-  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  // Lưu trữ dữ liệu đã import theo từng bảng trong phiên trình duyệt (giữ qua F5, tắt trình duyệt tự xóa)
+  const [rowsByTable, setRowsByTable] = useState<Record<string, Record<string, string>[]>>(() =>
+    getSessionSync('tt12_rows_by_table_v1', {})
+  );
+  const [cacheHydrated, setCacheHydrated] = useState(false);
+
+  const rows = useMemo(
+    () => rowsByTable[selectedTableCode] || [],
+    [rowsByTable, selectedTableCode]
+  );
+
+  const setRows = (
+    updater:
+      | Record<string, string>[]
+      | ((prev: Record<string, string>[]) => Record<string, string>[]),
+    overrideTableCode?: string
+  ) => {
+    const targetCode = overrideTableCode || selectedTableCode;
+    setRowsByTable(prevMap => {
+      const prevRows = prevMap[targetCode] || [];
+      const nextRows = typeof updater === 'function' ? updater(prevRows) : updater;
+      return {
+        ...prevMap,
+        [targetCode]: nextRows,
+      };
+    });
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 50;
 
-  const [statusMsg, setStatusMsg] = useState<string>('Sẵn sàng. Hãy chọn danh mục, tải mẫu hoặc nạp dữ liệu.');
+  const [statusMsg, setStatusMsg] = useState<string>('Sẵn sàng. Hãy chọn danh mục, tải mẫu trống hoặc nhập dữ liệu.');
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error' | 'loading'>('info');
   const [isBusy, setIsBusy] = useState(false);
 
@@ -90,7 +127,7 @@ export default function ChungTuTt12Module() {
   const [pdfPageNumber, setPdfPageNumber] = useState<number>(1);
   const [pdfPageInfo, setPdfPageInfo] = useState<PdfPageInfo | null>(null);
   const [pdfStatusMsg, setPdfStatusMsg] = useState<string>(
-    'Chưa chọn file PDF. Bạn có thể bấm "Nạp Mẫu 02/BH.pdf Có Sẵn" hoặc chọn file PDF từ máy tính.'
+    'Chưa chọn file PDF. Bạn có thể bấm "Mở Biểu Mẫu Trống 02/BH.pdf" hoặc chọn file PDF từ máy tính.'
   );
   const [pdfStatusType, setPdfStatusType] = useState<'info' | 'success' | 'error' | 'loading'>('info');
   const [isPdfBusy, setIsPdfBusy] = useState(false);
@@ -100,13 +137,83 @@ export default function ChungTuTt12Module() {
   const [stampPreviewUrl, setStampPreviewUrl] = useState<string>('');
 
   // Tọa độ tương đối của khung chữ ký trên trang PDF (0..1)
-  const [sigBox, setSigBox] = useState<PdfRelativeBox>({
-    relX: 0.65,
-    relY: 0.62,
-    relW: 0.24,
-    relH: 0.14,
-  });
-  const [sigScalePercent, setSigScalePercent] = useState<number>(100);
+  const [sigBox, setSigBox] = useState<PdfRelativeBox>(() =>
+    getSessionSync('tt12_pdf_sig_box', {
+      relX: 0.65,
+      relY: 0.62,
+      relW: 0.24,
+      relH: 0.14,
+    })
+  );
+  const [sigScalePercent, setSigScalePercent] = useState<number>(() =>
+    getSessionSync('tt12_pdf_sig_scale', 100)
+  );
+
+  // Khôi phục dữ liệu từ IndexedDB khi bấm F5 (nếu dữ liệu lớn vượt quá sessionStorage)
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([
+      getSessionCache<Record<string, Record<string, string>[]>>('tt12_rows_by_table_v1'),
+      getSessionCache<{
+        pdfBytes: Uint8Array;
+        pdfFileName: string;
+        pdfSignedCount: number;
+        pdfPageNumber: number;
+      }>('tt12_pdf_state_v1'),
+    ])
+      .then(([cachedRowsMap, cachedPdf]) => {
+        if (!mounted) return;
+        if (cachedRowsMap && typeof cachedRowsMap === 'object') {
+          setRowsByTable(prev => ({ ...cachedRowsMap, ...prev }));
+        }
+        if (cachedPdf && cachedPdf.pdfBytes) {
+          const bytes =
+            cachedPdf.pdfBytes instanceof Uint8Array
+              ? cachedPdf.pdfBytes
+              : new Uint8Array(Object.values(cachedPdf.pdfBytes as any));
+          if (bytes.length > 0) {
+            setPdfBytes(bytes);
+            setPdfFileName(cachedPdf.pdfFileName || 'MAU_02BH.pdf');
+            setPdfSignedCount(cachedPdf.pdfSignedCount || 0);
+            setPdfPageNumber(cachedPdf.pdfPageNumber || 1);
+          }
+        }
+      })
+      .finally(() => {
+        if (mounted) setCacheHydrated(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSessionSync('tt12_sub_tab', subTab);
+  }, [subTab]);
+
+  useEffect(() => {
+    setSessionSync('tt12_selected_table_code', selectedTableCode);
+  }, [selectedTableCode]);
+
+  useEffect(() => {
+    if (!cacheHydrated) return;
+    setSessionCache('tt12_rows_by_table_v1', rowsByTable).catch(() => {});
+  }, [cacheHydrated, rowsByTable]);
+
+  useEffect(() => {
+    if (!cacheHydrated || !pdfBytes) return;
+    setSessionCache('tt12_pdf_state_v1', {
+      pdfBytes,
+      pdfFileName,
+      pdfSignedCount,
+      pdfPageNumber,
+    }).catch(() => {});
+  }, [cacheHydrated, pdfBytes, pdfFileName, pdfSignedCount, pdfPageNumber]);
+
+  useEffect(() => {
+    setSessionSync('tt12_pdf_sig_box', sigBox);
+    setSessionSync('tt12_pdf_sig_scale', sigScalePercent);
+  }, [sigBox, sigScalePercent]);
 
   const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -122,15 +229,20 @@ export default function ChungTuTt12Module() {
     initBox: { relX: 0.65, relY: 0.62, relW: 0.24, relH: 0.14 },
   });
 
-  // Reset trang khi đổi bảng
+  // Đổi bảng (vẫn giữ dữ liệu đã import của từng bảng trong phiên làm việc)
   const handleSelectTable = (code: string) => {
     setSelectedTableCode(code);
-    setRows([]);
     setSearchQuery('');
     setCurrentPage(1);
     const cfg = TT12_CONFIGS.find(c => c.tableCode === code);
-    setStatusMsg(`Đã chọn: ${cfg?.tableName}. Vui lòng nhập Excel, Import XML hoặc bấm "Nạp Dữ Liệu Mẫu".`);
-    setStatusType('info');
+    const existingCount = (rowsByTable[code] || []).length;
+    if (existingCount > 0) {
+      setStatusMsg(`Đang hiển thị ${existingCount.toLocaleString()} dòng đã nạp của ${cfg?.tableName}.`);
+      setStatusType('success');
+    } else {
+      setStatusMsg(`Đã chọn: ${cfg?.tableName}. Vui lòng Tải Excel Mẫu Trống, Nhập Excel hoặc Import XML.`);
+      setStatusType('info');
+    }
   };
 
   // Tự động tạo bản xem trước con dấu chữ ký (ảnh chữ ký tay trong suốt + chữ đỏ)
@@ -176,12 +288,12 @@ export default function ChungTuTt12Module() {
     };
   }, [subTab, pdfBytes, pdfPageNumber]);
 
-  // Tự động nạp Mẫu 02/BH.pdf lần đầu khi mở sang tab PDF_02BH nếu chưa có file
+  // Tự động nạp Mẫu 02/BH.pdf lần đầu khi mở sang tab PDF_02BH nếu chưa có file trong cache
   useEffect(() => {
-    if (subTab === 'PDF_02BH' && !pdfBytes) {
+    if (cacheHydrated && subTab === 'PDF_02BH' && !pdfBytes) {
       handleLoadSamplePdf02BH();
     }
-  }, [subTab]);
+  }, [cacheHydrated, subTab, pdfBytes]);
 
   // ============================================================================
   // CÁC HÀM XỬ LÝ TAB 1 (EXCEL / XML TT12 & MẪU 01/BH)
@@ -190,23 +302,9 @@ export default function ChungTuTt12Module() {
   const handleDownloadExcelTemplate = () => {
     downloadBlankTt12ExcelTemplate(currentConfig);
     setStatusMsg(
-      `✅ Đã tải biểu mẫu Excel trống (${currentConfig.templateFileName}) chỉ gồm ${currentConfig.targetXmlColumns.length} cột tiêu đề chuẩn quy định!`
+      `✅ Đã tải biểu mẫu Excel trống (${currentConfig.templateFileName}) chỉ gồm dòng tiêu đề cột chuẩn quy định!`
     );
     setStatusType('success');
-  };
-
-  const handleInitBlankTable = () => {
-    const emptyRow: Record<string, string> = {};
-    for (const col of currentConfig.targetXmlColumns) {
-      emptyRow[col] = '';
-    }
-    emptyRow.STT = '1';
-    setRows([emptyRow]);
-    setCurrentPage(1);
-    setStatusMsg(
-      `✅ Đã mở khung biểu mẫu trống (${currentConfig.targetXmlColumns.length} cột chuẩn) cho ${currentConfig.tableName}.`
-    );
-    setStatusType('info');
   };
 
   const handleImportExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,7 +322,7 @@ export default function ChungTuTt12Module() {
       if (meta.autoSwitchedTable) {
         setSelectedTableCode(meta.effectiveConfig.tableCode);
       }
-      setRows(meta.rows);
+      setRows(meta.rows, meta.effectiveConfig.tableCode);
       setCurrentPage(1);
 
       const notes: string[] = [];
@@ -269,7 +367,7 @@ export default function ChungTuTt12Module() {
       if (meta.autoSwitchedTable) {
         setSelectedTableCode(meta.effectiveConfig.tableCode);
       }
-      setRows(meta.rows);
+      setRows(meta.rows, meta.effectiveConfig.tableCode);
       setCurrentPage(1);
 
       const notes: string[] = [];
@@ -313,7 +411,7 @@ export default function ChungTuTt12Module() {
     signMethod: 'SMARTCA' | 'USB_TOKEN' = 'SMARTCA'
   ) => {
     if (rows.length === 0) {
-      alert('Chưa có dữ liệu! Vui lòng Nhập Excel, Import XML hoặc bấm "Nạp Dữ Liệu Mẫu" trước.');
+      alert('Chưa có dữ liệu! Vui lòng Nhập Excel hoặc Import XML trước.');
       return;
     }
 
@@ -806,17 +904,6 @@ export default function ChungTuTt12Module() {
                     onChange={handleImportXmlFile}
                   />
                 </label>
-
-                <button
-                  type="button"
-                  disabled={isBusy}
-                  onClick={handleInitBlankTable}
-                  className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer"
-                  title="Mở bảng trống với đúng các cột chuẩn quy định để nhập trực tiếp"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Mở Bảng Mẫu Trống
-                </button>
               </div>
             </div>
 
@@ -1046,14 +1133,6 @@ export default function ChungTuTt12Module() {
                   >
                     <Download className="w-4 h-4" />
                     Tải Excel Mẫu Trống ({currentConfig.templateFileName})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleInitBlankTable}
-                    className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Mở Bảng Mẫu Trống ({currentConfig.shortLabel})
                   </button>
                 </div>
               </div>
