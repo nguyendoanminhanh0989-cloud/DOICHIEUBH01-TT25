@@ -66,10 +66,10 @@ const ALL_MODULE_IDS: AppModuleId[] = ['DOI_SOAT', 'CHUNG_TU', 'KHAM_SUC_KHOE', 
 
 export const ALL_MODULES: { id: AppModuleId; label: string }[] = [
   { id: 'DOI_SOAT', label: 'Đối chiếu BH01' },
-  { id: 'CHUNG_TU', label: 'Hồ sơ Chứng từ TT25' },
-  { id: 'KHAM_SUC_KHOE', label: 'Khám Sức Khỏe' },
-  { id: 'XML_3176', label: 'Đọc & Ký XML 3176' },
   { id: 'TT12_BH01_BH02', label: 'Chứng từ TT12 BHXH - BH01 - BH02' },
+  { id: 'CHUNG_TU', label: 'Hồ sơ Chứng từ TT25' },
+  { id: 'XML_3176', label: 'Đọc & Ký XML 3176' },
+  { id: 'KHAM_SUC_KHOE', label: 'Khám Sức Khỏe' },
 ];
 
 export function hashPassword(password: string): string {

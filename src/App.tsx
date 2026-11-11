@@ -817,6 +817,19 @@ export default function App() {
               <span>ĐỐI CHIẾU BH01</span>
             </button>
             <button
+              onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
+                mainTab === 'TT12_BH01_BH02'
+                  ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                  : "bg-white text-slate-600 border-slate-300 hover:bg-purple-50 hover:border-purple-300"
+              )}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>CHỨNG TỪ TT12</span>
+              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'TT12_BH01_BH02' ? "bg-white/20 text-white border-white/30" : "bg-purple-50 text-purple-800 border-purple-200")}>BH01 • BH02</span>
+            </button>
+            <button
               onClick={() => handleSelectModuleTab('CHUNG_TU')}
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
@@ -828,19 +841,6 @@ export default function App() {
               <FileCode2 className="w-3.5 h-3.5 shrink-0" />
               <span>HỒ SƠ CHỨNG TỪ</span>
               <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'CHUNG_TU' ? "bg-white/20 text-white border-white/30" : "bg-blue-50 text-blue-700 border-blue-200")}>TT25</span>
-            </button>
-            <button
-              onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
-              className={cn(
-                "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
-                mainTab === 'KHAM_SUC_KHOE'
-                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
-                  : "bg-white text-slate-600 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300"
-              )}
-            >
-              <FileCode2 className="w-3.5 h-3.5 shrink-0" />
-              <span>KHÁM SỨC KHỎE</span>
-              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'KHAM_SUC_KHOE' ? "bg-white/20 text-white border-white/30" : "bg-emerald-50 text-emerald-700 border-emerald-200")}>EMRHUB</span>
             </button>
             <button
               onClick={() => handleSelectModuleTab('XML_3176')}
@@ -856,17 +856,17 @@ export default function App() {
               <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'XML_3176' ? "bg-white/20 text-white border-white/30" : "bg-amber-50 text-amber-800 border-amber-200")}>15 BẢNG</span>
             </button>
             <button
-              onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
+              onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
               className={cn(
                 "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1.5 border whitespace-nowrap cursor-pointer",
-                mainTab === 'TT12_BH01_BH02'
-                  ? "bg-purple-600 text-white border-purple-600 shadow-xs"
-                  : "bg-white text-slate-600 border-slate-300 hover:bg-purple-50 hover:border-purple-300"
+                mainTab === 'KHAM_SUC_KHOE'
+                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                  : "bg-white text-slate-600 border-slate-300 hover:bg-emerald-50 hover:border-emerald-300"
               )}
             >
-              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-              <span>CHỨNG TỪ TT12</span>
-              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'TT12_BH01_BH02' ? "bg-white/20 text-white border-white/30" : "bg-purple-50 text-purple-800 border-purple-200")}>BH01 • BH02</span>
+              <FileCode2 className="w-3.5 h-3.5 shrink-0" />
+              <span>KHÁM SỨC KHỎE</span>
+              <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'KHAM_SUC_KHOE' ? "bg-white/20 text-white border-white/30" : "bg-emerald-50 text-emerald-700 border-emerald-200")}>EMRHUB</span>
             </button>
           </nav>
           )}
@@ -966,20 +966,22 @@ export default function App() {
                 <span>ĐỐI CHIẾU BH01</span>
               </button>
               <button
+                onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
+                className="flex items-center gap-2.5 bg-purple-600/95 hover:bg-purple-600 text-white font-extrabold px-5 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-left"
+              >
+                <ShieldCheck className="w-5 h-5 shrink-0 text-purple-100" />
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[13px] font-black tracking-tight">CHỨNG TỪ TT12 - BH01 - BH02</span>
+                  <span className="text-[10px] font-bold text-purple-100/90 mt-0.5">Bảng 1–6 • Mẫu 01/BH • Ký PDF 02/BH</span>
+                </div>
+              </button>
+              <button
                 onClick={() => handleSelectModuleTab('CHUNG_TU')}
                 className="flex items-center gap-2.5 bg-blue-600/95 hover:bg-blue-600 text-white font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
               >
                 <FileCode2 className="w-5 h-5 shrink-0" />
                 <span>HỒ SƠ CHỨNG TỪ</span>
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">TT25</span>
-              </button>
-              <button
-                onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
-                className="flex items-center gap-2.5 bg-emerald-600/95 hover:bg-emerald-600 text-white font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
-              >
-                <FileCode2 className="w-5 h-5 shrink-0" />
-                <span>KHÁM SỨC KHỎE</span>
-                <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">API</span>
               </button>
               <button
                 onClick={() => handleSelectModuleTab('XML_3176')}
@@ -990,14 +992,12 @@ export default function App() {
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">15 BẢNG</span>
               </button>
               <button
-                onClick={() => handleSelectModuleTab('TT12_BH01_BH02')}
-                className="flex items-center gap-2.5 bg-purple-600/95 hover:bg-purple-600 text-white font-extrabold px-5 py-2 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-left"
+                onClick={() => handleSelectModuleTab('KHAM_SUC_KHOE')}
+                className="flex items-center gap-2.5 bg-emerald-600/95 hover:bg-emerald-600 text-white font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
               >
-                <ShieldCheck className="w-5 h-5 shrink-0 text-purple-100" />
-                <div className="flex flex-col leading-tight">
-                  <span className="text-[13px] font-black tracking-tight">CHỨNG TỪ TT12 - BH01 - BH02</span>
-                  <span className="text-[10px] font-bold text-purple-100/90 mt-0.5">Bảng 1–6 • Mẫu 01/BH • Ký PDF 02/BH</span>
-                </div>
+                <FileCode2 className="w-5 h-5 shrink-0" />
+                <span>KHÁM SỨC KHỎE</span>
+                <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">API</span>
               </button>
             </div>
             <div className="flex items-center gap-2 mt-1 bg-slate-900/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/15 text-xs text-white/90">
