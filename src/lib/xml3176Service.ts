@@ -1054,9 +1054,9 @@ export function buildXml3176(
         // Chuẩn file đã lên cổng BHXH: Base64 nằm trên MỘT DÒNG duy nhất, các thẻ không thụt lề
         const b64Content = encodeUtf8Base64(rebuiltInnerXml, false);
         fileHosoXmlList.push(
-          `<FILEHOSO>\r\n` +
-          `<LOAIHOSO>${fNode.loaiHoso}</LOAIHOSO>\r\n` +
-          `<NOIDUNGFILE>${b64Content}</NOIDUNGFILE>\r\n` +
+          `<FILEHOSO>\n` +
+          `<LOAIHOSO>${fNode.loaiHoso}</LOAIHOSO>\n` +
+          `<NOIDUNGFILE>${b64Content}</NOIDUNGFILE>\n` +
           `</FILEHOSO>`
         );
       } else {
@@ -1065,11 +1065,11 @@ export function buildXml3176(
           .replace(/^\s*<\?xml[^>]*\?>\s*/, '')
           .split(/\r?\n/)
           .map(line => `                        ${line}`)
-          .join('\r\n');
+          .join('\n');
         fileHosoXmlList.push(
-          `                <FILEHOSO>\r\n` +
-          `                    <LOAIHOSO>${fNode.loaiHoso}</LOAIHOSO>\r\n` +
-          `                    <NOIDUNGFILE>\r\n${innerWithoutDecl}\r\n                    </NOIDUNGFILE>\r\n` +
+          `                <FILEHOSO>\n` +
+          `                    <LOAIHOSO>${fNode.loaiHoso}</LOAIHOSO>\n` +
+          `                    <NOIDUNGFILE>\n${innerWithoutDecl}\n                    </NOIDUNGFILE>\n` +
           `                </FILEHOSO>`
         );
       }
@@ -1078,9 +1078,9 @@ export function buildXml3176(
     if (fileHosoXmlList.length > 0) {
       hosoBlocks.push(
         shouldEncodeBase64
-          ? `<HOSO>\r\n${fileHosoXmlList.join('\r\n')}\r\n</HOSO>`
-          : `            <HOSO>\r\n` +
-            `${fileHosoXmlList.join('\r\n')}\r\n` +
+          ? `<HOSO>\n${fileHosoXmlList.join('\n')}\n</HOSO>`
+          : `            <HOSO>\n` +
+            `${fileHosoXmlList.join('\n')}\n` +
             `            </HOSO>`
       );
     }
@@ -1107,37 +1107,37 @@ export function buildXml3176(
   if (shouldEncodeBase64) {
     // Định dạng giống file đã lên cổng BHXH: có xmlns:xsd/xsi, không thụt lề, Base64 một dòng
     return (
-      `${bom}<?xml version="1.0" encoding="utf-8"?>\r\n` +
-      `<GIAMDINHHS xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\r\n` +
-      `<THONGTINDONVI>\r\n` +
-      `<MACSKCB>${escapeXmlText(doc.maCskcb)}</MACSKCB>\r\n` +
-      `</THONGTINDONVI>\r\n` +
-      `<THONGTINHOSO>\r\n` +
-      `<NGAYLAP>${escapeXmlText(doc.ngayLap)}</NGAYLAP>\r\n` +
-      `<SOLUONGHOSO>${hosoBlocks.length}</SOLUONGHOSO>\r\n` +
-      `<DANHSACHHOSO>\r\n` +
-      `${hosoBlocks.join('\r\n')}\r\n` +
-      `</DANHSACHHOSO>\r\n` +
-      `</THONGTINHOSO>\r\n` +
-      `${chuKyLine}\r\n` +
+      `${bom}<?xml version="1.0" encoding="utf-8"?>\n` +
+      `<GIAMDINHHS xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n` +
+      `<THONGTINDONVI>\n` +
+      `<MACSKCB>${escapeXmlText(doc.maCskcb)}</MACSKCB>\n` +
+      `</THONGTINDONVI>\n` +
+      `<THONGTINHOSO>\n` +
+      `<NGAYLAP>${escapeXmlText(doc.ngayLap)}</NGAYLAP>\n` +
+      `<SOLUONGHOSO>${hosoBlocks.length}</SOLUONGHOSO>\n` +
+      `<DANHSACHHOSO>\n` +
+      `${hosoBlocks.join('\n')}\n` +
+      `</DANHSACHHOSO>\n` +
+      `</THONGTINHOSO>\n` +
+      `${chuKyLine}\n` +
       `</GIAMDINHHS>`
     );
   }
 
   const xmlOut =
-    `${bom}<?xml version="1.0" encoding="utf-8"?>\r\n` +
-    `<GIAMDINHHS>\r\n` +
-    `    <THONGTINDONVI>\r\n` +
-    `        <MACSKCB>${escapeXmlText(doc.maCskcb)}</MACSKCB>\r\n` +
-    `    </THONGTINDONVI>\r\n` +
-    `    <THONGTINHOSO>\r\n` +
-    `        <NGAYLAP>${escapeXmlText(doc.ngayLap)}</NGAYLAP>\r\n` +
-    `        <SOLUONGHOSO>${hosoBlocks.length}</SOLUONGHOSO>\r\n` +
-    `        <DANHSACHHOSO>\r\n` +
-    `${hosoBlocks.join('\r\n')}\r\n` +
-    `        </DANHSACHHOSO>\r\n` +
-    `    </THONGTINHOSO>\r\n` +
-    `${chuKyLine}\r\n` +
+    `${bom}<?xml version="1.0" encoding="utf-8"?>\n` +
+    `<GIAMDINHHS>\n` +
+    `    <THONGTINDONVI>\n` +
+    `        <MACSKCB>${escapeXmlText(doc.maCskcb)}</MACSKCB>\n` +
+    `    </THONGTINDONVI>\n` +
+    `    <THONGTINHOSO>\n` +
+    `        <NGAYLAP>${escapeXmlText(doc.ngayLap)}</NGAYLAP>\n` +
+    `        <SOLUONGHOSO>${hosoBlocks.length}</SOLUONGHOSO>\n` +
+    `        <DANHSACHHOSO>\n` +
+    `${hosoBlocks.join('\n')}\n` +
+    `        </DANHSACHHOSO>\n` +
+    `    </THONGTINHOSO>\n` +
+    `${chuKyLine}\n` +
     `</GIAMDINHHS>`;
 
   return xmlOut;

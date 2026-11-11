@@ -10,6 +10,8 @@
  * Tác giả: NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ ĐÀ NẴNG
  */
 
+import { prepareXmlForSigning } from './xmlBuilder';
+
 export interface TokenCertificateItem {
   subject: string;
   commonName?: string;
@@ -562,15 +564,109 @@ export async function signXmlWithUsbToken(
   let pinToUse = (providedPin || sessionTokenPin || '').trim();
 
   // Nếu chưa mở khóa lấy CKS của Token trong phiên này -> Mở ứng dụng Token & hiện bảng nhập mật khẩu để lấy CKS trước!
-  const alreadyUnlocked = getUnlockedTokenCertificate(chosenSerial);
-  if (!alreadyUnlocked) {
-    const unlockedCert = await unlockAndFetchTokenCertificate(chosenSerial, pinToUse, onProgress);
+  let activeCert = getUnlockedTokenCertificate(chosenSerial);
+  if (!activeCert) {
+    activeCert = await unlockAndFetchTokenCertificate(chosenSerial, pinToUse, onProgress);
     pinToUse = sessionTokenPin || pinToUse;
-    onProgress?.(`🔐 Đang ký số XML bằng ${unlockedCert.tokenBrand} (${unlockedCert.commonName})...`);
+    onProgress?.(`🔐 Đang ký số XML bằng ${activeCert.tokenBrand} (${activeCert.commonName})...`);
   } else {
-    onProgress?.(`🔐 Đang ký số XML bằng ${alreadyUnlocked.tokenBrand} (${alreadyUnlocked.commonName})...`);
+    onProgress?.(`🔐 Đang ký số XML bằng ${activeCert.tokenBrand} (${activeCert.commonName})...`);
   }
 
+  const updateUnlockedCache = (
+    serialVal: string,
+    subjectVal: string,
+    certVal: string,
+    tokenInfoVal?: any
+  ) => {
+    if (!subjectVal) return;
+    const cleanSer = String(serialVal || chosenSerial).replace(/\s+/g, '').toUpperCase();
+    const existing = unlockedTokensBySerial.get(cleanSer);
+    const updatedCert: TokenCertificateItem = {
+      subject: subjectVal,
+      commonName: existing?.commonName || parseCnFromDn(subjectVal),
+      mst: existing?.mst || parseMstFromDn(subjectVal),
+      serial: cleanSer,
+      issuer: existing?.issuer,
+      issuerName: existing?.issuerName,
+      tokenBrand: tokenInfoVal?.tokenBrand || existing?.tokenBrand || detectBrandFromText('', subjectVal, ''),
+      providerName: tokenInfoVal?.providerName || existing?.providerName,
+      isHardwareToken: true,
+      notBefore: tokenInfoVal?.notBefore || existing?.notBefore,
+      notAfter: tokenInfoVal?.notAfter || existing?.notAfter,
+      rawCertBase64: certVal || existing?.rawCertBase64,
+      verifiedWithPin: true,
+    };
+    unlockedTokensBySerial.set(cleanSer, updatedCert);
+    lastUnlockedSerial = cleanSer;
+  };
+
+  // Chuẩn hóa: dựng cấu trúc <CHUKYDONVI> bằng chính engine prepareXmlForSigning (dùng chung 100% với VNPT SmartCA)
+  // rồi gửi hash SHA-256 sang /sign-hash của USB Token để ký RSA — đảm bảo SmartCA và USB Token ra XML giống hệt nhau.
+  const certBase64 = activeCert.rawCertBase64 || status.certificates.find(c => c.serial === activeCert!.serial)?.rawCertBase64 || '';
+  const certSubject = activeCert.subject || '';
+  if (certBase64 && certSubject) {
+    try {
+      const { hashToSign, buildSignedXml } = await prepareXmlForSigning(xmlString, {
+        rawCertBase64: certBase64,
+        subject: certSubject,
+        serialNumber: activeCert.serial || chosenSerial,
+      });
+
+      const hashCtrl = new AbortController();
+      const hashTimer = setTimeout(() => hashCtrl.abort(), 60000);
+      try {
+        const hashRes = await fetch(`http://127.0.0.1:${LOCAL_PORT}/sign-hash`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hashBase64: hashToSign,
+            serial: activeCert.serial || chosenSerial,
+            pin: pinToUse,
+          }),
+          signal: hashCtrl.signal,
+        });
+        clearTimeout(hashTimer);
+
+        if (hashRes.status !== 404) {
+          const hashData = await hashRes.json().catch(() => ({}));
+          if (!hashRes.ok || hashData.status === 'error') {
+            throw new Error(`Ký số USB Token thất bại: ${hashData.message || `HTTP ${hashRes.status}`}`);
+          }
+          const sigB64 = String(hashData.signature || hashData.signatureBase64 || '').replace(/\s+/g, '');
+          if (!sigB64) {
+            throw new Error('Công cụ USB Token không trả về chữ ký RSA.');
+          }
+          const finalCertB64 = String(hashData.certificate || hashData.rawCertBase64 || certBase64);
+          const finalSubject = String(hashData.subject || certSubject).trim();
+          const finalSerial = String(hashData.serialNumber || activeCert.serial || chosenSerial);
+          updateUnlockedCache(finalSerial, finalSubject, finalCertB64, hashData.tokenInfo);
+
+          const signedXml = buildSignedXml(sigB64);
+          onProgress?.('✅ Ký số bằng USB Token thành công!');
+          return {
+            signedXml,
+            signatureBase64: sigB64,
+            rawCertBase64: finalCertB64,
+            subject: finalSubject,
+            serialNumber: finalSerial,
+            tokenBrand: hashData.tokenInfo?.tokenBrand || activeCert.tokenBrand,
+          };
+        }
+      } catch (err: any) {
+        clearTimeout(hashTimer);
+        if (err.name === 'AbortError') {
+          throw new Error('Hết thời gian chờ ký số USB Token (quá 60 giây). Vui lòng thử lại và nhập mã PIN trên cửa sổ USB Token.');
+        }
+        throw err;
+      }
+    } catch (err: any) {
+      // Nếu lỗi không phải 404 từ /sign-hash thì ném lỗi luôn; 404 mới fallback sang /sign
+      throw err;
+    }
+  }
+
+  // Fallback sang /sign nếu công cụ .bat quá cũ chưa có endpoint /sign-hash
   const signCtrl = new AbortController();
   const signTimer = setTimeout(() => signCtrl.abort(), 60000);
 
@@ -598,29 +694,8 @@ export async function signXmlWithUsbToken(
       throw new Error('Công cụ ký số USB Token không trả về dữ liệu XML đã ký.');
     }
 
-    // Lưu lại thông tin CKS thực tế từ USB Token vừa ký
-    const cleanSerial = String(data.serialNumber || chosenSerial).replace(/\s+/g, '').toUpperCase();
     const subject = String(data.subject || '').trim();
-    if (subject) {
-      const existing = unlockedTokensBySerial.get(cleanSerial);
-      const updatedCert: TokenCertificateItem = {
-        subject,
-        commonName: existing?.commonName || parseCnFromDn(subject),
-        mst: existing?.mst || parseMstFromDn(subject),
-        serial: cleanSerial,
-        issuer: existing?.issuer,
-        issuerName: existing?.issuerName,
-        tokenBrand: data.tokenInfo?.tokenBrand || existing?.tokenBrand || detectBrandFromText('', subject, ''),
-        providerName: data.tokenInfo?.providerName || existing?.providerName,
-        isHardwareToken: true,
-        notBefore: data.tokenInfo?.notBefore || existing?.notBefore,
-        notAfter: data.tokenInfo?.notAfter || existing?.notAfter,
-        rawCertBase64: data.certificate || existing?.rawCertBase64,
-        verifiedWithPin: true,
-      };
-      unlockedTokensBySerial.set(cleanSerial, updatedCert);
-      lastUnlockedSerial = cleanSerial;
-    }
+    updateUnlockedCache(String(data.serialNumber || chosenSerial), subject, String(data.certificate || ''), data.tokenInfo);
 
     onProgress?.('✅ Ký số bằng USB Token thành công!');
 

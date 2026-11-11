@@ -14,7 +14,7 @@ import {
   SmartCAConfig,
 } from './vnptSmartCaService';
 import { signXmlWithUsbToken } from './localTokenSignerService';
-import { computeXmlHashBase64 } from './xmlBuilder';
+import { prepareXmlForSigning } from './xmlBuilder';
 
 export interface TT12TableConfig {
   tableCode: string;
@@ -1564,50 +1564,10 @@ export async function signTt12XmlString(
 
   onProgress?.('🔐 Đang lấy Chứng thư số từ VNPT SmartCA...');
   const certInfo = await getSmartCaCertificate(cfg);
-  const cleanCert = (certInfo.rawCertBase64 || '').replace(/-----[^\n]+-----/g, '').replace(/\s+/g, '');
   const subjectName = certInfo.subject || 'CN=CSKCB';
 
-  // Tìm Id của thẻ danh sách (VD: <DANHSACH_DMBOPHANCHUYENMON Id="Id-..."> hoặc <DS_CHITIET Id="Id-...">)
-  const idMatch = xmlString.match(/<([A-Za-z0-9_]+)\s+Id="([^"]+)"/);
-  if (!idMatch) {
-    throw new Error('Không tìm thấy thuộc tính Id trên thẻ danh sách XML để ký số.');
-  }
-  const listTagName = idMatch[1];
-  const listId = idMatch[2];
-
-  // Lấy nguyên khối thẻ danh sách để tính DigestValue C14N
-  const listRegex = new RegExp(`<${listTagName}\\s+Id="${listId}">[\\s\\S]*?<\\/${listTagName}>`);
-  const listBlockMatch = xmlString.match(listRegex);
-  if (!listBlockMatch) {
-    throw new Error(`Không trích xuất được khối dữ liệu <${listTagName}> để tính mã băm SHA-256.`);
-  }
-  const rawListXml = listBlockMatch[0];
-
-  // Theo chuẩn Canonical XML 1.0 (C14N), thẻ con khi tách rời sẽ kế thừa xmlns:xsd và xmlns:xsi từ thẻ gốc
-  const canonicalListXml = rawListXml.replace(
-    `<${listTagName} Id="${listId}">`,
-    `<${listTagName} xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="${listId}">`
-  );
-  const listDigestBase64 = await computeXmlHashBase64(canonicalListXml);
-
-  // Tạo Object chứa SigningTime theo đúng chuẩn SignXmlWithSmartCaAsync trong MainView.xaml.cs (dòng 1043-1055)
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const signingTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-
-  const canonicalObjectXml = `<Object xmlns="http://www.w3.org/2000/09/xmldsig#" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="Object-CHUKYDONVI-${listId}"><SignatureProperties xmlns=""><SignatureProperty Id="SignatureProperty-CHUKYDONVI-${listId}" Target="#CHUKYDONVI-${listId}"><SigningTime>${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
-  const objectDigestBase64 = await computeXmlHashBase64(canonicalObjectXml);
-
-  // Chuỗi C14N của SignedInfo
-  const canonicalSignedInfo =
-    `<SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
-    `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"></CanonicalizationMethod>` +
-    `<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"></SignatureMethod>` +
-    `<Reference URI="#Object-CHUKYDONVI-${listId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></DigestMethod><DigestValue>${objectDigestBase64}</DigestValue></Reference>` +
-    `<Reference URI="#${listId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"></DigestMethod><DigestValue>${listDigestBase64}</DigestValue></Reference>` +
-    `</SignedInfo>`;
-
-  const hashToSignBase64 = await computeXmlHashBase64(canonicalSignedInfo);
+  onProgress?.('🔐 Đang chuẩn bị cấu trúc chữ ký số chuẩn XMLDSig / BHXH...');
+  const { hashToSign, buildSignedXml } = await prepareXmlForSigning(xmlString, certInfo);
 
   const effectiveCfg: SmartCAConfig = {
     ...cfg,
@@ -1619,50 +1579,8 @@ export async function signTt12XmlString(
       ? '📱 Đang gửi yêu cầu ký số sang ứng dụng VNPT SmartCA trên điện thoại...'
       : '☁️ Đang ký số tự động qua VNPT SmartCA (TOTP)...'
   );
-  const signatureValueBase64 = await signSmartCAHash(effectiveCfg, hashToSignBase64, onProgress);
-  const cleanSig = signatureValueBase64.replace(/\s+/g, '');
-
-  const signedInfoElement =
-    `<SignedInfo>` +
-    `<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>` +
-    `<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>` +
-    `<Reference URI="#Object-CHUKYDONVI-${listId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${objectDigestBase64}</DigestValue></Reference>` +
-    `<Reference URI="#${listId}"><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><DigestValue>${listDigestBase64}</DigestValue></Reference>` +
-    `</SignedInfo>`;
-
-  const keyInfoElement =
-    `<KeyInfo><X509Data>` +
-    `<X509SubjectName>${escXml(subjectName)}</X509SubjectName>` +
-    `<X509Certificate>${cleanCert}</X509Certificate>` +
-    `</X509Data></KeyInfo>`;
-
-  const objectElement =
-    `<Object Id="Object-CHUKYDONVI-${listId}">` +
-    `<SignatureProperties xmlns="">` +
-    `<SignatureProperty Target="#CHUKYDONVI-${listId}" Id="SignatureProperty-CHUKYDONVI-${listId}">` +
-    `<SigningTime>${signingTime}</SigningTime>` +
-    `</SignatureProperty>` +
-    `</SignatureProperties>` +
-    `</Object>`;
-
-  const chuKyBlock =
-    `<CHUKYDONVI>` +
-    `<Signature Id="CHUKYDONVI-${listId}" xmlns="http://www.w3.org/2000/09/xmldsig#">` +
-    `${signedInfoElement}` +
-    `<SignatureValue>${cleanSig}</SignatureValue>` +
-    `${keyInfoElement}` +
-    `${objectElement}` +
-    `</Signature>` +
-    `</CHUKYDONVI>`;
-
-  let signedXml = xmlString;
-  if (/<CHUKYDONVI\s*\/>/.test(signedXml)) {
-    signedXml = signedXml.replace(/<CHUKYDONVI\s*\/>/, chuKyBlock);
-  } else if (signedXml.includes('<CHUKYDONVI>')) {
-    signedXml = signedXml.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, chuKyBlock);
-  } else {
-    signedXml = signedXml.replace(/(<\/[A-Za-z0-9_]+>\s*)$/, `${chuKyBlock}$1`);
-  }
+  const signatureValueBase64 = await signSmartCAHash(effectiveCfg, hashToSign, onProgress);
+  const signedXml = buildSignedXml(signatureValueBase64);
 
   onProgress?.('✅ Đã ký số XML thành công!');
   return {

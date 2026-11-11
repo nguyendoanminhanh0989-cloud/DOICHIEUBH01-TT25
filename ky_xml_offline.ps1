@@ -151,11 +151,10 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
             if ($root.HasAttribute($nsName)) { $root.RemoveAttribute($nsName) }
         }
     }
-    $is01BH = ($root.LocalName -eq "HSTH01BH")
-    
     # Tim Id ho so (THONGTINHOSO hoac DS_CHITIET hoac the co attribute Id)
     $hoSoNode = $root.SelectSingleNode("//*[@Id]")
     $hoSoId = if ($hoSoNode) { $hoSoNode.GetAttribute("Id") } else { "Id-" + [Guid]::NewGuid().ToString() }
+    $is01BH = (-not $hoSoNode)
 
     $signedXml = New-Object System.Security.Cryptography.Xml.SignedXml($xmlDoc)
     $signedXml.Signature.Id = "CHUKYDONVI-$hoSoId"
@@ -176,15 +175,20 @@ function Sign-BhxhXmlDocument([string]$xmlString, $cert) {
     $signedXml.KeyInfo = $keyInfo
 
     if ($is01BH) {
-        # Mau 01BH: Enveloped signature tren toan bo file (URI="")
+        # Enveloped signature tren toan bo file (URI="") + Object SigningTime chuan BHXH
         $objDoc = New-Object System.Xml.XmlDocument
-        $signingTime = (Get-Date).ToString("yyyyMMddHHmmss")
-        $objXml = "<SignatureProperties Id=`"proid`" xmlns=`"`"><SignatureProperty><SigningTime xmlns=`"http://example.org/#signatureProperties`">$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
+        $signingTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss")
+        $objXml = "<SignatureProperties xmlns=`"`"><SignatureProperty Target=`"#CHUKYDONVI-$hoSoId`" Id=`"SignatureProperty-CHUKYDONVI-$hoSoId`"><SigningTime>$signingTime</SigningTime></SignatureProperty></SignatureProperties>"
         $objDoc.LoadXml($objXml)
 
         $dataObj = New-Object System.Security.Cryptography.Xml.DataObject
+        $dataObj.Id = "Object-CHUKYDONVI-$hoSoId"
         $dataObj.Data = $objDoc.ChildNodes
         $signedXml.AddObject($dataObj)
+
+        $refObj = New-Object System.Security.Cryptography.Xml.Reference("#Object-CHUKYDONVI-$hoSoId")
+        $refObj.DigestMethod = "http://www.w3.org/2001/04/xmlenc#sha256"
+        $signedXml.AddReference($refObj)
 
         $ref = New-Object System.Security.Cryptography.Xml.Reference("")
         $env = New-Object System.Security.Cryptography.Xml.XmlDsigEnvelopedSignatureTransform
