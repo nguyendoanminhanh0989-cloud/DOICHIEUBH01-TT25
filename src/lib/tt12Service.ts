@@ -21,7 +21,6 @@ export interface TT12TableConfig {
   tableName: string;
   shortLabel: string;
   templateFileName: string;
-  sampleXmlFileName?: string;
   xmlRootElement: string;
   xmlListElement: string;
   xmlItemElement: string;
@@ -36,7 +35,6 @@ export const TT12_CONFIGS: TT12TableConfig[] = [
     tableName: 'Bảng 1 - Danh mục bộ phận chuyên môn',
     shortLabel: 'Bảng 1 (Khoa/Phòng)',
     templateFileName: 'FileMau_Bang1.xlsx',
-    sampleXmlFileName: 'Bang1_20260416013310.xml',
     xmlRootElement: 'HSDANHMUC',
     xmlListElement: 'DANHSACH_DMBOPHANCHUYENMON',
     xmlItemElement: 'DMBOPHANCHUYENMON',
@@ -61,7 +59,6 @@ export const TT12_CONFIGS: TT12TableConfig[] = [
     tableName: 'Bảng 2 - Danh mục nhân lực KCB',
     shortLabel: 'Bảng 2 (Nhân lực)',
     templateFileName: 'FileMau_Bang2.xlsx',
-    sampleXmlFileName: 'Bang2_20260416013423.xml',
     xmlRootElement: 'HSDANHMUC',
     xmlListElement: 'DANHSACH_DMNHANLUCKBCB',
     xmlItemElement: 'DMNHANLUCKBCB',
@@ -99,7 +96,6 @@ export const TT12_CONFIGS: TT12TableConfig[] = [
     tableName: 'Bảng 3 - Danh mục thuốc/chế phẩm máu',
     shortLabel: 'Bảng 3 (Thuốc/Máu)',
     templateFileName: 'FileMau_Bang3.xlsx',
-    sampleXmlFileName: 'Bang3_20260416013513.xml',
     xmlRootElement: 'HSDANHMUC',
     xmlListElement: 'DANHSACH_DMTHUOCMAUCHEPHAMMAU',
     xmlItemElement: 'DMTHUOCMAUCHEPHAMMAU',
@@ -193,7 +189,6 @@ export const TT12_CONFIGS: TT12TableConfig[] = [
     tableName: 'Bảng 5 - Danh mục DV Khám chữa bệnh',
     shortLabel: 'Bảng 5 (DVKT)',
     templateFileName: 'FileMau_Bang5.xlsx',
-    sampleXmlFileName: 'BANG_5_20260416110746.xml',
     xmlRootElement: 'HSDANHMUC',
     xmlListElement: 'DANHSACH_DMDICHVUKBCB',
     xmlItemElement: 'DMDICHVUKBCB',
@@ -241,7 +236,6 @@ export const TT12_CONFIGS: TT12TableConfig[] = [
     tableName: 'Bảng 6 - Danh mục TBYT thực hiện dịch vụ',
     shortLabel: 'Bảng 6 (TBYT-DV)',
     templateFileName: 'FileMau_Bang6.xlsx',
-    sampleXmlFileName: 'Bang6_20260416013545.xml',
     xmlRootElement: 'HSDANHMUC',
     xmlListElement: 'DSACH_TBYTTHDV',
     xmlItemElement: 'DM_TBYTTHDV',
@@ -287,7 +281,6 @@ export const TT12_CONFIGS: TT12TableConfig[] = [
     tableName: 'Mẫu 01/BH - Bảng Tổng Hợp C79',
     shortLabel: 'Mẫu 01/BH (C79)',
     templateFileName: 'BH_MAU_01_Template.xlsx',
-    sampleXmlFileName: 'HSTH01BH_USB_20260422_151906.xml',
     xmlRootElement: 'HSTH01BH',
     xmlListElement: 'DS_CHITIET',
     xmlItemElement: 'CHITIET_HS01BH',
@@ -330,8 +323,7 @@ export const TT12_CONFIGS: TT12TableConfig[] = [
     tableCode: 'MAU_01BH_7980',
     tableName: 'Mẫu 01/BH - Form 7980a (Excel / XML Giám định)',
     shortLabel: 'Mẫu 01/BH (7980a)',
-    templateFileName: '7980a_49907_202509_mau7980a.xls',
-    sampleXmlFileName: 'MAU_XML79_HIS.xml',
+    templateFileName: 'FileMau_7980a.xlsx',
     xmlRootElement: 'HSTH01BH',
     xmlListElement: 'DS_CHITIET',
     xmlItemElement: 'CHITIET_HS01BH',
@@ -1081,6 +1073,21 @@ export function parseTt12ExcelBuffer(
   config: TT12TableConfig
 ): Record<string, string>[] {
   return parseTt12ExcelBufferWithMeta(buffer, config).rows;
+}
+
+/**
+ * Tải về Biểu mẫu Excel trống (Chỉ gồm dòng tiêu đề cột chuẩn theo quy định, không chứa dữ liệu mẫu)
+ */
+export function downloadBlankTt12ExcelTemplate(config: TT12TableConfig): void {
+  const cols = config.targetXmlColumns;
+  const ws = XLSX.utils.aoa_to_sheet([cols]);
+  ws['!cols'] = cols.map(c => ({ wch: Math.max(14, c.length + 4) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, config.tableCode);
+  const outName = config.templateFileName.endsWith('.xlsx')
+    ? config.templateFileName
+    : `${config.tableCode}_MauChuan.xlsx`;
+  XLSX.writeFile(wb, outName);
 }
 
 /**

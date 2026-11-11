@@ -27,10 +27,9 @@ import { cn } from '../lib/utils';
 import {
   TT12_CONFIGS,
   TT12TableConfig,
-  parseTt12ExcelBuffer,
   parseTt12ExcelBufferWithMeta,
-  parseTt12XmlText,
   parseTt12XmlTextWithMeta,
+  downloadBlankTt12ExcelTemplate,
   exportStandardTt12Excel,
   buildTt12XmlChunks,
   signTt12XmlString,
@@ -189,51 +188,25 @@ export default function ChungTuTt12Module() {
   // ============================================================================
 
   const handleDownloadExcelTemplate = () => {
-    const url = `/templates/tt12/${currentConfig.templateFileName}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = currentConfig.templateFileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setStatusMsg(`✅ Đã tải file mẫu: ${currentConfig.templateFileName}`);
+    downloadBlankTt12ExcelTemplate(currentConfig);
+    setStatusMsg(
+      `✅ Đã tải biểu mẫu Excel trống (${currentConfig.templateFileName}) chỉ gồm ${currentConfig.targetXmlColumns.length} cột tiêu đề chuẩn quy định!`
+    );
     setStatusType('success');
   };
 
-  const handleLoadSampleData = async () => {
-    setIsBusy(true);
-    setStatusType('loading');
-    setStatusMsg(`⏳ Đang nạp dữ liệu mẫu cho ${currentConfig.tableName}...`);
-    try {
-      if (currentConfig.sampleXmlFileName) {
-        const res = await fetch(`/templates/tt12/${currentConfig.sampleXmlFileName}`);
-        if (!res.ok) throw new Error(`Không tải được file mẫu ${currentConfig.sampleXmlFileName}`);
-        const xmlText = await res.text();
-        const parsedRows = parseTt12XmlText(xmlText, currentConfig);
-        setRows(parsedRows);
-        setCurrentPage(1);
-        setStatusMsg(
-          `✅ Đã nạp thành công ${parsedRows.length} bản ghi mẫu từ "${currentConfig.sampleXmlFileName}"!`
-        );
-        setStatusType('success');
-      } else {
-        const res = await fetch(`/templates/tt12/${currentConfig.templateFileName}`);
-        if (!res.ok) throw new Error(`Không tải được file mẫu ${currentConfig.templateFileName}`);
-        const buf = await res.arrayBuffer();
-        const parsedRows = parseTt12ExcelBuffer(buf, currentConfig);
-        setRows(parsedRows);
-        setCurrentPage(1);
-        setStatusMsg(
-          `✅ Đã nạp thành công ${parsedRows.length} bản ghi mẫu từ "${currentConfig.templateFileName}"!`
-        );
-        setStatusType('success');
-      }
-    } catch (err: any) {
-      setStatusMsg(`❌ Lỗi nạp dữ liệu mẫu: ${err.message}`);
-      setStatusType('error');
-    } finally {
-      setIsBusy(false);
+  const handleInitBlankTable = () => {
+    const emptyRow: Record<string, string> = {};
+    for (const col of currentConfig.targetXmlColumns) {
+      emptyRow[col] = '';
     }
+    emptyRow.STT = '1';
+    setRows([emptyRow]);
+    setCurrentPage(1);
+    setStatusMsg(
+      `✅ Đã mở khung biểu mẫu trống (${currentConfig.targetXmlColumns.length} cột chuẩn) cho ${currentConfig.tableName}.`
+    );
+    setStatusType('info');
   };
 
   const handleImportExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -782,19 +755,19 @@ export default function ChungTuTt12Module() {
 
           {/* 2 Khung thao tác giống hệt giao diện phần mềm HIS XML TT12 BYT */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Khung 1: Thao tác Excel & Dữ liệu mẫu */}
+            {/* Khung 1: Thao tác Excel & Biểu mẫu trống */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col justify-between gap-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div>
                   <h2 className="text-xs font-black uppercase text-slate-800 tracking-wide">
-                    1. Thao tác Excel, Import XML & Dữ liệu Mẫu
+                    1. Thao tác Biểu mẫu Excel Trống & Import XML
                   </h2>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     Đang chọn: <strong className="text-indigo-700">{currentConfig.tableName}</strong>
                   </p>
                 </div>
                 <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
-                  Mẫu: {currentConfig.templateFileName}
+                  Mẫu trống: {currentConfig.templateFileName}
                 </span>
               </div>
 
@@ -804,9 +777,10 @@ export default function ChungTuTt12Module() {
                   disabled={isBusy}
                   onClick={handleDownloadExcelTemplate}
                   className="px-3.5 py-2 rounded-xl bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                  title="Tải file Excel mẫu trống (chỉ gồm tiêu đề các cột chuẩn quy định, không chứa dữ liệu)"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Tải Excel Mẫu
+                  Tải Excel Mẫu Trống
                 </button>
 
                 <label className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer">
@@ -836,12 +810,12 @@ export default function ChungTuTt12Module() {
                 <button
                   type="button"
                   disabled={isBusy}
-                  onClick={handleLoadSampleData}
+                  onClick={handleInitBlankTable}
                   className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer"
-                  title="Nạp dữ liệu mẫu thực tế từ bộ MẪU TT12 để kiểm thử ngay"
+                  title="Mở bảng trống với đúng các cột chuẩn quy định để nhập trực tiếp"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Nạp Dữ Liệu Mẫu
+                  <Plus className="w-3.5 h-3.5" />
+                  Mở Bảng Mẫu Trống
                 </button>
               </div>
             </div>
@@ -1061,25 +1035,25 @@ export default function ChungTuTt12Module() {
                   Chưa có dữ liệu cho {currentConfig.tableName}
                 </div>
                 <p className="text-xs text-slate-500 max-w-lg mx-auto">
-                  Bạn có thể bấm <b>"Tải Excel Mẫu"</b> để lấy biểu mẫu chuẩn, <b>"Nhập Excel"</b> hoặc{' '}
-                  <b>"Import XML Có Sẵn"</b> từ máy tính, hoặc bấm nút <b>"Nạp Dữ Liệu Mẫu"</b> bên dưới để tải sẵn dữ liệu mẫu từ bộ MẪU TT12.
+                  Bạn có thể bấm <b>"Tải Excel Mẫu Trống"</b> để lấy biểu mẫu chuẩn (chỉ gồm dòng tiêu đề cột quy định, không chứa dữ liệu mẫu), sau đó chọn <b>"Nhập Excel"</b> hoặc{' '}
+                  <b>"Import XML Có Sẵn"</b> từ máy tính.
                 </p>
                 <div className="pt-1 flex justify-center gap-2">
                   <button
                     type="button"
-                    onClick={handleLoadSampleData}
+                    onClick={handleDownloadExcelTemplate}
                     className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                   >
-                    <Sparkles className="w-4 h-4" />
-                    Nạp Dữ Liệu Mẫu ({currentConfig.shortLabel})
+                    <Download className="w-4 h-4" />
+                    Tải Excel Mẫu Trống ({currentConfig.templateFileName})
                   </button>
                   <button
                     type="button"
-                    onClick={handleDownloadExcelTemplate}
+                    onClick={handleInitBlankTable}
                     className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer"
                   >
-                    <Download className="w-4 h-4" />
-                    Tải File Mẫu ({currentConfig.templateFileName})
+                    <Plus className="w-4 h-4" />
+                    Mở Bảng Mẫu Trống ({currentConfig.shortLabel})
                   </button>
                 </div>
               </div>
@@ -1191,16 +1165,16 @@ export default function ChungTuTt12Module() {
                   className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" />
-                  Nạp Mẫu 02/BH.pdf Có Sẵn
+                  Mở Biểu Mẫu Trống 02/BH.pdf
                 </button>
 
                 <a
                   href="/templates/tt12/MAU_02BH.pdf"
-                  download="MAU_02BH.pdf"
+                  download="MAU_02BH_MauTrong.pdf"
                   className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold flex items-center gap-1.5 transition"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  Tải Mẫu 02/BH.pdf Gốc
+                  Tải Mẫu 02/BH.pdf Trống
                 </a>
               </div>
 
