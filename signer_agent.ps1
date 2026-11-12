@@ -1,4 +1,4 @@
-﻿<#
+<#
 ================================================================================
 CÔNG CỤ KÝ SỐ USB TOKEN CỤC BỘ (LOCAL AGENT) - ĐỐI CHIẾU 01BH & CHỨNG TỪ TT25
 Tác giả: Nguyễn Đoàn Minh Ánh - IT Y Tế Đà Nẵng

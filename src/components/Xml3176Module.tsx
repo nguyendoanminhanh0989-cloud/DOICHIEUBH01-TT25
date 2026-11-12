@@ -30,6 +30,8 @@ import {
   LocalSignerStatus,
 } from '../lib/localTokenSignerService';
 import { prepareXmlForSigning } from '../lib/xmlBuilder';
+import { bhxhGetToken, bhxhSubmitGiamDinh3176 } from '../lib/bhxhService';
+import { getOrgConfig } from '../lib/signAndSubmitService';
 import ConfigModal from './ConfigModal';
 import { getSessionCache, getSessionSync, removeSessionCache, setSessionCache, setSessionSync } from '../lib/sessionCache';
 
@@ -123,6 +125,12 @@ export default function Xml3176Module() {
   const [isSigning, setIsSigning] = useState(false);
   const [signStatusMsg, setSignStatusMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [autoDownloadAfterSign, setAutoDownloadAfterSign] = useState(false);
+  // Ký & gửi hồ sơ lên Cổng BHXH qua API guiHoSoXmlQD3176 (tài khoản lấy từ Cấu hình)
+  const [sendToGateway, setSendToGateway] = useState(false);
+  const [gatewayConfigTab, setGatewayConfigTab] = useState(false);
+  const [gatewayResults, setGatewayResults] = useState<
+    { label: string; ok: boolean; maGD?: string; time?: string; message: string }[]
+  >([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -904,9 +912,25 @@ export default function Xml3176Module() {
 
     setIsSigning(true);
     setSignStatusMsg(null);
+    setGatewayResults([]);
 
     try {
-      if (signPackageMode === 'INDIVIDUAL' || indicesToSign.length === 1) {
+      // Chuẩn bị phiên làm việc Cổng BHXH (nếu chọn Ký & Gửi) — mỗi file XML là 1 hồ sơ KCB nên ký tách riêng từng hồ sơ
+      let gwTokens: { access_token: string; id_token: string } | null = null;
+      const gwOrg = getOrgConfig();
+      const gwResults: { label: string; ok: boolean; maGD?: string; time?: string; message: string }[] = [];
+      if (sendToGateway) {
+        if (!gwOrg.ma_cskcb || !gwOrg.bhxh_account?.username || !gwOrg.bhxh_account?.password) {
+          throw new Error(
+            'Chưa cấu hình tài khoản Cổng BHXH (Mã CSKCB, tên đăng nhập, mật khẩu). Bấm "Cấu hình CKS / SmartCA" → tab Tài khoản Cổng BHXH để nhập.'
+          );
+        }
+        setSignStatusMsg({ ok: true, text: '🔑 Đang đăng nhập Cổng BHXH lấy phiên làm việc...' });
+        gwTokens = await bhxhGetToken(gwOrg as any);
+        if (!gwTokens) throw new Error('Không lấy được token từ Cổng BHXH.');
+      }
+
+      if (signPackageMode === 'INDIVIDUAL' || indicesToSign.length === 1 || sendToGateway) {
         // Ký riêng từng hồ sơ trong danh sách chọn
         const nextHosoSignStates = { ...doc.hosoSignStates };
         let lastChuKyBlock = '';
@@ -976,6 +1000,33 @@ export default function Xml3176Module() {
           if (autoDownloadAfterSign) {
             triggerDownloadXml(signedXmlFull, `${maLk}_DaKySo`);
           }
+
+          if (sendToGateway && gwTokens) {
+            setSignStatusMsg({
+              ok: true,
+              text: `📤 Đang gửi hồ sơ ${i + 1}/${indicesToSign.length} (Mã LK: ${maLk}) lên Cổng BHXH...`,
+            });
+            try {
+              const r = await bhxhSubmitGiamDinh3176(gwOrg as any, gwTokens, signedXmlFull);
+              gwResults.push({
+                label: maLk,
+                ok: r.maKetQua === '200',
+                maGD: r.maGD,
+                time: r.thoiGianTiepNhan,
+                message: r.message,
+              });
+            } catch (e: any) {
+              const raw = e?.message || 'Lỗi không xác định';
+              gwResults.push({
+                label: maLk,
+                ok: false,
+                message: /Failed to fetch|NetworkError/i.test(raw)
+                  ? 'Không kết nối được Cổng BHXH (mạng / CORS). Kiểm tra mạng hoặc bật công cụ Chay_Ky_So_USB_Token.bat.'
+                  : raw,
+              });
+            }
+            setGatewayResults([...gwResults]);
+          }
         }
 
         const updatedDoc: Xml3176ParsedDoc = {
@@ -985,10 +1036,18 @@ export default function Xml3176Module() {
         };
         setDoc(updatedDoc);
         setAutoDownloadAfterSign(false);
-        setSignStatusMsg({
-          ok: true,
-          text: `Đã ký số thành công ${indicesToSign.length} hồ sơ! Trạng thái ở Bảng 1 đã cập nhật thành "Đã ký số".`,
-        });
+        if (sendToGateway) {
+          const okCount = gwResults.filter(r => r.ok).length;
+          setSignStatusMsg({
+            ok: okCount === gwResults.length,
+            text: `Đã ký ${indicesToSign.length} hồ sơ • Gửi Cổng BHXH thành công ${okCount}/${gwResults.length} hồ sơ (xem chi tiết bên dưới).`,
+          });
+        } else {
+          setSignStatusMsg({
+            ok: true,
+            text: `Đã ký số thành công ${indicesToSign.length} hồ sơ! Trạng thái ở Bảng 1 đã cập nhật thành "Đã ký số".`,
+          });
+        }
         void lastChuKyBlock;
         void lastSignedXml;
       } else {
@@ -1145,6 +1204,7 @@ export default function Xml3176Module() {
             <button
               onClick={() => {
                 setAutoDownloadAfterSign(false);
+                setSendToGateway(false);
                 openSignModal('SELECTED');
               }}
               disabled={!doc || selectedHosoIndices.size === 0}
@@ -1157,6 +1217,7 @@ export default function Xml3176Module() {
             <button
               onClick={() => {
                 setAutoDownloadAfterSign(false);
+                setSendToGateway(false);
                 openSignModal('ALL');
               }}
               disabled={!doc}
@@ -1164,6 +1225,20 @@ export default function Xml3176Module() {
             >
               <ShieldCheck className="w-3.5 h-3.5" />
               Ký tất cả ({doc ? doc.hosoFiles.length : 0} HS)
+            </button>
+
+            <button
+              onClick={() => {
+                setAutoDownloadAfterSign(false);
+                setSendToGateway(true);
+                openSignModal('SELECTED');
+              }}
+              disabled={!doc || selectedHosoIndices.size === 0}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-transparent bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
+              title="Ký số rồi gửi từng hồ sơ đã chọn lên Cổng BHXH qua API 3176 bằng tài khoản Cổng đã cấu hình"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Ký & Gửi Cổng ({selectedHosoIndices.size} HS)
             </button>
 
             <button
@@ -2405,6 +2480,70 @@ export default function Xml3176Module() {
                 </div>
               )}
 
+              {/* Ký & Gửi hồ sơ lên Cổng BHXH qua API (guiHoSoXmlQD3176) */}
+              <div className="p-3.5 rounded-xl bg-sky-50/60 border border-sky-200 space-y-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-sky-900">
+                  <input
+                    type="checkbox"
+                    checked={sendToGateway}
+                    onChange={e => setSendToGateway(e.target.checked)}
+                    className="accent-sky-600 w-4 h-4"
+                  />
+                  3. Ký xong tự động GỬI từng hồ sơ lên Cổng BHXH (API guiHoSoXmlQD3176 • loaiHoSo=130)
+                </label>
+                {sendToGateway && (() => {
+                  const o = getOrgConfig();
+                  const okCfg = !!(o.ma_cskcb && o.bhxh_account?.username && o.bhxh_account?.password);
+                  return (
+                    <div className="text-[11px] text-slate-700 flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        Tài khoản Cổng: <b className="font-mono">{o.bhxh_account?.username || '(chưa nhập)'}</b> • Mã CSKCB:{' '}
+                        <b className="font-mono">{o.ma_cskcb || '—'}</b> • Mã tỉnh:{' '}
+                        <b className="font-mono">{(o.ma_cskcb || '').substring(0, 2) || '—'}</b>{' '}
+                        {okCfg ? '✅' : '⚠️ Chưa đủ thông tin'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSignModal(false);
+                          setGatewayConfigTab(true);
+                          setShowConfigModal(true);
+                        }}
+                        className="px-2 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-bold cursor-pointer"
+                      >
+                        Cấu hình tài khoản Cổng
+                      </button>
+                    </div>
+                  );
+                })()}
+                {sendToGateway && (
+                  <p className="text-[11px] text-slate-500">
+                    Mỗi file XML là một hồ sơ KCB nên hệ thống sẽ ký và gửi tách riêng từng hồ sơ đã chọn.
+                  </p>
+                )}
+              </div>
+
+              {gatewayResults.length > 0 && (
+                <div className="rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-slate-100 text-[11px] font-bold text-slate-700">
+                    Kết quả gửi Cổng BHXH
+                  </div>
+                  <div className="max-h-40 overflow-auto divide-y divide-slate-100">
+                    {gatewayResults.map((r, idx) => (
+                      <div
+                        key={idx}
+                        className={`px-3 py-1.5 text-[11px] ${r.ok ? 'text-emerald-800 bg-emerald-50/50' : 'text-red-700 bg-red-50/50'}`}
+                      >
+                        <b>{r.ok ? '✅' : '❌'} {r.label}</b>
+                        {r.maGD ? <> • Mã GD: <span className="font-mono">{r.maGD}</span></> : null}
+                        {r.time ? <> • {r.time}</> : null}
+                        {' — '}{r.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {signStatusMsg && (
                 <div
                   className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
@@ -2438,7 +2577,9 @@ export default function Xml3176Module() {
                 >
                   <ShieldCheck className="w-4 h-4" />
                   {isSigning
-                    ? 'Đang thực hiện ký số...'
+                    ? sendToGateway ? 'Đang ký & gửi Cổng BHXH...' : 'Đang thực hiện ký số...'
+                    : sendToGateway
+                    ? `Ký & Gửi Cổng BHXH (${getTargetHosoIndices(signTargetScope).length} HS)`
                     : `Thực hiện Ký số (${getTargetHosoIndices(signTargetScope).length} HS)`}
                 </button>
               </div>
@@ -2591,8 +2732,10 @@ export default function Xml3176Module() {
       {showConfigModal && (
         <ConfigModal
           isOpen={showConfigModal}
+          initialTab={gatewayConfigTab ? 'bhyt' : undefined}
           onClose={() => {
             setShowConfigModal(false);
+            setGatewayConfigTab(false);
             setSmartCaCfg(getSmartCAConfig());
           }}
         />

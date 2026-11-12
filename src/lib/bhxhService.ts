@@ -151,3 +151,64 @@ export async function bhxhSubmitDocument(
     throw err;
   }
 }
+
+/**
+ * Gửi hồ sơ KCB theo Quyết định 3176/QĐ-BYT (Phụ lục 01 - API guiHoSoXmlQD3176)
+ * - Mỗi file XML <GIAMDINHHS> là MỘT hồ sơ KCB (đã ký số <CHUKYDONVI>)
+ * - Header: accessToken, tokenId, passwordHash (MD5)
+ * - Body: username, loaiHoSo=130, maTinh, maCSKCB, fileHSBase64
+ */
+export async function bhxhSubmitGiamDinh3176(
+  org: Organization,
+  tokens: { access_token: string; id_token: string },
+  signedXml: string
+): Promise<{ maKetQua: string; maGD: string; thoiGianTiepNhan: string; message: string }> {
+  const rawPassword = org.bhxh_account.password || '';
+  const isMd5 = /^[a-f0-9]{32}$/i.test(rawPassword);
+  const passwordHash = (isMd5 ? rawPassword : md5(rawPassword)).trim();
+
+  const maCskcb = org.ma_cskcb.trim();
+  const maTinh = maCskcb.substring(0, 2);
+
+  const cleanXml = signedXml.replace(/^\uFEFF/, '');
+  const bytes = new TextEncoder().encode(cleanXml);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  const fileHSBase64 = btoa(bin);
+
+  const formData = new URLSearchParams();
+  formData.append('username', org.bhxh_account.username.trim());
+  formData.append('loaiHoSo', '130');
+  formData.append('maTinh', maTinh);
+  formData.append('maCSKCB', maCskcb);
+  formData.append('fileHSBase64', fileHSBase64);
+
+  const res = await fetchBhxh('/api/qd130/guiHoSoXmlQD3176', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      accessToken: tokens.access_token,
+      tokenId: tokens.id_token,
+      passwordHash,
+    },
+    body: formData.toString(),
+  });
+
+  if (!res.ok) {
+    throw new Error(`HTTP Error ${res.status}`);
+  }
+  const data = await res.json();
+  const maKetQua = String(data.maKetQua ?? data.MaKetQua ?? '');
+  const thongDiep = data.thongDiep ?? data.ThongDiep ?? '';
+  return {
+    maKetQua,
+    maGD: data.maGiaoDich ?? data.MaGiaoDich ?? data.maGD ?? '',
+    thoiGianTiepNhan: data.thoiGianTiepNhan ?? data.ThoiGianTiepNhan ?? '',
+    message:
+      maKetQua === '200'
+        ? thongDiep || 'Gửi thành công'
+        : `Cổng từ chối (Mã ${maKetQua})${thongDiep ? ': ' + thongDiep : ''}`,
+  };
+}
