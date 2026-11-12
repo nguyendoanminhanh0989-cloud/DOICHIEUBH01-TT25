@@ -1141,7 +1141,7 @@ export default function Xml3176Module() {
   }, [doc, activeTab, activeTableMeta]);
 
   return (
-    <div className="h-[calc(100vh-56px)] flex flex-col gap-3 overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
       {/* THANH CÔNG CỤ & THÔNG TIN TỔNG QUAN HỒ SƠ 3176 (CỐ ĐỊNH TRÊN CÙNG) */}
       <div className="shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5">
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">

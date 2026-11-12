@@ -874,7 +874,7 @@ export default function ChungTuTt12Module() {
   };
 
   return (
-    <div className="h-[calc(100vh-56px)] flex flex-col gap-2.5 overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
       {/* HEADER MODULE CỐ ĐỊNH TRÊN CÙNG */}
       <div className="shrink-0 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-2xl px-4 py-2.5 text-white shadow-md border border-blue-700/40 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
         <div className="flex items-start sm:items-center gap-3">

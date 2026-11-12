@@ -761,7 +761,7 @@ export default function App() {
       className={cn(
         "min-h-screen text-slate-900 font-sans selection:bg-lime-300 selection:text-lime-900 bg-cover bg-center bg-fixed relative",
         mainTab === 'TT12_BH01_BH02' || mainTab === 'XML_3176'
-          ? "h-screen overflow-hidden flex flex-col"
+          ? "h-screen pb-[38px] overflow-hidden flex flex-col"
           : "pb-12"
       )}
       style={{ 
