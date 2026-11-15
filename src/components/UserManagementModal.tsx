@@ -803,10 +803,17 @@ WITH CHECK (true);`;
                                   Đã tạm ngưng
                                 </span>
                               )}
-                              <div className="text-[10px] text-slate-400 mt-1">
-                                {u.lastLogin
-                                  ? `ĐN cuối: ${new Date(u.lastLogin).toLocaleString('vi-VN')}`
-                                  : 'Chưa đăng nhập'}
+                              <div className="text-[10px] mt-1 space-y-0.5">
+                                <div className={u.lastLogin ? 'text-slate-600 font-semibold' : 'text-slate-400'}>
+                                  {u.lastLogin
+                                    ? `ĐN cuối: ${new Date(u.lastLogin).toLocaleString('vi-VN')}`
+                                    : 'Chưa đăng nhập'}
+                                </div>
+                                {u.createdAt && (
+                                  <div className="text-[9.5px] text-slate-400">
+                                    Tạo TK: {new Date(u.createdAt).toLocaleString('vi-VN')}
+                                  </div>
+                                )}
                               </div>
                             </td>
 

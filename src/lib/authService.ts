@@ -367,27 +367,88 @@ export async function syncWithSupabaseTable(payload: {
         await supabase.from('app_users').delete().eq('id', payload.userId);
       }
     } else if (payload.action === 'SYNC' && Array.isArray(payload.users) && payload.users.length > 0) {
-      for (const u of payload.users) {
-        if (!u || !u.username) continue;
-        await supabase.from('app_users').upsert(
-          {
-            id: u.id,
-            username: u.username.toLowerCase(),
-            password_hash: u.passwordHash,
-            plain_password_hint: u.plainPasswordHint || '',
-            full_name: u.fullName,
-            phone: u.phone || '',
-            department: u.department || '',
-            role: u.role,
-            status: u.status,
-            allowed_modules: u.allowedModules,
-            created_at: u.createdAt,
-            updated_at: u.updatedAt,
-            last_login: u.lastLogin || null,
-            note: u.note || '',
-          },
-          { onConflict: 'username' }
-        );
+      // Đọc dữ liệu hiện có trên Supabase TRƯỚC để gộp thông minh, tuyệt đối không lấy cache cũ ở local đè mất last_login / thông tin mới trên Supabase
+      const { data: existingRows } = await supabase.from('app_users').select('*');
+      const existingMap = new Map<string, AppUser>();
+      if (Array.isArray(existingRows)) {
+        for (const row of existingRows) {
+          if (!row || !row.username) continue;
+          const mapped: AppUser = {
+            id: row.id || `u-${row.username}`,
+            username: String(row.username || '').toLowerCase(),
+            passwordHash: row.password_hash || '',
+            plainPasswordHint: row.plain_password_hint || '',
+            fullName: row.full_name || row.username,
+            phone: row.phone || '',
+            department: row.department || '',
+            role: row.role === 'ADMIN' ? 'ADMIN' : 'USER',
+            status: row.status === 'SUSPENDED' ? 'SUSPENDED' : row.status === 'PENDING' ? 'PENDING' : 'ACTIVE',
+            allowedModules: Array.isArray(row.allowed_modules) ? row.allowed_modules : [...ALL_MODULE_IDS],
+            createdAt: row.created_at || new Date().toISOString(),
+            updatedAt: row.updated_at || new Date().toISOString(),
+            lastLogin: row.last_login || undefined,
+            note: row.note || '',
+          };
+          existingMap.set(mapped.username, mapped);
+        }
+      }
+
+      for (const localU of payload.users) {
+        if (!localU || !localU.username) continue;
+        const uname = localU.username.toLowerCase();
+        const remoteU = existingMap.get(uname);
+
+        if (!remoteU) {
+          await supabase.from('app_users').upsert(
+            {
+              id: localU.id,
+              username: uname,
+              password_hash: localU.passwordHash,
+              plain_password_hint: localU.plainPasswordHint || '',
+              full_name: localU.fullName,
+              phone: localU.phone || '',
+              department: localU.department || '',
+              role: localU.role,
+              status: localU.status,
+              allowed_modules: localU.allowedModules,
+              created_at: localU.createdAt,
+              updated_at: localU.updatedAt,
+              last_login: localU.lastLogin || null,
+              note: localU.note || '',
+            },
+            { onConflict: 'username' }
+          );
+          continue;
+        }
+
+        const merged = mergeTwoUsers(remoteU, localU);
+        const remoteUpdated = new Date(remoteU.updatedAt || 0).getTime();
+        const mergedUpdated = new Date(merged.updatedAt || 0).getTime();
+        const remoteLogin = remoteU.lastLogin ? new Date(remoteU.lastLogin).getTime() : 0;
+        const mergedLogin = merged.lastLogin ? new Date(merged.lastLogin).getTime() : 0;
+
+        // Chỉ cập nhật lên Supabase nếu bản gộp thực sự có dữ liệu mới hơn
+        if (mergedUpdated > remoteUpdated || mergedLogin > remoteLogin || (!remoteU.passwordHash && merged.passwordHash)) {
+          await supabase.from('app_users').upsert(
+            {
+              id: merged.id,
+              username: uname,
+              password_hash: merged.passwordHash,
+              plain_password_hint: merged.plainPasswordHint || '',
+              full_name: merged.fullName,
+              phone: merged.phone || '',
+              department: merged.department || '',
+              role: merged.role,
+              status: merged.status,
+              allowed_modules: merged.allowedModules,
+              created_at: merged.createdAt,
+              updated_at: merged.updatedAt,
+              last_login: merged.lastLogin || null,
+              note: merged.note || '',
+            },
+            { onConflict: 'username' }
+          );
+        }
       }
     }
 
@@ -470,7 +531,20 @@ export async function syncAllUsersToSupabase(): Promise<{
   }
 }
 
+function pickLatestIso(a?: string, b?: string): string | undefined {
+  const tA = a ? new Date(a).getTime() : 0;
+  const tB = b ? new Date(b).getTime() : 0;
+  const validA = Number.isFinite(tA) && tA > 0;
+  const validB = Number.isFinite(tB) && tB > 0;
+  if (!validA && !validB) return undefined;
+  if (!validA) return b;
+  if (!validB) return a;
+  return tB > tA ? b : a;
+}
+
 function mergeTwoUsers(cloudUser: AppUser, localUser: AppUser): AppUser {
+  const latestLogin = pickLatestIso(cloudUser.lastLogin, localUser.lastLogin);
+
   if (!cloudUser.passwordHash && localUser.passwordHash) {
     return {
       ...localUser,
@@ -489,6 +563,7 @@ function mergeTwoUsers(cloudUser: AppUser, localUser: AppUser): AppUser {
         new Date(localUser.updatedAt || 0).getTime() > new Date(cloudUser.updatedAt || 0).getTime()
           ? localUser.updatedAt
           : cloudUser.updatedAt,
+      lastLogin: latestLogin,
     };
   }
 
@@ -504,9 +579,13 @@ function mergeTwoUsers(cloudUser: AppUser, localUser: AppUser): AppUser {
         localUser.plainPasswordHint !== undefined && localUser.plainPasswordHint !== ''
           ? localUser.plainPasswordHint
           : cloudUser.plainPasswordHint,
+      lastLogin: latestLogin,
     };
   }
-  return cloudUser;
+  return {
+    ...cloudUser,
+    lastLogin: latestLogin,
+  };
 }
 
 /**
@@ -867,6 +946,7 @@ export async function loginWithCredentials(
   const updatedUser: AppUser = {
     ...found,
     lastLogin: now,
+    updatedAt: now,
   };
 
   // 3. Lưu phiên đăng nhập ngay vào RAM (tức thì, không cần đợi Cloud)
@@ -876,8 +956,11 @@ export async function loginWithCredentials(
     rememberMe,
   });
 
-  // 4. Chạy ngầm đồng bộ lastLogin lên Cloud/Supabase (không block UI)
-  upsertUserEverywhere(updatedUser).catch(() => null);
+  // 4. Đồng bộ lastLogin lên Supabase & Cloud ngay (chờ tối đa 1.5s để đảm bảo ghi nhận trước khi chuyển trang)
+  await Promise.race([
+    upsertUserEverywhere(updatedUser).catch(() => null),
+    new Promise(resolve => setTimeout(resolve, 1500)),
+  ]);
 
   return updatedUser;
 }

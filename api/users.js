@@ -233,9 +233,22 @@ function decodeLegacyChunks(data) {
   }
 }
 
+function pickLatestIso(a, b) {
+  const tA = a ? new Date(a).getTime() : 0;
+  const tB = b ? new Date(b).getTime() : 0;
+  const validA = Number.isFinite(tA) && tA > 0;
+  const validB = Number.isFinite(tB) && tB > 0;
+  if (!validA && !validB) return undefined;
+  if (!validA) return b;
+  if (!validB) return a;
+  return tB > tA ? b : a;
+}
+
 function mergeTwoUserRecords(existingUser, incomingUser) {
   if (!existingUser) return incomingUser;
   if (!incomingUser) return existingUser;
+
+  const latestLogin = pickLatestIso(existingUser.lastLogin, incomingUser.lastLogin);
 
   if (!existingUser.passwordHash && incomingUser.passwordHash) {
     return {
@@ -244,6 +257,7 @@ function mergeTwoUserRecords(existingUser, incomingUser) {
       id: existingUser.id || incomingUser.id,
       passwordHash: incomingUser.passwordHash,
       plainPasswordHint: incomingUser.plainPasswordHint || existingUser.plainPasswordHint,
+      lastLogin: latestLogin,
     };
   }
   if (existingUser.passwordHash && !incomingUser.passwordHash) {
@@ -253,6 +267,7 @@ function mergeTwoUserRecords(existingUser, incomingUser) {
       id: existingUser.id || incomingUser.id,
       passwordHash: existingUser.passwordHash,
       plainPasswordHint: existingUser.plainPasswordHint || incomingUser.plainPasswordHint,
+      lastLogin: latestLogin,
     };
   }
 
@@ -269,9 +284,13 @@ function mergeTwoUserRecords(existingUser, incomingUser) {
         incomingUser.plainPasswordHint !== undefined && incomingUser.plainPasswordHint !== ''
           ? incomingUser.plainPasswordHint
           : existingUser.plainPasswordHint,
+      lastLogin: latestLogin,
     };
   }
-  return existingUser;
+  return {
+    ...existingUser,
+    lastLogin: latestLogin,
+  };
 }
 
 async function loadCloudStore() {
