@@ -327,7 +327,7 @@ function getCompactTt25ColumnWidth(col: string): number {
 
 function getTt25FieldValue(r: HoSoRecord, col: string): string {
   const raw = r.rawData || {};
-  if (raw[col] !== undefined && raw[col] !== '') return String(raw[col]);
+  if (col in raw && raw[col] !== undefined) return String(raw[col] ?? '');
   switch (col) {
     case 'MA_CT':
       return raw.SO_SERI || raw.SERI || '';
@@ -834,9 +834,9 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
       const maCskcb = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '48225').trim();
 
       if (list.length === 1) {
-        // Xuất 1 file XML đơn lẻ
+        // Xuất 1 file XML đơn lẻ (nếu đã ký và chưa bị sửa sau khi ký thì lấy bản đã ký, ngược lại dựng mới từ dữ liệu mới nhất)
         const r = list[0];
-        let xmlStr = r.signedXml || r.xmlContent;
+        let xmlStr = isRecordSigned(r) ? (r.signedXml || r.xmlContent) : undefined;
         if (!xmlStr) {
           xmlStr = buildXml(r.type, r.rawData, maCskcb);
         }
@@ -894,6 +894,51 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
     ([, val]) => val && val.trim() !== ''
   );
 
+  // Tùy chỉnh kéo rộng / thu hẹp độ rộng từng cột bằng chuột cho tất cả các mẫu TT25
+  const [customColWidths, setCustomColWidths] = useState<Record<string, number>>({});
+
+  const getEffectiveTt25ColWidth = (col: string, defaultWidth?: number): number => {
+    const key = `${activeSchemaType}:${col}`;
+    return customColWidths[key] ?? (defaultWidth ?? getCompactTt25ColumnWidth(col));
+  };
+
+  const startResizeTt25Col = (e: React.MouseEvent, col: string, defaultWidth?: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const key = `${activeSchemaType}:${col}`;
+    const startX = e.clientX;
+    const startWidth = getEffectiveTt25ColWidth(col, defaultWidth);
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const nextWidth = Math.max(28, Math.round(startWidth + delta));
+      setCustomColWidths(prev => ({ ...prev, [key]: nextWidth }));
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const toggleExpandTt25Col = (col: string, defaultWidth?: number) => {
+    const key = `${activeSchemaType}:${col}`;
+    const defW = defaultWidth ?? getCompactTt25ColumnWidth(col);
+    setCustomColWidths(prev => {
+      const next = { ...prev };
+      if (next[key]) delete next[key];
+      else next[key] = Math.max(defW + 90, 210);
+      return next;
+    });
+  };
+
   const handleCellEdit = (recordId: string, col: string, value: string) => {
     const org = getOrgConfig();
     const maCskcb = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '48225').trim();
@@ -904,23 +949,37 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
       SO_CMND_NND: ['CMND'],
       NGAYCAP_CMND_NND: ['NGAY_CAP_CMND'],
       NOICAP_CMND_NND: ['NOI_CAP_CMND'],
-      MA_DANTOC: ['DAN_TOC'],
+      MA_DANTOC: ['DAN_TOC', 'MA_DAN_TOC'],
+      MA_DAN_TOC: ['DAN_TOC', 'MA_DANTOC'],
       MA_DANTOC_NND: ['DAN_TOC'],
-      NOI_DK_THUONGTRU_NND: ['DIA_CHI'],
+      NOI_DK_THUONGTRU_NND: ['DIA_CHI', 'NOI_CU_TRU_NND'],
+      NOI_CU_TRU_NND: ['DIA_CHI', 'NOI_DK_THUONGTRU_NND'],
+      DIA_CHI: ['NOI_DK_THUONGTRU_NND', 'NOI_CU_TRU_NND'],
       NGAY_SINH_CON: ['NGAY_SINHCON'],
+      NGAY_SINHCON: ['NGAY_SINH_CON'],
       TEN_NGUOI_HANH_NGHE: ['TEN_BSY', 'TEN_BS'],
-      MA_CCHN: ['MA_BS', 'MA_BSY'],
+      TEN_BS: ['TEN_BSY', 'TEN_NGUOI_HANH_NGHE'],
+      MA_CCHN: ['MA_BS', 'MA_BSY', 'MA_CCHN_BS'],
+      MA_CCHN_BS: ['MA_BS', 'MA_BSY', 'MA_CCHN'],
+      MA_BS: ['MA_BSY', 'MA_CCHN', 'MA_CCHN_BS'],
       MA_CCHN_TRUONGKHOA: ['MA_TRUONGKHOA'],
-      CHANDOAN_DIEUTRI: ['PP_DIEUTRI'],
-      BENH_ICD10_ID: ['BENHICD10'],
-      BENHICD10_ID: ['BENHICD10'],
-      BENH_ICD10_TEN: ['TENBENHICD10'],
-      TENBENHNICD10: ['TENBENHICD10'],
-      THU_TRUONG_DV: ['NGUOI_DAI_DIEN', 'THU_TRUONG_DVI'],
-      THU_TRUONG_DVI: ['NGUOI_DAI_DIEN'],
+      CHANDOAN_DIEUTRI: ['PP_DIEUTRI', 'CHAN_DOAN'],
+      CHAN_DOAN_RA: ['CHAN_DOAN_RV', 'CHAN_DOAN'],
+      BENH_ICD10_ID: ['BENHICD10', 'BENHICD10_ID', 'BENH_ICD10_MA'],
+      BENHICD10_ID: ['BENHICD10', 'BENH_ICD10_ID', 'BENH_ICD10_MA'],
+      BENH_ICD10_MA: ['BENHICD10', 'BENH_ICD10_ID', 'BENHICD10_ID'],
+      BENH_ICD10_TEN: ['TENBENHICD10', 'TENBENHNICD10'],
+      TENBENHNICD10: ['TENBENHICD10', 'BENH_ICD10_TEN'],
+      THU_TRUONG_DV: ['NGUOI_DAI_DIEN', 'THU_TRUONG_DVI', 'DAI_DIEN_DVI'],
+      THU_TRUONG_DVI: ['NGUOI_DAI_DIEN', 'THU_TRUONG_DV', 'DAI_DIEN_DVI'],
+      NGUOI_DAI_DIEN: ['THU_TRUONG_DV', 'THU_TRUONG_DVI', 'DAI_DIEN_DVI'],
+      DAI_DIEN_DVI: ['NGUOI_DAI_DIEN', 'THU_TRUONG_DVI', 'THU_TRUONG_DV'],
       SO_SERI: ['SERI', 'SO'],
-      DON_VI: ['TEN_DVI', 'TEN_DON_VI'],
+      DON_VI: ['TEN_DVI', 'TEN_DON_VI', 'TEN_DONVI'],
+      TEN_DONVI: ['TEN_DVI', 'TEN_DON_VI', 'DON_VI'],
+      TEN_DVI: ['DON_VI', 'TEN_DON_VI', 'TEN_DONVI'],
       NGAY_CHUNG_TU: ['NGAY_CT'],
+      NGAY_CT: ['NGAY_CHUNG_TU'],
     };
     setRecords(prev =>
       prev.map(r => {
@@ -947,13 +1006,12 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           xmlContent = buildXml(r.type, rawData, maCskcb);
         } catch {}
 
-        const wasSigned = isRecordSigned(r) || isRecordSubmitted(r);
         return {
           ...r,
-          hoTen: display.hoTen || r.hoTen || 'Không rõ',
-          maBhyt: display.maBhyt || r.maBhyt,
-          maBhxh: display.maBhxh || r.maBhxh,
-          cccd: display.cccd || r.cccd,
+          hoTen: display.hoTen || 'Không rõ',
+          maBhyt: display.maBhyt,
+          maBhxh: display.maBhxh,
+          cccd: display.cccd,
           khoa: display.khoaPrimary,
           icd: display.chanDoanPrimary,
           chanDoan: display.chanDoanSecondary,
@@ -967,15 +1025,16 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             nguoiKyPrimary: display.nguoiKyPrimary,
             nguoiKySecondary: display.nguoiKySecondary,
           },
-          trangThai: wasSigned
-            ? r.trangThai
-            : errors.length > 0
+          trangThai:
+            errors.length > 0
               ? ('INVALID_FORMAT' as HoSoRecord['trangThai'])
               : ('UNSIGNED' as HoSoRecord['trangThai']),
           errors,
           rawData,
           originalRow: nextOriginalRow,
           xmlContent,
+          signedXml: undefined,
+          signatureBase64: undefined,
         };
       })
     );
@@ -1429,6 +1488,25 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
               <FileSpreadsheet className="w-3.5 h-3.5" />
               Xuất Excel ({records.length})
             </button>
+
+            {Object.keys(customColWidths).some(k => k.startsWith(`${activeSchemaType}:`)) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomColWidths(prev => {
+                    const next = { ...prev };
+                    Object.keys(next).forEach(k => {
+                      if (k.startsWith(`${activeSchemaType}:`)) delete next[k];
+                    });
+                    return next;
+                  });
+                }}
+                className="px-2 py-0.5 text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-md text-[11px] font-bold transition cursor-pointer"
+                title="Khôi phục độ rộng mặc định cho các cột của mẫu này"
+              >
+                Đặt lại cỡ cột
+              </button>
+            )}
           </div>
         </div>
 
@@ -1438,20 +1516,20 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             style={{
               minWidth: `${
                 26 +
-                86 +
-                96 +
-                42 +
-                activeColumns.reduce((sum, col) => sum + getCompactTt25ColumnWidth(col), 0)
+                getEffectiveTt25ColWidth('__STATUS__', 86) +
+                getEffectiveTt25ColWidth('__ACTION__', 96) +
+                getEffectiveTt25ColWidth('__TYPE__', 42) +
+                activeColumns.reduce((sum, col) => sum + getEffectiveTt25ColWidth(col), 0)
               }px`,
             }}
           >
             <colgroup>
               <col style={{ width: '26px' }} />
-              <col style={{ width: '86px' }} />
-              <col style={{ width: '96px' }} />
-              <col style={{ width: '42px' }} />
+              <col style={{ width: `${getEffectiveTt25ColWidth('__STATUS__', 86)}px` }} />
+              <col style={{ width: `${getEffectiveTt25ColWidth('__ACTION__', 96)}px` }} />
+              <col style={{ width: `${getEffectiveTt25ColWidth('__TYPE__', 42)}px` }} />
               {activeColumns.map(col => (
-                <col key={col} style={{ width: `${getCompactTt25ColumnWidth(col)}px` }} />
+                <col key={col} style={{ width: `${getEffectiveTt25ColWidth(col)}px` }} />
               ))}
             </colgroup>
             <thead className="bg-slate-100 border-b border-slate-200 sticky top-0 z-10 shadow-2xs">
@@ -1464,24 +1542,48 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                     checked={records.length > 0 && selectedIds.size === records.length}
                   />
                 </th>
-                <th className="px-1 py-1 border-b border-r border-slate-200 text-center font-black text-[9.5px] text-slate-700 align-middle">
+                <th className="relative px-1 py-1 border-b border-r border-slate-200 text-center font-black text-[9.5px] text-slate-700 align-middle select-none">
                   <div>TRẠNG THÁI</div>
                   <div className="text-[8px] font-normal text-slate-500">Ký số / Cổng</div>
+                  <div
+                    onMouseDown={e => startResizeTt25Col(e, '__STATUS__', 86)}
+                    onDoubleClick={e => {
+                      e.stopPropagation();
+                      toggleExpandTt25Col('__STATUS__', 86);
+                    }}
+                    className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30"
+                  />
                 </th>
-                <th className="px-1 py-1 border-b border-r border-slate-200 text-center font-black text-[9.5px] text-slate-700 align-middle">
+                <th className="relative px-1 py-1 border-b border-r border-slate-200 text-center font-black text-[9.5px] text-slate-700 align-middle select-none">
                   <div>THAO TÁC</div>
                   <div className="text-[8px] font-normal text-slate-500">Ký • Gửi • XML</div>
+                  <div
+                    onMouseDown={e => startResizeTt25Col(e, '__ACTION__', 96)}
+                    onDoubleClick={e => {
+                      e.stopPropagation();
+                      toggleExpandTt25Col('__ACTION__', 96);
+                    }}
+                    className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30"
+                  />
                 </th>
-                <th className="px-0.5 py-1 border-b border-r border-slate-200 text-center font-black text-[9.5px] text-slate-700 align-middle">
+                <th className="relative px-0.5 py-1 border-b border-r border-slate-200 text-center font-black text-[9.5px] text-slate-700 align-middle select-none">
                   <div>MẪU</div>
+                  <div
+                    onMouseDown={e => startResizeTt25Col(e, '__TYPE__', 42)}
+                    onDoubleClick={e => {
+                      e.stopPropagation();
+                      toggleExpandTt25Col('__TYPE__', 42);
+                    }}
+                    className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30"
+                  />
                 </th>
                 {activeColumns.map((col, idx) => {
                   const colFilterVal = columnFilters[col] || '';
                   return (
                     <th
                       key={col}
-                      className="px-0.5 py-1 border-b border-r border-slate-200 align-bottom overflow-hidden"
-                      title={`${idx + 1}. ${col} — ${TT25_COLUMN_LABELS[col] || col}`}
+                      className="relative px-0.5 py-1 border-b border-r border-slate-200 align-bottom overflow-hidden select-none group/th"
+                      title={`${idx + 1}. ${col} — ${TT25_COLUMN_LABELS[col] || col} (Kéo mép phải cột để chỉnh rộng/hẹp, nhấp đúp mép phải để mở rộng nhanh)`}
                     >
                       <div className="flex items-start gap-0.5 leading-[1.1] min-h-[20px]">
                         <span className="text-[8px] font-black text-blue-700 bg-blue-50 px-0.5 rounded border border-blue-200 shrink-0 mt-px">
@@ -1531,6 +1633,16 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                           </button>
                         )}
                       </div>
+                      {/* Thanh kéo thay đổi độ rộng cột */}
+                      <div
+                        onMouseDown={e => startResizeTt25Col(e, col)}
+                        onDoubleClick={e => {
+                          e.stopPropagation();
+                          toggleExpandTt25Col(col);
+                        }}
+                        title="Kéo qua trái/phải để tùy chỉnh độ rộng cột • Nhấp đúp để mở rộng/thu gọn nhanh"
+                        className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30 transition-colors"
+                      />
                     </th>
                   );
                 })}

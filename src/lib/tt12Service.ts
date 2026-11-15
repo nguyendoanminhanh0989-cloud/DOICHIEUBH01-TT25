@@ -883,6 +883,13 @@ export function normalizeAndEnrichRow(
 ): Record<string, string> {
   const mapped: Record<string, string> = {};
 
+  // Ưu tiên giữ nguyên các cột chuẩn (targetXmlColumns) nếu đã có trên dòng (tránh bị khóa alias cũ ghi đè sau khi sửa)
+  for (const targetCol of config.targetXmlColumns) {
+    if (targetCol in rawRow && rawRow[targetCol] !== undefined) {
+      mapped[targetCol] = String(rawRow[targetCol] ?? '').trim();
+    }
+  }
+
   // 1. Ánh xạ mọi tên cột (kể cả sai vị trí, viết tắt, thiếu dấu gạch dưới, alias) về tên cột chuẩn của config
   for (const [k, v] of Object.entries(rawRow)) {
     const cleanKey = k.trim();
@@ -898,9 +905,7 @@ export function normalizeAndEnrichRow(
     }
   }
 
-  if (config.tableCode.includes('01BH') && fallbackIndex !== undefined) {
-    mapped.STT = String(fallbackIndex);
-  } else if ((!mapped.STT || !mapped.STT.trim()) && fallbackIndex !== undefined) {
+  if ((!mapped.STT || !mapped.STT.trim()) && fallbackIndex !== undefined) {
     mapped.STT = String(fallbackIndex);
   }
 
@@ -1360,10 +1365,12 @@ export function exportStandardTt12Excel(
   config: TT12TableConfig
 ): void {
   const cols = config.targetXmlColumns;
-  const normalizedRows = rows.map((r, idx) => normalizeAndEnrichRow(r, config, idx + 1));
   const sheetData: string[][] = [
     cols,
-    ...normalizedRows.map(r => cols.map(c => String(r[c] ?? ''))),
+    ...rows.map((r, idx) => {
+      const fallback = normalizeAndEnrichRow(r, config, idx + 1);
+      return cols.map(c => (c in r ? String(r[c] ?? '') : String(fallback[c] ?? '')));
+    }),
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);
@@ -1625,7 +1632,7 @@ export function buildTt12Xml(
       const thuocPxTags: { tag: string; val: string }[] = [];
 
       for (const colName of columns) {
-        const val = normalized[colName] ?? '';
+        const val = colName in row ? String(row[colName] ?? '').trim() : (normalized[colName] ?? '');
         if (colName.startsWith('THUOCPX_')) {
           const actualTagName = colName.substring('THUOCPX_'.length);
           thuocPxTags.push({ tag: actualTagName, val });

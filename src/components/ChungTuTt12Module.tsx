@@ -885,6 +885,7 @@ export default function ChungTuTt12Module() {
     newRow.STT = String(rows.length + 1);
     const updated = [...rows, normalizeAndEnrichRow(newRow, currentConfig, rows.length + 1)];
     setRows(updated);
+    setLastExportedChunks([]);
     setCurrentPage(Math.ceil(updated.length / pageSize));
   };
 
@@ -894,6 +895,7 @@ export default function ChungTuTt12Module() {
       STT: String(i + 1),
     }));
     setRows(next);
+    setLastExportedChunks([]);
   };
 
   const handleCellEdit = (globalIdx: number, colName: string, val: string) => {
@@ -904,6 +906,52 @@ export default function ChungTuTt12Module() {
         [colName]: val,
       };
       return copy;
+    });
+    setLastExportedChunks([]);
+  };
+
+  // Tùy chỉnh kéo rộng / thu hẹp độ rộng từng cột bằng chuột
+  const [customColWidths, setCustomColWidths] = useState<Record<string, number>>({});
+
+  const getEffectiveTt12ColWidth = (col: string): number => {
+    const key = `${selectedTableCode}:${col}`;
+    return customColWidths[key] ?? getCompactTt12ColumnWidth(col);
+  };
+
+  const startResizeTt12Col = (e: React.MouseEvent, col: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const key = `${selectedTableCode}:${col}`;
+    const startX = e.clientX;
+    const startWidth = getEffectiveTt12ColWidth(col);
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const nextWidth = Math.max(28, Math.round(startWidth + delta));
+      setCustomColWidths(prev => ({ ...prev, [key]: nextWidth }));
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const toggleExpandTt12Col = (col: string) => {
+    const key = `${selectedTableCode}:${col}`;
+    const defW = getCompactTt12ColumnWidth(col);
+    setCustomColWidths(prev => {
+      const next = { ...prev };
+      if (next[key]) delete next[key];
+      else next[key] = Math.max(defW + 90, 210);
+      return next;
     });
   };
 
@@ -1478,6 +1526,7 @@ export default function ChungTuTt12Module() {
                           normalizeAndEnrichRow(r, currentConfig, idx + 1)
                         );
                         setRows(normalized);
+                        setLastExportedChunks([]);
                         setStatusMsg(
                           `✅ Đã tự động chuẩn hóa dữ liệu & sắp xếp đúng vị trí ${currentConfig.targetXmlColumns.length} cột theo quy định cho ${normalized.length} dòng!`
                         );
@@ -1489,6 +1538,25 @@ export default function ChungTuTt12Module() {
                       <RefreshCw className="w-3 h-3" />
                       Chuẩn hóa
                     </button>
+
+                    {Object.keys(customColWidths).some(k => k.startsWith(`${selectedTableCode}:`)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomColWidths(prev => {
+                            const next = { ...prev };
+                            Object.keys(next).forEach(k => {
+                              if (k.startsWith(`${selectedTableCode}:`)) delete next[k];
+                            });
+                            return next;
+                          });
+                        }}
+                        className="px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                        title="Khôi phục độ rộng mặc định cho tất cả các cột của biểu mẫu này"
+                      >
+                        Đặt lại cỡ cột
+                      </button>
+                    )}
 
                     <button
                       type="button"
@@ -1562,7 +1630,7 @@ export default function ChungTuTt12Module() {
                   minWidth: `${
                     26 +
                     currentConfig.targetXmlColumns.reduce(
-                      (sum, col) => sum + getCompactTt12ColumnWidth(col),
+                      (sum, col) => sum + getEffectiveTt12ColWidth(col),
                       0
                     )
                   }px`,
@@ -1571,7 +1639,7 @@ export default function ChungTuTt12Module() {
                 <colgroup>
                   <col style={{ width: '26px' }} />
                   {currentConfig.targetXmlColumns.map(col => (
-                    <col key={col} style={{ width: `${getCompactTt12ColumnWidth(col)}px` }} />
+                    <col key={col} style={{ width: `${getEffectiveTt12ColWidth(col)}px` }} />
                   ))}
                 </colgroup>
                 <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs">
@@ -1597,8 +1665,8 @@ export default function ChungTuTt12Module() {
                       return (
                         <th
                           key={col}
-                          className="px-0.5 py-1 border-b border-r border-slate-200 align-bottom overflow-hidden"
-                          title={`${idx + 1}. ${col} — ${TT12_COLUMN_LABELS[col] || col}`}
+                          className="relative px-0.5 py-1 border-b border-r border-slate-200 align-bottom overflow-hidden select-none group/th"
+                          title={`${idx + 1}. ${col} — ${TT12_COLUMN_LABELS[col] || col} (Kéo mép phải cột để chỉnh rộng/hẹp, nhấp đúp mép phải để mở rộng nhanh)`}
                         >
                           <div className="flex items-start gap-0.5 leading-[1.1] min-h-[20px]">
                             <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 px-0.5 rounded border border-indigo-200 shrink-0 mt-px">
@@ -1648,6 +1716,16 @@ export default function ChungTuTt12Module() {
                               </button>
                             )}
                           </div>
+                          {/* Thanh kéo thay đổi độ rộng cột */}
+                          <div
+                            onMouseDown={e => startResizeTt12Col(e, col)}
+                            onDoubleClick={e => {
+                              e.stopPropagation();
+                              toggleExpandTt12Col(col);
+                            }}
+                            title="Kéo qua trái/phải để tùy chỉnh độ rộng cột • Nhấp đúp để mở rộng/thu gọn nhanh"
+                            className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-indigo-500/70 active:bg-indigo-600 z-30 transition-colors"
+                          />
                         </th>
                       );
                     })}

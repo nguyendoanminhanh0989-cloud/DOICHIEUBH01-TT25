@@ -1302,6 +1302,51 @@ export default function Xml3176Module() {
     return activeTableMeta?.defaultFields || [];
   }, [doc, activeTab, activeTableMeta]);
 
+  // Tùy chỉnh kéo rộng / thu hẹp độ rộng từng cột bằng chuột cho Bảng 1 -> Bảng 15
+  const [customColWidths, setCustomColWidths] = useState<Record<string, number>>({});
+
+  const getEffective3176ColWidth = (col: string, defaultWidth?: number): number => {
+    const key = `${activeTab}:${col}`;
+    return customColWidths[key] ?? (defaultWidth ?? getCompactXml3176ColumnWidth(col));
+  };
+
+  const startResize3176Col = (e: React.MouseEvent, col: string, defaultWidth?: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const key = `${activeTab}:${col}`;
+    const startX = e.clientX;
+    const startWidth = getEffective3176ColWidth(col, defaultWidth);
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const nextWidth = Math.max(28, Math.round(startWidth + delta));
+      setCustomColWidths(prev => ({ ...prev, [key]: nextWidth }));
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  const toggleExpand3176Col = (col: string, defaultWidth?: number) => {
+    const key = `${activeTab}:${col}`;
+    const defW = defaultWidth ?? getCompactXml3176ColumnWidth(col);
+    setCustomColWidths(prev => {
+      const next = { ...prev };
+      if (next[key]) delete next[key];
+      else next[key] = Math.max(defW + 90, 220);
+      return next;
+    });
+  };
+
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
       {/* THANH CÔNG CỤ & THÔNG TIN TỔNG QUAN HỒ SƠ 3176 THU GỌN TỐI ĐA */}
@@ -1473,13 +1518,24 @@ export default function Xml3176Module() {
                 <input
                   type="text"
                   value={doc.maCskcb}
-                  onChange={e =>
+                  onChange={e => {
+                    const nextSignStates = { ...doc.hosoSignStates };
+                    Object.keys(nextSignStates).forEach(k => {
+                      const idx = Number(k);
+                      nextSignStates[idx] = {
+                        ...nextSignStates[idx],
+                        isSigned: false,
+                        isModified: true,
+                        signedXmlContent: undefined,
+                      };
+                    });
                     setDoc({
                       ...doc,
                       maCskcb: e.target.value,
+                      hosoSignStates: nextSignStates,
                       signature: { ...doc.signature, isSigned: false },
-                    })
-                  }
+                    });
+                  }}
                   className="w-16 px-1.5 py-0.5 text-xs font-bold text-blue-700 bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   title="Chỉnh sửa thẻ <MACSKCB>"
                 />
@@ -1493,13 +1549,24 @@ export default function Xml3176Module() {
                 <input
                   type="text"
                   value={doc.ngayLap}
-                  onChange={e =>
+                  onChange={e => {
+                    const nextSignStates = { ...doc.hosoSignStates };
+                    Object.keys(nextSignStates).forEach(k => {
+                      const idx = Number(k);
+                      nextSignStates[idx] = {
+                        ...nextSignStates[idx],
+                        isSigned: false,
+                        isModified: true,
+                        signedXmlContent: undefined,
+                      };
+                    });
                     setDoc({
                       ...doc,
                       ngayLap: e.target.value,
+                      hosoSignStates: nextSignStates,
                       signature: { ...doc.signature, isSigned: false },
-                    })
-                  }
+                    });
+                  }}
                   className="w-20 px-1.5 py-0.5 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
                 <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10.5px] font-extrabold">
@@ -1681,13 +1748,33 @@ export default function Xml3176Module() {
               </div>
 
               {activeTab !== 'ERRORS' && (
-                <button
-                  onClick={handleAddRowToActiveTable}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Thêm dòng {activeTableMeta?.tabLabel}
-                </button>
+                <>
+                  {Object.keys(customColWidths).some(k => k.startsWith(`${activeTab}:`)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustomColWidths(prev => {
+                          const next = { ...prev };
+                          Object.keys(next).forEach(k => {
+                            if (k.startsWith(`${activeTab}:`)) delete next[k];
+                          });
+                          return next;
+                        });
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold cursor-pointer"
+                      title="Khôi phục độ rộng mặc định cho các cột của bảng hiện tại"
+                    >
+                      Đặt lại cỡ cột
+                    </button>
+                  )}
+                  <button
+                    onClick={handleAddRowToActiveTable}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Thêm dòng {activeTableMeta?.tabLabel}
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -1765,19 +1852,34 @@ export default function Xml3176Module() {
                 className="w-full table-fixed text-[11px] border-collapse"
                 style={{
                   minWidth: `${
-                    (activeTab === 'XML1' ? 28 + 94 + 132 + 40 : 62 + 40 + 132) +
-                    activeColumns.reduce((sum, col) => sum + getCompactXml3176ColumnWidth(col), 0)
+                    (activeTab === 'XML1'
+                      ? 28 +
+                        getEffective3176ColWidth('__STATUS__', 94) +
+                        getEffective3176ColWidth('__ACTION__', 132) +
+                        getEffective3176ColWidth('__HS__', 40)
+                      : getEffective3176ColWidth('__ACTION__', 62) +
+                        getEffective3176ColWidth('__HS__', 40) +
+                        getEffective3176ColWidth('__HOTEN_BN__', 132)) +
+                    activeColumns.reduce((sum, col) => sum + getEffective3176ColWidth(col), 0)
                   }px`,
                 }}
               >
                 <colgroup>
                   {activeTab === 'XML1' && <col style={{ width: '28px' }} />}
-                  {activeTab === 'XML1' && <col style={{ width: '94px' }} />}
-                  <col style={{ width: activeTab === 'XML1' ? '132px' : '62px' }} />
-                  <col style={{ width: '40px' }} />
-                  {activeTab !== 'XML1' && <col style={{ width: '132px' }} />}
+                  {activeTab === 'XML1' && (
+                    <col style={{ width: `${getEffective3176ColWidth('__STATUS__', 94)}px` }} />
+                  )}
+                  <col
+                    style={{
+                      width: `${getEffective3176ColWidth('__ACTION__', activeTab === 'XML1' ? 132 : 62)}px`,
+                    }}
+                  />
+                  <col style={{ width: `${getEffective3176ColWidth('__HS__', 40)}px` }} />
+                  {activeTab !== 'XML1' && (
+                    <col style={{ width: `${getEffective3176ColWidth('__HOTEN_BN__', 132)}px` }} />
+                  )}
                   {activeColumns.map(col => (
-                    <col key={col} style={{ width: `${getCompactXml3176ColumnWidth(col)}px` }} />
+                    <col key={col} style={{ width: `${getEffective3176ColWidth(col)}px` }} />
                   ))}
                 </colgroup>
                 <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-xs">
@@ -1800,14 +1902,22 @@ export default function Xml3176Module() {
 
                     {/* Cột Trạng thái ký số ở Bảng 1 */}
                     {activeTab === 'XML1' && (
-                      <th className="border-b border-r border-slate-300 px-1 py-1 text-center bg-slate-100 align-top">
+                      <th className="relative border-b border-r border-slate-300 px-1 py-1 text-center bg-slate-100 align-top select-none">
                         <div className="font-bold text-slate-900 text-[10px] leading-tight">TRẠNG THÁI</div>
                         <div className="text-[9.5px] font-normal text-slate-500 leading-tight">Đã ký / Chưa ký</div>
+                        <div
+                          onMouseDown={e => startResize3176Col(e, '__STATUS__', 94)}
+                          onDoubleClick={e => {
+                            e.stopPropagation();
+                            toggleExpand3176Col('__STATUS__', 94);
+                          }}
+                          className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30"
+                        />
                       </th>
                     )}
 
                     <th
-                      className={`border-b border-r border-slate-300 px-1 py-1 text-center bg-slate-100 align-top ${
+                      className={`relative border-b border-r border-slate-300 px-1 py-1 text-center bg-slate-100 align-top select-none ${
                         activeTab !== 'XML1' ? 'sticky left-0 z-20' : ''
                       }`}
                     >
@@ -1825,14 +1935,32 @@ export default function Xml3176Module() {
                           ✕ Bỏ lọc
                         </button>
                       )}
+                      <div
+                        onMouseDown={e =>
+                          startResize3176Col(e, '__ACTION__', activeTab === 'XML1' ? 132 : 62)
+                        }
+                        onDoubleClick={e => {
+                          e.stopPropagation();
+                          toggleExpand3176Col('__ACTION__', activeTab === 'XML1' ? 132 : 62);
+                        }}
+                        className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30"
+                      />
                     </th>
 
-                    <th className="border-b border-r border-slate-300 px-1 py-1 text-center text-[10.5px] font-bold bg-slate-100 align-top">
+                    <th className="relative border-b border-r border-slate-300 px-1 py-1 text-center text-[10.5px] font-bold bg-slate-100 align-top select-none">
                       HS
+                      <div
+                        onMouseDown={e => startResize3176Col(e, '__HS__', 40)}
+                        onDoubleClick={e => {
+                          e.stopPropagation();
+                          toggleExpand3176Col('__HS__', 40);
+                        }}
+                        className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30"
+                      />
                     </th>
 
                     {activeTab !== 'XML1' && (
-                      <th className="border-b border-r border-slate-300 px-1.5 py-1 text-left bg-blue-50/60 align-top">
+                      <th className="relative border-b border-r border-slate-300 px-1.5 py-1 text-left bg-blue-50/60 align-top select-none">
                         <div className="font-bold text-blue-900 text-[10.5px] leading-tight">HỌ TÊN BN (XML1)</div>
                         <div className="text-[9.5px] font-normal text-blue-600 leading-tight">Liên kết theo MA_LK</div>
                         <div className="relative mt-0.5">
@@ -1863,6 +1991,14 @@ export default function Xml3176Module() {
                             </button>
                           )}
                         </div>
+                        <div
+                          onMouseDown={e => startResize3176Col(e, '__HOTEN_BN__', 132)}
+                          onDoubleClick={e => {
+                            e.stopPropagation();
+                            toggleExpand3176Col('__HOTEN_BN__', 132);
+                          }}
+                          className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30"
+                        />
                       </th>
                     )}
 
@@ -1872,8 +2008,8 @@ export default function Xml3176Module() {
                       return (
                         <th
                           key={col}
-                          className="border-b border-r border-slate-300 px-1 py-1 text-left align-top"
-                          title={`${idx + 1}. ${col} — ${label}`}
+                          className="relative border-b border-r border-slate-300 px-1 py-1 text-left align-top select-none group/th overflow-hidden"
+                          title={`${idx + 1}. ${col} — ${label} (Kéo mép phải cột để chỉnh rộng/hẹp, nhấp đúp mép phải để mở rộng nhanh)`}
                         >
                           <div className="flex items-center gap-0.5 min-w-0">
                             <span className="text-[9px] font-black text-blue-700 bg-blue-50 px-1 rounded border border-blue-200 shrink-0 leading-tight">
@@ -1923,6 +2059,16 @@ export default function Xml3176Module() {
                               </button>
                             )}
                           </div>
+                          {/* Thanh kéo thay đổi độ rộng cột */}
+                          <div
+                            onMouseDown={e => startResize3176Col(e, col)}
+                            onDoubleClick={e => {
+                              e.stopPropagation();
+                              toggleExpand3176Col(col);
+                            }}
+                            title="Kéo qua trái/phải để tùy chỉnh độ rộng cột • Nhấp đúp để mở rộng/thu gọn nhanh"
+                            className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/70 active:bg-blue-600 z-30 transition-colors"
+                          />
                         </th>
                       );
                     })}
