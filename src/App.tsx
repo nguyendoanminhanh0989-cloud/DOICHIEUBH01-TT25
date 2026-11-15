@@ -1066,7 +1066,7 @@ export default function App() {
           <Xml3176Module />
         </main>
       ) : mainTab === 'TT12_BH01_BH02' ? (
-        <main className="max-w-[1600px] w-full mx-auto px-4 py-2 flex-1 min-h-0 flex flex-col overflow-hidden">
+        <main className="max-w-full w-full mx-auto px-0.5 py-1 flex-1 min-h-0 flex flex-col overflow-hidden">
           <ChungTuTt12Module />
         </main>
       ) : (

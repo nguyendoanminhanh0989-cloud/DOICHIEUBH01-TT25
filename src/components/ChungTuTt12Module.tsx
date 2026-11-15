@@ -172,6 +172,62 @@ const TT12_COLUMN_LABELS: Record<string, string> = {
   THANG_QT: 'Tháng quyết toán',
 };
 
+/** Độ rộng tối thiểu gọn nhất (px) cho từng cột để hiển thị đủ 20 cột C79/7980a trên 1 màn hình */
+function getCompactTt12ColumnWidth(col: string): number {
+  switch (col) {
+    case 'GIOI_TINH':
+      return 28;
+    case 'STT':
+    case 'THANG_QT':
+      return 30;
+    case 'SO_NGAY_DTRI':
+    case 'MA_LOAI_KCB':
+      return 32;
+    case 'NAM_QT':
+      return 36;
+    case 'MA_CSKCB':
+    case 'MA_KHOA':
+    case 'KET_QUA_DTRI':
+    case 'TINH_TRANG_RV':
+      return 42;
+    case 'T_NGUONKHAC':
+      return 44;
+    case 'MA_BENH_CHINH':
+    case 'MA_BENH_KT':
+    case 'T_BNCCT':
+    case 'T_BNTT':
+      return 48;
+    case 'T_BHTT':
+      return 54;
+    case 'T_TONGCHI_BV':
+    case 'T_TONGCHI_BH':
+    case 'T_THUOC':
+    case 'T_VTYT':
+      return 56;
+    case 'NGAY_SINH':
+    case 'NGAY_VAO':
+    case 'NGAY_VAO_NOI_TRU':
+    case 'NGAY_RA':
+    case 'TU_NGAY':
+    case 'DEN_NGAY':
+      return 70;
+    case 'MA_THE_BHYT':
+    case 'SO_DINH_DANH':
+    case 'MA_LK':
+    case 'MA_BN':
+      return 92;
+    case 'HO_TEN':
+    case 'TEN_THUOC':
+    case 'TEN_HOAT_CHAT':
+    case 'TEN_DVKT':
+    case 'TEN_KHOA':
+    case 'DIA_CHI':
+      return 106;
+    default:
+      return 60;
+  }
+}
+
 export default function ChungTuTt12Module() {
   const [subTab, setSubTab] = useState<'XML_TT12_01BH' | 'PDF_02BH'>(() =>
     getSessionSync('tt12_sub_tab', 'XML_TT12_01BH')
@@ -1500,11 +1556,28 @@ export default function ChungTuTt12Module() {
             </div>
 
             <div className="flex-1 min-h-0 overflow-auto flex flex-col">
-              <table className="w-full text-left border-collapse text-xs">
+              <table
+                className="w-full table-fixed text-left border-collapse text-[9.5px]"
+                style={{
+                  minWidth: `${
+                    22 +
+                    currentConfig.targetXmlColumns.reduce(
+                      (sum, col) => sum + getCompactTt12ColumnWidth(col),
+                      0
+                    )
+                  }px`,
+                }}
+              >
+                <colgroup>
+                  <col style={{ width: '22px' }} />
+                  {currentConfig.targetXmlColumns.map(col => (
+                    <col key={col} style={{ width: `${getCompactTt12ColumnWidth(col)}px` }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs">
                   <tr>
-                    <th className="px-1.5 py-1 border-b border-r border-slate-200 text-center font-black text-slate-600 w-10 align-middle">
-                      <div className="text-[10px]">Xóa</div>
+                    <th className="px-0 py-0.5 border-b border-r border-slate-200 text-center font-black text-slate-600 align-middle">
+                      <div className="text-[8.5px]">Xóa</div>
                       {activeColFilterEntries.length > 0 && (
                         <button
                           type="button"
@@ -1512,10 +1585,10 @@ export default function ChungTuTt12Module() {
                             setColumnFilters({});
                             setCurrentPage(1);
                           }}
-                          className="mt-0.5 px-1 py-px rounded bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold transition cursor-pointer whitespace-nowrap"
+                          className="mt-0.5 px-0.5 py-px rounded bg-rose-100 hover:bg-rose-200 text-rose-700 text-[8px] font-bold transition cursor-pointer whitespace-nowrap"
                           title="Xóa tất cả bộ lọc cột"
                         >
-                          Bỏ lọc
+                          Bỏ
                         </button>
                       )}
                     </th>
@@ -1524,24 +1597,21 @@ export default function ChungTuTt12Module() {
                       return (
                         <th
                           key={col}
-                          className="px-1.5 py-1 border-b border-r border-slate-200 whitespace-nowrap min-w-[120px] align-top"
+                          className="px-0.5 py-0.5 border-b border-r border-slate-200 align-top overflow-hidden"
                           title={`${idx + 1}. ${col} — ${TT12_COLUMN_LABELS[col] || col}`}
                         >
-                          <div className="flex items-center justify-between gap-1 leading-tight">
-                            <div className="flex items-center gap-1 min-w-0">
-                              <span className="text-[9.5px] font-black text-indigo-600 bg-indigo-50 px-1 rounded border border-indigo-200">
-                                {idx + 1}
-                              </span>
-                              <span className="font-extrabold text-slate-800 font-mono text-[10.5px]">
-                                {col}
-                              </span>
-                            </div>
-                            <span className="text-[9.5px] font-medium text-slate-500 truncate max-w-[90px]">
-                              {TT12_COLUMN_LABELS[col] || ''}
+                          <div className="flex items-center gap-0.5 leading-tight overflow-hidden">
+                            <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 px-0.5 rounded border border-indigo-200 shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="font-extrabold text-slate-800 font-mono text-[8.5px] truncate">
+                              {col}
                             </span>
                           </div>
+                          <div className="text-[7.5px] font-medium text-slate-500 truncate leading-tight">
+                            {TT12_COLUMN_LABELS[col] || '\u00A0'}
+                          </div>
                           <div className="relative mt-0.5">
-                            <Search className="w-2.5 h-2.5 text-slate-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
                               type="text"
                               value={colFilterVal}
@@ -1553,11 +1623,11 @@ export default function ChungTuTt12Module() {
                                 }));
                                 setCurrentPage(1);
                               }}
-                              placeholder={`Lọc ${col}...`}
+                              placeholder="Lọc"
                               className={cn(
-                                'w-full pl-5 pr-4 py-0.5 rounded border text-[10.5px] font-normal outline-none transition',
+                                'w-full px-0.5 py-px rounded border text-[8.5px] leading-tight font-normal outline-none transition',
                                 colFilterVal
-                                  ? 'bg-indigo-50/70 border-indigo-500 text-indigo-950 font-semibold ring-1 ring-indigo-400'
+                                  ? 'pr-3 bg-indigo-50/70 border-indigo-500 text-indigo-950 font-semibold ring-1 ring-indigo-400'
                                   : 'bg-white border-slate-300 text-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400'
                               )}
                             />
@@ -1571,7 +1641,7 @@ export default function ChungTuTt12Module() {
                                   }));
                                   setCurrentPage(1);
                                 }}
-                                className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                className="absolute right-0.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
                                 title="Xóa lọc cột này"
                               >
                                 <X className="w-2.5 h-2.5" />
@@ -1586,38 +1656,40 @@ export default function ChungTuTt12Module() {
                 <tbody className="divide-y divide-slate-200">
                   {rows.length === 0 ? (
                     <tr className="bg-slate-50/40">
-                      <td className="px-2 py-2 border-b border-r border-slate-200 text-center text-slate-300">
+                      <td className="px-0 py-1.5 border-b border-r border-slate-200 text-center text-slate-300">
                         —
                       </td>
                       {currentConfig.targetXmlColumns.map((col, idx) => (
                         <td
                           key={col}
-                          className="px-2.5 py-2 border-b border-r border-slate-200 text-[11px] text-slate-400 italic whitespace-nowrap"
+                          className="px-0.5 py-1.5 border-b border-r border-slate-200 text-[9px] text-slate-400 italic truncate"
+                          title={`Cột ${idx + 1}: ${col}`}
                         >
-                          (Cột {idx + 1}: {col})
+                          ({idx + 1}) {col}
                         </td>
                       ))}
                     </tr>
                   ) : (
                     paginatedRows.map(({ row, globalIdx }) => (
                       <tr key={globalIdx} className="hover:bg-blue-50/40 transition-colors">
-                        <td className="px-1.5 py-0.5 border-r border-slate-200 text-center">
+                        <td className="px-0 py-0.5 border-r border-slate-200 text-center">
                           <button
                             type="button"
                             onClick={() => handleDeleteRow(globalIdx)}
                             className="p-0.5 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
                             title="Xóa dòng này"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-2.5 h-2.5" />
                           </button>
                         </td>
                         {currentConfig.targetXmlColumns.map(col => (
-                          <td key={col} className="p-0 border-r border-slate-200 min-w-[110px]">
+                          <td key={col} className="p-0 border-r border-slate-200 overflow-hidden">
                             <input
                               type="text"
                               value={row[col] ?? ''}
                               onChange={e => handleCellEdit(globalIdx, col, e.target.value)}
-                              className="w-full px-2 py-1 text-xs bg-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-800"
+                              title={String(row[col] ?? '')}
+                              className="w-full px-0.5 py-0.5 text-[9.5px] tabular-nums leading-tight bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none font-medium text-slate-800 truncate"
                             />
                           </td>
                         ))}
