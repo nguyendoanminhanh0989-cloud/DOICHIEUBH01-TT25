@@ -41,6 +41,9 @@ export interface HoSoRecord {
   cchn: string;
   trangThai: SignStatus;
   rawData: Record<string, any>;
+  /** Danh sách tên cột gốc và dữ liệu dòng gốc khi import từ file Excel */
+  originalHeaders?: string[];
+  originalRow?: Record<string, any>;
   /** Các trường hiển thị đã được map đúng theo loại CT */
   displayFields?: {
     khoaPrimary: string;

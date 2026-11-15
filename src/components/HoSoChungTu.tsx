@@ -546,7 +546,15 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
       const headers = rawRows[headerRowIndex].map((h: any) => normalizeHeaderKey(String(h ?? '')));
       const rawHeaders = rawRows[headerRowIndex].map((h: any) => String(h ?? '').trim());
 
+      // Lưu danh sách cột gốc đúng thứ tự trong file Excel đã import (bỏ cột trống thừa ở cuối)
+      const validColIndices: number[] = [];
+      rawHeaders.forEach((rh, idx) => {
+        if (rh) validColIndices.push(idx);
+      });
+      const originalHeaders = validColIndices.map(idx => rawHeaders[idx]);
+
       const jsonData: Record<string, any>[] = [];
+      const originalRowsList: Record<string, any>[] = [];
       for (let r = dataStartIndex; r < rawRows.length; r++) {
         const rowData = rawRows[r];
         if (!rowData || !rowData.length) continue;
@@ -558,7 +566,15 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           if (hdr) rowObj[hdr] = rowData[colIdx] ?? '';
           if (rawHeaders[colIdx]) rowObj[rawHeaders[colIdx]] = rowData[colIdx] ?? '';
         });
+
+        const origRow: Record<string, any> = {};
+        validColIndices.forEach(colIdx => {
+          const origKey = rawHeaders[colIdx];
+          if (origKey) origRow[origKey] = rowData[colIdx] ?? '';
+        });
+
         jsonData.push(normalizeRow(rowObj));
+        originalRowsList.push(origRow);
       }
 
       if (!jsonData.length) { alert('File Excel không có dòng dữ liệu hợp lệ!'); return; }
@@ -613,6 +629,8 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
           trangThai: errors.length > 0 ? 'INVALID_FORMAT' as HoSoRecord['trangThai'] : 'UNSIGNED' as HoSoRecord['trangThai'],
           errors,
           rawData,
+          originalHeaders,
+          originalRow: originalRowsList[index] || {},
           xmlContent,
         };
       });
@@ -700,6 +718,61 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   };
 
 
+  /** Xác định danh sách cột gốc để xuất Excel y hệt file đã import (kể cả dữ liệu đã lưu trong cache trước đó) */
+  const resolveOriginalExportColumns = (type: string, sampleRecord?: HoSoRecord): string[] => {
+    if (sampleRecord?.originalHeaders && sampleRecord.originalHeaders.length > 0) {
+      return sampleRecord.originalHeaders;
+    }
+    const raw = sampleRecord?.rawData || {};
+    // Nhận diện bộ cột gốc của file xuất từ HIS nếu hồ sơ đang lưu trong RAM từ trước
+    if (type === 'CT07' && ('MA_BV' in raw || 'TEN_BSY' in raw || 'SERI' in raw)) {
+      return [
+        'STT', 'MA_CT', 'SO_KCB', 'MA_BV', 'MA_BS', 'MA_SOBHXH', 'MA_THE', 'HO_TEN',
+        'NGAY_SINH', 'GIOI_TINH', 'PP_DIEUTRI', 'MA_DVI', 'TEN_DVI', 'TU_NGAY', 'DEN_NGAY',
+        'SO_NGAY', 'HO_TEN_CHA', 'HO_TEN_ME', 'NGAY_CT', 'NGUOI_DAI_DIEN', 'TEN_BSY', 'SERI',
+        'MAU_SO', 'LOAI_GIAYTO', 'SO_CCCD', 'NGAYCAP_CCCD', 'NOICAP_CCCD', 'NGAY_KCB',
+        'BENHICD10', 'TENBENHICD10',
+      ];
+    }
+    if (type === 'CT03' && ('MA_SOBHXH' in raw && 'MA_TRUONGKHOA' in raw)) {
+      return [
+        'STT', 'MA_CT', 'MA_CSKCB', 'SO_SERI', 'MA_KHOA', 'MA_SOBHXH', 'MA_THE', 'HO_TEN',
+        'DIA_CHI', 'NGAY_SINH', 'DAN_TOC', 'GIOI_TINH', 'NGHE_NGHIEP', 'NGAY_VAO', 'NGAY_RA',
+        'TUOI_THAI', 'CHAN_DOAN', 'PP_DIEUTRI', 'GHI_CHU', 'NGUOI_DAI_DIEN', 'MA_TRUONGKHOA',
+        'NGAY_CT', 'TEN_TRUONGKHOA', 'HO_TEN_CHA', 'HO_TEN_ME', 'TEKT', 'LOAI_GIAYTO',
+        'SO_CCCD', 'NGAYCAP_CCCD', 'NOICAP_CCCD', 'BENHICD10', 'TENBENHICD10',
+      ];
+    }
+    if (type === 'CT04' && ('DAN_TOC' in raw && 'BENHICD10' in raw)) {
+      return [
+        'STT', 'MA_CT', 'MA_CSKCB', 'SO_SERI', 'MA_BHXH', 'MA_THE', 'HO_TEN', 'NGAY_SINH',
+        'GIOI_TINH', 'DAN_TOC', 'DIA_CHI', 'NGHE_NGHIEP', 'HO_TEN_CHA', 'HO_TEN_ME',
+        'NGUOI_GIAM_HO', 'TEN_DONVI', 'NGAY_VAO', 'NGAY_RA', 'CHAN_DOAN_VAO', 'CHAN_DOAN_RA',
+        'QT_BENHLY', 'TOMTAT_KQ', 'PP_DIEUTRI', 'NGAY_SINHCON', 'NGAY_CHETCON', 'SO_CONCHET',
+        'TT_RAVIEN', 'GHI_CHU', 'NGUOI_DAI_DIEN', 'NGAY_CT', 'TEKT', 'LOAI_GIAYTO',
+        'SO_CCCD', 'NGAYCAP_CCCD', 'NOICAP_CCCD', 'BENHICD10', 'TENBENHICD10',
+      ];
+    }
+    if (type === 'CT05' && ('MA_SOBHXH_ME' in raw || 'QUYEN_SO' in raw)) {
+      return [
+        'STT', 'MA_CT', 'MA_CSKCB', 'MA_THE', 'SO_SERI', 'MA_SOBHXH_ME', 'HO_TEN_ME',
+        'NGAY_SINH', 'DIA_CHI', 'CMND', 'NGAY_CAP_CMND', 'NOI_CAP_CMND', 'DAN_TOC',
+        'HO_TEN_CHA', 'NGAY_SINHCON', 'NOI_SINH_CON', 'TEN_CON', 'SO_CON', 'GIOI_TINH_CON',
+        'CAN_NANG_CON', 'TINH_TRANG_CON', 'GHI_CHU', 'NGUOI_DO_DE', 'NGUOI_GHI_PHIEU',
+        'NGUOI_DAI_DIEN', 'NGAY_CT', 'SINHCON_PHAUTHUAT', 'SINHCON_DUOI32TUAN', 'SO', 'QUYEN_SO',
+      ];
+    }
+    if (type === 'CT06' && ('BENHICD10' in raw && 'MATINH_CU_TRU' in raw)) {
+      return [
+        'STT', 'MA_CSKCB', 'SO_SERI', 'MA_CT', 'SO_KCB', 'MA_BHXH', 'MA_THE', 'HO_TEN',
+        'NGAY_SINH', 'TEN_DVI', 'CHAN_DOAN', 'TU_NGAY', 'DEN_NGAY', 'NGUOI_DAI_DIEN',
+        'TEN_BS', 'MA_BS', 'NGAY_CT', 'LOAI_GIAYTO', 'SO_CCCD', 'NGAYCAP_CCCD', 'NOICAP_CCCD',
+        'NOI_CU_TRU_NND', 'MATINH_CU_TRU', 'MAXA_CU_TRU', 'TUOI_THAI', 'BENHICD10', 'TENBENHICD10',
+      ];
+    }
+    return TT25_TABLE_COLUMNS[type] || TT25_TABLE_COLUMNS.CT07;
+  };
+
   const handleExportExcel = async () => {
     if (records.length === 0) {
       alert('Không có dữ liệu để xuất!');
@@ -714,22 +787,29 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
 
       types.forEach(type => {
         const recordsOfType = records.filter(r => r.type === type);
+        const exportCols = resolveOriginalExportColumns(type, recordsOfType[0]);
+        const finalHeader = [...exportCols, 'TRANG_THAI_KY_SO'];
+
         const exportData = recordsOfType.map(r => {
-          // Xuất đúng định dạng cột chuẩn từ rawData
-          const data: any = { ...r.rawData };
+          const rowOut: Record<string, any> = {};
+          exportCols.forEach(col => {
+            if (r.originalRow && col in r.originalRow) {
+              rowOut[col] = r.originalRow[col] ?? '';
+            } else if (r.rawData && col in r.rawData) {
+              rowOut[col] = r.rawData[col] ?? '';
+            } else {
+              rowOut[col] = getTt25FieldValue(r, col);
+            }
+          });
 
-          // Thêm các cột trạng thái để dễ theo dõi
-          data['TRANG_THAI_KY_SO'] = r.trangThai === 'SUBMITTED' ? 'Đã gửi Cổng' :
-            r.trangThai === 'SIGNED' ? 'Đã ký số' :
-              r.trangThai === 'INVALID_FORMAT' ? 'Lỗi định dạng' : 'Chưa ký';
+          // Chỉ thêm duy nhất 1 cột cuối là trạng thái đã ký số hay chưa
+          const signed = isRecordSigned(r) || isRecordSubmitted(r);
+          rowOut['TRANG_THAI_KY_SO'] = signed ? 'Đã ký số' : 'Chưa ký';
 
-          if (r.maGD) data['MA_GIAO_DICH'] = r.maGD;
-          if (r.errors && r.errors.length > 0) data['CHI_TIET_LOI'] = r.errors.join('; ');
-
-          return data;
+          return rowOut;
         });
 
-        const ws = utils.json_to_sheet(exportData);
+        const ws = utils.json_to_sheet(exportData, { header: finalHeader });
         utils.book_append_sheet(wb, ws, `Mẫu_${type}`);
       });
 
@@ -817,12 +897,49 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
   const handleCellEdit = (recordId: string, col: string, value: string) => {
     const org = getOrgConfig();
     const maCskcb = (cskcbConfig?.cskcb.ma || org.ma_cskcb || '48225').trim();
+    const hisAliases: Record<string, string[]> = {
+      MA_BHXH: ['MA_SOBHXH'],
+      MA_BHXH_NND: ['MA_SOBHXH_ME'],
+      HOTEN_NND: ['HO_TEN_ME'],
+      SO_CMND_NND: ['CMND'],
+      NGAYCAP_CMND_NND: ['NGAY_CAP_CMND'],
+      NOICAP_CMND_NND: ['NOI_CAP_CMND'],
+      MA_DANTOC: ['DAN_TOC'],
+      MA_DANTOC_NND: ['DAN_TOC'],
+      NOI_DK_THUONGTRU_NND: ['DIA_CHI'],
+      NGAY_SINH_CON: ['NGAY_SINHCON'],
+      TEN_NGUOI_HANH_NGHE: ['TEN_BSY', 'TEN_BS'],
+      MA_CCHN: ['MA_BS', 'MA_BSY'],
+      MA_CCHN_TRUONGKHOA: ['MA_TRUONGKHOA'],
+      CHANDOAN_DIEUTRI: ['PP_DIEUTRI'],
+      BENH_ICD10_ID: ['BENHICD10'],
+      BENHICD10_ID: ['BENHICD10'],
+      BENH_ICD10_TEN: ['TENBENHICD10'],
+      TENBENHNICD10: ['TENBENHICD10'],
+      THU_TRUONG_DV: ['NGUOI_DAI_DIEN', 'THU_TRUONG_DVI'],
+      THU_TRUONG_DVI: ['NGUOI_DAI_DIEN'],
+      SO_SERI: ['SERI', 'SO'],
+      DON_VI: ['TEN_DVI', 'TEN_DON_VI'],
+      NGAY_CHUNG_TU: ['NGAY_CT'],
+    };
     setRecords(prev =>
       prev.map(r => {
         if (r.id !== recordId) return r;
         const updatedSource = { ...(r.rawData || {}), [col]: value };
+        const nextOriginalRow = r.originalRow ? { ...r.originalRow } : undefined;
+        if (nextOriginalRow && col in nextOriginalRow) {
+          nextOriginalRow[col] = value;
+        }
+        (hisAliases[col] || []).forEach(aliasKey => {
+          if (aliasKey in updatedSource) updatedSource[aliasKey] = value;
+          if (nextOriginalRow && aliasKey in nextOriginalRow) nextOriginalRow[aliasKey] = value;
+        });
+
         const rawData = mapRowToRawData(r.type, updatedSource);
         rawData[col] = value;
+        (hisAliases[col] || []).forEach(aliasKey => {
+          if (aliasKey in rawData) rawData[aliasKey] = value;
+        });
         const display = mapRowToDisplay(r.type, rawData);
         const errors = validateRecord(r.type, rawData);
         let xmlContent = r.xmlContent;
@@ -857,6 +974,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
               : ('UNSIGNED' as HoSoRecord['trangThai']),
           errors,
           rawData,
+          originalRow: nextOriginalRow,
           xmlContent,
         };
       })
