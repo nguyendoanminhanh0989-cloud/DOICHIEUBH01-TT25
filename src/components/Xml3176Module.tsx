@@ -37,6 +37,168 @@ import { getSessionCache, getSessionSync, removeSessionCache, setSessionCache, s
 
 type ActiveTab = 'ERRORS' | Xml3176TableId;
 
+/** Tính độ rộng cột tối ưu cho từng trường XML 3176 (Bảng 1-15) để giảm khoảng trống dư thừa và kéo ngang ít nhất */
+function getCompactXml3176ColumnWidth(col: string): number {
+  switch (col) {
+    case 'STT':
+    case 'GIOI_TINH':
+    case 'NHOM_MAU':
+    case 'MA_NHOM':
+    case 'PHAM_VI':
+    case 'MUC_HUONG':
+    case 'NAM_QT':
+    case 'THANG_QT':
+    case 'SO_CON':
+    case 'SO_CONCHET':
+    case 'TUOI_THAI':
+    case 'DU_PHONG':
+      return 48;
+    case 'KET_QUA_DTRI':
+    case 'MA_LOAI_RV':
+    case 'MA_LOAI_KCB':
+    case 'SO_NGAY':
+    case 'SO_NGAY_DTRI':
+    case 'SO_NGAY_NGHI':
+    case 'TYLE_TT_BH':
+    case 'TYLE_TT_DV':
+    case 'SO_LUONG':
+    case 'CAN_NANG':
+    case 'CAN_NANG_CON':
+    case 'MA_QUOCTICH':
+    case 'MA_DANTOC':
+    case 'MA_DANTOC_NND':
+    case 'MA_PTTT_QT':
+    case 'MATINH_CU_TRU':
+    case 'MAHUYEN_CU_TRU':
+    case 'MAXA_CU_TRU':
+    case 'DON_VI_TINH':
+    case 'DON_VI_DO':
+    case 'DUONG_DUNG':
+      return 56;
+    case 'MA_BN':
+    case 'MA_CSKCB':
+    case 'MA_DKBD':
+    case 'MA_KHOA':
+    case 'MA_KHOA_RV':
+    case 'MA_BENH_CHINH':
+    case 'MA_BENH_KT':
+    case 'MA_BENH_YHCT':
+    case 'MA_BS':
+    case 'MA_TTDV':
+    case 'MA_NOI_DI':
+    case 'MA_NOI_DEN':
+    case 'MA_DOI_TUONG':
+    case 'MA_THUOC':
+    case 'MA_DICH_VU':
+    case 'MA_VAT_TU':
+    case 'MA_CHI_SO':
+    case 'MA_BS_DOC_KQ':
+    case 'MA_NGHE_NGHIEP':
+    case 'MA_PP_CHEBIEN':
+    case 'MA_CSKCB_THUOC':
+    case 'MA_XANG_DAU':
+    case 'GIA_TRI':
+    case 'GOI_VTYT':
+    case 'SO_DANG_KY':
+    case 'MA_YTE':
+      return 74;
+    case 'NGAY_SINH':
+    case 'NGAYSINH_NND':
+    case 'NGAY_VAO':
+    case 'NGAY_VAO_NOI_TRU':
+    case 'NGAY_RA':
+    case 'NGAY_TTOAN':
+    case 'NGAY_YL':
+    case 'NGAY_KQ':
+    case 'NGAY_CT':
+    case 'NGAY_HOP':
+    case 'NGAY_HEN_KL':
+    case 'TU_NGAY':
+    case 'DEN_NGAY':
+    case 'GT_THE_TU':
+    case 'GT_THE_DEN':
+    case 'NGAYCAP_CCCD_NND':
+    case 'NGAY_CAP_CCCD':
+    case 'NGAY_SINHCON':
+    case 'NGAY_CHETCON':
+    case 'THOI_DIEM_DBLS':
+    case 'NGAYBD_DTRI_LAO':
+    case 'NGAYKT_DTRI_LAO':
+    case 'NGAYKD_HIV':
+    case 'BDDT_ARV':
+      return 94;
+    case 'MA_THE_BHYT':
+    case 'MA_THE_NND':
+    case 'MA_THE_TAM':
+      return 118;
+    case 'MA_LK':
+    case 'SO_CCCD':
+    case 'SO_CCCD_NND':
+    case 'MA_BHXH':
+    case 'MA_BHXH_NND':
+      return 96;
+    case 'SO_SERI':
+    case 'SO_CT':
+    case 'SO_KCB':
+    case 'SO_LUU_TRU':
+    case 'SO_HOSO':
+    case 'SO_CHUYENTUYEN':
+    case 'SO_GIAYHEN_KL':
+    case 'DIEN_THOAI':
+    case 'TT_THAU':
+      return 86;
+    case 'HO_TEN':
+    case 'HOTEN_NND':
+    case 'HO_TEN_CHA':
+    case 'HO_TEN_ME':
+    case 'NGUOI_GIAM_HO':
+    case 'TEN_BS':
+    case 'NGUOI_THUC_HIEN':
+    case 'NGUOI_CHU_TRI':
+      return 134;
+    case 'DIA_CHI':
+    case 'NOI_DK_THUONGTRU_NND':
+    case 'TEN_THUOC':
+    case 'TEN_DICH_VU':
+    case 'TEN_VAT_TU':
+    case 'TEN_CHI_SO':
+    case 'CHAN_DOAN_RV':
+    case 'CHAN_DOAN_VAO':
+    case 'PP_DIEU_TRI':
+    case 'PP_DIEUTRI':
+    case 'DIEN_BIEN_LS':
+    case 'TOMTAT_KQ':
+    case 'QT_BENHLY':
+    case 'MO_TA':
+    case 'KET_LUAN':
+    case 'DON_VI':
+    case 'GHI_CHU':
+    case 'HAM_LUONG':
+    case 'LIEU_DUNG':
+    case 'CACH_DUNG':
+    case 'DANG_BAO_CHE':
+      return 138;
+    default: {
+      if (col.startsWith('T_') || col.startsWith('DON_GIA') || col.startsWith('THANH_TIEN')) {
+        return 82;
+      }
+      if (col.startsWith('NGAY_') || col.startsWith('NGAY')) {
+        return 94;
+      }
+      if (col.startsWith('SO_') || col.startsWith('TYLE_') || col.startsWith('PHANLOAI_')) {
+        return 62;
+      }
+      if (col.startsWith('TEN_') || col.startsWith('NOI_') || col.startsWith('CHAN_DOAN')) {
+        return 134;
+      }
+      if (col.startsWith('MA_')) {
+        return 76;
+      }
+      return 84;
+    }
+  }
+}
+
 export default function Xml3176Module() {
   // Lưu cache dữ liệu XML 3176 trong phiên trình duyệt (giữ qua F5, tắt trình duyệt tự xóa)
   const [doc, setDoc] = useState<Xml3176ParsedDoc | null>(() =>
@@ -1599,12 +1761,30 @@ export default function Xml3176Module() {
           ) : (
             /* BẢNG DỮ LIỆU CHI TIẾT CHO BẢNG 1 -> BẢNG 15 (LUÔN HIỂN THỊ TIÊU ĐỀ CỘT) */
             <div className="flex-1 min-h-0 overflow-auto flex flex-col">
-              <table className="w-full text-xs border-collapse">
+              <table
+                className="w-full table-fixed text-[11px] border-collapse"
+                style={{
+                  minWidth: `${
+                    (activeTab === 'XML1' ? 28 + 94 + 132 + 40 : 62 + 40 + 132) +
+                    activeColumns.reduce((sum, col) => sum + getCompactXml3176ColumnWidth(col), 0)
+                  }px`,
+                }}
+              >
+                <colgroup>
+                  {activeTab === 'XML1' && <col style={{ width: '28px' }} />}
+                  {activeTab === 'XML1' && <col style={{ width: '94px' }} />}
+                  <col style={{ width: activeTab === 'XML1' ? '132px' : '62px' }} />
+                  <col style={{ width: '40px' }} />
+                  {activeTab !== 'XML1' && <col style={{ width: '132px' }} />}
+                  {activeColumns.map(col => (
+                    <col key={col} style={{ width: `${getCompactXml3176ColumnWidth(col)}px` }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 shadow-xs">
                   <tr>
                     {/* Cột Tích chọn ở Bảng 1 */}
                     {activeTab === 'XML1' && (
-                      <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-10 sticky left-0 bg-slate-100 z-20">
+                      <th className="border-b border-r border-slate-300 px-1 py-1 text-center sticky left-0 bg-slate-100 z-20">
                         <input
                           type="checkbox"
                           checked={
@@ -1612,7 +1792,7 @@ export default function Xml3176Module() {
                             currentTableRows.every(r => selectedHosoIndices.has(r.hosoIndex))
                           }
                           onChange={toggleSelectAllFilteredXml1}
-                          className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                          className="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer"
                           title="Tích chọn / Bỏ chọn tất cả hồ sơ đang hiển thị để Ký số & Xuất XML"
                         />
                       </th>
@@ -1620,18 +1800,18 @@ export default function Xml3176Module() {
 
                     {/* Cột Trạng thái ký số ở Bảng 1 */}
                     {activeTab === 'XML1' && (
-                      <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[145px] bg-slate-100">
-                        <div className="font-bold text-slate-900">TRẠNG THÁI KÝ SỐ</div>
-                        <div className="text-[10px] font-normal text-slate-500">Đã ký / Chưa ký</div>
+                      <th className="border-b border-r border-slate-300 px-1 py-1 text-center bg-slate-100 align-top">
+                        <div className="font-bold text-slate-900 text-[10px] leading-tight">TRẠNG THÁI</div>
+                        <div className="text-[9.5px] font-normal text-slate-500 leading-tight">Đã ký / Chưa ký</div>
                       </th>
                     )}
 
                     <th
-                      className={`border-b border-r border-slate-300 px-2.5 py-2 text-center min-w-[155px] bg-slate-100 align-top ${
+                      className={`border-b border-r border-slate-300 px-1 py-1 text-center bg-slate-100 align-top ${
                         activeTab !== 'XML1' ? 'sticky left-0 z-20' : ''
                       }`}
                     >
-                      <div>Thao tác</div>
+                      <div className="text-[10.5px] font-bold">Thao tác</div>
                       {activeColFilterEntries.length > 0 && (
                         <button
                           type="button"
@@ -1639,24 +1819,24 @@ export default function Xml3176Module() {
                             setColumnFilters({});
                             setCurrentPage(1);
                           }}
-                          className="mt-1 px-2 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-700 text-[10px] font-bold transition cursor-pointer"
+                          className="mt-0.5 px-1.5 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9.5px] font-bold transition cursor-pointer"
                           title="Xóa tất cả bộ lọc cột"
                         >
-                          ✕ Bỏ lọc cột
+                          ✕ Bỏ lọc
                         </button>
                       )}
                     </th>
 
-                    <th className="border-b border-r border-slate-300 px-2.5 py-2 text-center w-14 bg-slate-100 align-top">
-                      Hồ sơ
+                    <th className="border-b border-r border-slate-300 px-1 py-1 text-center text-[10.5px] font-bold bg-slate-100 align-top">
+                      HS
                     </th>
 
                     {activeTab !== 'XML1' && (
-                      <th className="border-b border-r border-slate-300 px-2.5 py-1.5 text-left min-w-[160px] bg-blue-50/60 align-top">
-                        <div className="font-bold text-blue-900">HỌ TÊN BN (XML1)</div>
-                        <div className="text-[10px] font-normal text-blue-600">Liên kết theo MA_LK</div>
-                        <div className="relative mt-1">
-                          <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <th className="border-b border-r border-slate-300 px-1.5 py-1 text-left bg-blue-50/60 align-top">
+                        <div className="font-bold text-blue-900 text-[10.5px] leading-tight">HỌ TÊN BN (XML1)</div>
+                        <div className="text-[9.5px] font-normal text-blue-600 leading-tight">Liên kết theo MA_LK</div>
+                        <div className="relative mt-0.5">
+                          <Search className="w-2.5 h-2.5 text-slate-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                           <input
                             type="text"
                             value={columnFilters.__HO_TEN_BN__ || ''}
@@ -1667,8 +1847,8 @@ export default function Xml3176Module() {
                               }));
                               setCurrentPage(1);
                             }}
-                            placeholder="Lọc Họ tên..."
-                            className="w-full pl-6 pr-5 py-1 rounded-md border border-blue-200 bg-white text-[11px] font-normal text-slate-700 focus:border-blue-500 outline-none"
+                            placeholder="Lọc họ tên..."
+                            className="w-full pl-4.5 pr-4 py-0.5 rounded border border-blue-200 bg-white text-[10px] font-normal text-slate-700 focus:border-blue-500 outline-none"
                           />
                           {columnFilters.__HO_TEN_BN__ && (
                             <button
@@ -1677,9 +1857,9 @@ export default function Xml3176Module() {
                                 setColumnFilters(prev => ({ ...prev, __HO_TEN_BN__: '' }));
                                 setCurrentPage(1);
                               }}
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                              className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
                             >
-                              <X className="w-3 h-3" />
+                              <X className="w-2.5 h-2.5" />
                             </button>
                           )}
                         </div>
@@ -1688,25 +1868,26 @@ export default function Xml3176Module() {
 
                     {activeColumns.map((col, idx) => {
                       const colFilterVal = columnFilters[col] || '';
+                      const label = FIELD_LABELS_3176[col] || col;
                       return (
                         <th
                           key={col}
-                          className="border-b border-r border-slate-300 px-2 py-1.5 text-left min-w-[140px] whitespace-nowrap align-top"
+                          className="border-b border-r border-slate-300 px-1 py-1 text-left align-top"
+                          title={`${idx + 1}. ${col} — ${label}`}
                         >
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] font-black text-blue-700 bg-blue-50 px-1 py-px rounded border border-blue-200">
+                          <div className="flex items-center gap-0.5 min-w-0">
+                            <span className="text-[9px] font-black text-blue-700 bg-blue-50 px-1 rounded border border-blue-200 shrink-0 leading-tight">
                               {idx + 1}
                             </span>
-                            <span className="font-mono font-bold text-slate-900">{col}</span>
+                            <span className="font-mono font-bold text-[10px] text-slate-900 truncate leading-tight">
+                              {col}
+                            </span>
                           </div>
-                          <div
-                            className="text-[10px] font-normal text-slate-500 truncate max-w-[180px] mt-0.5"
-                            title={FIELD_LABELS_3176[col] || col}
-                          >
-                            {FIELD_LABELS_3176[col] || col}
+                          <div className="text-[9.5px] font-normal text-slate-500 leading-tight line-clamp-2 min-h-[22px] mt-0.5">
+                            {label}
                           </div>
-                          <div className="relative mt-1">
-                            <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <div className="relative mt-0.5">
+                            <Search className="w-2.5 h-2.5 text-slate-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
                               type="text"
                               value={colFilterVal}
@@ -1718,8 +1899,8 @@ export default function Xml3176Module() {
                                 }));
                                 setCurrentPage(1);
                               }}
-                              placeholder={`Lọc ${col}...`}
-                              className={`w-full pl-6 pr-5 py-1 rounded-md border text-[11px] font-normal outline-none transition ${
+                              placeholder="Lọc..."
+                              className={`w-full pl-4.5 pr-4 py-0.5 rounded border text-[10px] font-normal outline-none transition ${
                                 colFilterVal
                                   ? 'bg-blue-50/80 border-blue-500 text-blue-950 font-semibold ring-1 ring-blue-400'
                                   : 'bg-white border-slate-300 text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-400'
@@ -1735,10 +1916,10 @@ export default function Xml3176Module() {
                                   }));
                                   setCurrentPage(1);
                                 }}
-                                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
                                 title="Xóa lọc cột này"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-2.5 h-2.5" />
                               </button>
                             )}
                           </div>
@@ -1786,43 +1967,43 @@ export default function Xml3176Module() {
                         >
                           {/* Ô Checkbox chọn Hồ sơ ở Bảng 1 */}
                           {activeTab === 'XML1' && (
-                            <td className="border-r border-slate-200 px-2.5 py-1.5 text-center sticky left-0 bg-white group-hover:bg-blue-50/90 z-10">
+                            <td className="border-r border-slate-200 px-1 py-1 text-center sticky left-0 bg-white group-hover:bg-blue-50/90 z-10">
                               <input
                                 type="checkbox"
                                 checked={isRowSelected}
                                 onChange={() => toggleSelectHoso(row.hosoIndex)}
-                                className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+                                className="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer"
                               />
                             </td>
                           )}
 
                           {/* Ô Trạng thái ký số ở Bảng 1 */}
                           {activeTab === 'XML1' && (
-                            <td className="border-r border-slate-200 px-2.5 py-1.5 text-center whitespace-nowrap">
+                            <td className="border-r border-slate-200 px-1 py-1 text-center whitespace-nowrap">
                               {isSigned ? (
                                 <span
-                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300"
                                   title={
                                     signState?.subjectName
                                       ? `Đã ký bởi: ${signState.subjectName} (${signState.signingTime || ''})`
                                       : 'Hồ sơ đã có chữ ký số hợp lệ'
                                   }
                                 >
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                  Đã ký số
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  Đã ký
                                 </span>
                               ) : isModified ? (
                                 <span
-                                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-300"
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-300"
                                   title="Nội dung hồ sơ đã được chỉnh sửa, cần ký số lại nếu xuất XML có ký số"
                                 >
-                                  <Edit3 className="w-3 h-3 text-blue-600" />
-                                  Đã sửa (Chưa ký)
+                                  <Edit3 className="w-2.5 h-2.5 text-blue-600" />
+                                  Đã sửa
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                                  Chưa ký số
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                  Chưa ký
                                 </span>
                               )}
                             </td>
@@ -1830,30 +2011,30 @@ export default function Xml3176Module() {
 
                           {/* Ô Thao tác: Ký lẻ HS, Sửa chi tiết, Xuất lẻ HS, Xóa */}
                           <td
-                            className={`border-r border-slate-200 px-2 py-1.5 text-center bg-white group-hover:bg-blue-50/90 ${
+                            className={`border-r border-slate-200 px-1 py-1 text-center bg-white group-hover:bg-blue-50/90 ${
                               activeTab !== 'XML1' ? 'sticky left-0 z-10' : ''
                             }`}
                           >
-                            <div className="flex items-center justify-center gap-1">
+                            <div className="flex items-center justify-center gap-0.5">
                               {activeTab === 'XML1' && (
                                 <button
                                   onClick={() => {
                                     setAutoDownloadAfterSign(false);
                                     openSignModal(row.hosoIndex);
                                   }}
-                                  className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                                  className="px-1 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
                                   title="Ký số riêng cho hồ sơ này"
                                 >
-                                  <ShieldCheck className="w-3 h-3" />
+                                  <ShieldCheck className="w-2.5 h-2.5" />
                                   Ký
                                 </button>
                               )}
                               <button
                                 onClick={() => openEditRowModal(row)}
-                                className="px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                                className="px-1 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
                                 title="Mở cửa sổ sửa toàn bộ các trường của dòng này"
                               >
-                                <Edit3 className="w-3 h-3" />
+                                <Edit3 className="w-2.5 h-2.5" />
                                 Sửa
                               </button>
                               {activeTab === 'XML1' && (
@@ -1864,42 +2045,41 @@ export default function Xml3176Module() {
                                         ? handleExportSignedXml(row.hosoIndex)
                                         : handleExportUnsignedXml(row.hosoIndex)
                                     }
-                                    className="px-1.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-0.5 cursor-pointer"
+                                    className="px-1 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
                                     title={
                                       isSigned
                                         ? 'Tải file XML chuẩn (Base64) Đã ký số của riêng hồ sơ này (theo nội dung đã sửa)'
                                         : 'Tải file XML chuẩn (Base64) Không ký số của riêng hồ sơ này (theo nội dung đã sửa)'
                                     }
                                   >
-                                    <Download className="w-3 h-3" />
+                                    <Download className="w-2.5 h-2.5" />
                                     XML
                                   </button>
                                   <button
                                     onClick={() => handleExportUnencodedXml(row.hosoIndex)}
-                                    className="px-1.5 py-1 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-[11px] flex items-center gap-0.5 cursor-pointer"
+                                    className="px-1 py-0.5 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
                                     title="Tải file XML Không mã hóa (hiển thị đầy đủ rõ ràng các thông tin trong XML) của riêng hồ sơ này"
                                   >
-                                    <FileCode2 className="w-3 h-3" />
                                     Rõ
                                   </button>
                                 </>
                               )}
                               <button
                                 onClick={() => handleDeleteRow(row)}
-                                className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 cursor-pointer"
+                                className="p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 cursor-pointer"
                                 title="Xóa dòng này"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-3 h-3" />
                               </button>
                             </div>
                           </td>
 
-                          <td className="border-r border-slate-200 px-2 py-1.5 text-center font-mono text-[11px] text-slate-500">
+                          <td className="border-r border-slate-200 px-1 py-1 text-center font-mono text-[10.5px] text-slate-500">
                             #{row.hosoIndex + 1}
                           </td>
 
                           {activeTab !== 'XML1' && (
-                            <td className="border-r border-slate-200 px-2.5 py-1.5 font-semibold text-blue-900 bg-blue-50/20 whitespace-nowrap">
+                            <td className="border-r border-slate-200 px-1.5 py-1 font-semibold text-[11px] text-blue-900 bg-blue-50/20 truncate" title={row.hoTen || ''}>
                               {row.hoTen || '—'}
                             </td>
                           )}
@@ -1911,8 +2091,9 @@ export default function Xml3176Module() {
                                 <input
                                   type="text"
                                   value={val}
+                                  title={val}
                                   onChange={e => handleInlineFieldChange(row, col, e.target.value)}
-                                  className="w-full px-2.5 py-1.5 text-xs bg-transparent focus:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500 font-medium text-slate-800"
+                                  className="w-full px-1.5 py-1 text-[11px] bg-transparent focus:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500 font-medium text-slate-800"
                                 />
                               </td>
                             );
