@@ -172,67 +172,59 @@ const TT12_COLUMN_LABELS: Record<string, string> = {
   THANG_QT: 'Tháng quyết toán',
 };
 
-const FLEXIBLE_TT12_COLUMNS = new Set([
-  'HO_TEN',
-  'TEN_THUOC',
-  'TEN_DVKT',
-  'TEN_KHOA',
-  'TEN_VTYT',
-  'DIA_CHI',
-]);
-
-/** Độ rộng cố định gọn nhất (px) cho từng cột để hiển thị đủ 20 cột C79/7980a với cỡ chữ dễ đọc */
+/** Độ rộng cân đối (px) cho từng cột để hiển thị đủ 20 cột C79/7980a, không dư cột tên và không khuất ký tự ngày/mã thẻ */
 function getCompactTt12ColumnWidth(col: string): number {
   switch (col) {
     case 'STT':
       return 36;
     case 'GIOI_TINH':
+      return 42;
     case 'THANG_QT':
-      return 38;
+      return 44;
+    case 'NAM_QT':
+      return 46;
     case 'SO_NGAY_DTRI':
     case 'MA_LOAI_KCB':
-    case 'NAM_QT':
-      return 44;
+      return 48;
     case 'MA_CSKCB':
     case 'MA_KHOA':
     case 'KET_QUA_DTRI':
     case 'TINH_TRANG_RV':
-      return 48;
+      return 52;
+    case 'T_NGUONKHAC':
+      return 56;
     case 'MA_BENH_CHINH':
     case 'MA_BENH_KT':
-    case 'T_NGUONKHAC':
-      return 54;
     case 'T_BNCCT':
     case 'T_BNTT':
-      return 58;
+      return 62;
     case 'T_BHTT':
-      return 64;
     case 'T_TONGCHI_BV':
     case 'T_TONGCHI_BH':
     case 'T_THUOC':
     case 'T_VTYT':
-      return 66;
+      return 70;
     case 'NGAY_SINH':
     case 'NGAY_VAO':
     case 'NGAY_VAO_NOI_TRU':
     case 'NGAY_RA':
     case 'TU_NGAY':
     case 'DEN_NGAY':
-      return 86;
+      return 96;
     case 'MA_THE_BHYT':
     case 'SO_DINH_DANH':
     case 'MA_LK':
     case 'MA_BN':
-      return 108;
+      return 124;
     case 'HO_TEN':
     case 'TEN_THUOC':
     case 'TEN_HOAT_CHAT':
     case 'TEN_DVKT':
     case 'TEN_KHOA':
     case 'DIA_CHI':
-      return 140;
+      return 165;
     default:
-      return 74;
+      return 80;
   }
 }
 
@@ -1579,14 +1571,7 @@ export default function ChungTuTt12Module() {
                 <colgroup>
                   <col style={{ width: '26px' }} />
                   {currentConfig.targetXmlColumns.map(col => (
-                    <col
-                      key={col}
-                      style={
-                        FLEXIBLE_TT12_COLUMNS.has(col)
-                          ? undefined
-                          : { width: `${getCompactTt12ColumnWidth(col)}px` }
-                      }
-                    />
+                    <col key={col} style={{ width: `${getCompactTt12ColumnWidth(col)}px` }} />
                   ))}
                 </colgroup>
                 <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs">
@@ -1619,8 +1604,8 @@ export default function ChungTuTt12Module() {
                             <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 px-0.5 rounded border border-indigo-200 shrink-0 mt-px">
                               {idx + 1}
                             </span>
-                            <span className="font-extrabold text-slate-800 font-mono text-[9px] break-all line-clamp-2">
-                              {col}
+                            <span className="font-extrabold text-slate-800 font-mono text-[8.5px] break-words line-clamp-2">
+                              {col.replace(/_/g, '_\u200B')}
                             </span>
                           </div>
                           <div className="text-[8.5px] font-medium text-slate-500 leading-[1.1] line-clamp-2 min-h-[18px] mt-0.5">
@@ -1704,7 +1689,7 @@ export default function ChungTuTt12Module() {
                               value={row[col] ?? ''}
                               onChange={e => handleCellEdit(globalIdx, col, e.target.value)}
                               title={String(row[col] ?? '')}
-                              className="w-full px-1 py-0.5 text-[11px] tabular-nums leading-tight bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none font-medium text-slate-800 truncate"
+                              className="w-full px-0.5 py-0.5 text-[11px] tabular-nums leading-tight bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 outline-none font-medium text-slate-800 truncate"
                             />
                           </td>
                         ))}
