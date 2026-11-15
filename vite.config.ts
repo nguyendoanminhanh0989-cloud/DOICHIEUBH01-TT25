@@ -20,17 +20,6 @@ export default defineConfig(({mode}) => {
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
-        '/api/vnpt-uat': {
-          target: 'https://rmgateway.vnptit.vn',
-          changeOrigin: true,
-          rewrite: (p) => p.replace(/^\/api\/vnpt-uat/, ''),
-          configure: (proxy) => {
-            proxy.on('proxyReq', (proxyReq) => {
-              proxyReq.removeHeader('origin');
-              proxyReq.removeHeader('referer');
-            });
-          },
-        },
         '/api/vnpt': {
           target: 'https://gwsca.vnpt.vn',
           changeOrigin: true,

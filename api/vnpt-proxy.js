@@ -1,12 +1,10 @@
 /**
  * Vercel Serverless Function: proxy server-to-server tới VNPT SmartCA (tránh CORS / chặn header Origin).
  * Được gọi qua rewrite trong vercel.json:
- *   /api/vnpt/*      -> /api/vnpt-proxy?t=prod&p=*
- *   /api/vnpt-uat/*  -> /api/vnpt-proxy?t=uat&p=*
+ *   /api/vnpt/* -> /api/vnpt-proxy?t=prod&p=*
  */
 const TARGETS = {
   prod: 'https://gwsca.vnpt.vn',
-  uat: 'https://rmgateway.vnptit.vn',
 };
 
 async function readBody(req) {
@@ -41,7 +39,7 @@ module.exports = async (req, res) => {
       const decoded = decodeURIComponent(matchQueryP[1]);
       if (decoded.length > p.length) p = decoded;
     }
-    const directPathMatch = req.url.match(/\/api\/vnpt(?:-uat)?\/(.+?)(?:\?|$)/);
+    const directPathMatch = req.url.match(/\/api\/vnpt\/(.+?)(?:\?|$)/);
     if (directPathMatch) {
       const decoded = decodeURIComponent(directPathMatch[1]);
       if (decoded.length > p.length) p = decoded;

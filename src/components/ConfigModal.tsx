@@ -480,23 +480,6 @@ export default function ConfigModal({ onClose, initialTab = 'smartca' }: ConfigM
                     >
                       Production (gwsca.vnpt.vn)
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSmartcaBaseUrl(VNPT_SMARTCA_DEFAULTS.uat.baseUrl);
-                        setSmartcaUrlEseal(VNPT_SMARTCA_DEFAULTS.uat.urlEseal);
-                        setSmartcaUrlQd769(VNPT_SMARTCA_DEFAULTS.uat.urlQd769);
-                      }}
-                      className={cn(
-                        'px-2.5 py-1 rounded-lg text-xs font-bold border transition flex items-center gap-1 cursor-pointer',
-                        smartcaBaseUrl.includes('rmgateway.vnptit.vn')
-                          ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
-                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                      )}
-                      title="Gán sẵn 3 link UAT thử nghiệm"
-                    >
-                      UAT Thử nghiệm (rmgateway)
-                    </button>
                   </div>
                 </div>
 

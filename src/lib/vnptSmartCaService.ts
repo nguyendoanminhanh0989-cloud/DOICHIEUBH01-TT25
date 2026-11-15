@@ -12,15 +12,14 @@
  *
  * Địa chỉ Gateway:
  * - Production: https://gwsca.vnpt.vn/sca/sp769
- * - UAT:        https://rmgateway.vnptit.vn/sca/sp769
  */
 
 export interface SmartCAConfig {
   signMode: 'TOTP' | 'APP';
   storageMode?: 'persistent' | 'session_only'; // 'persistent': lưu vĩnh viễn trên máy; 'session_only': chỉ lưu tạm, F5 hoặc tắt web tự xóa sạch
-  baseUrl: string;            // Url (Root Gateway): https://gwsca.vnpt.vn/ | UAT: https://rmgateway.vnptit.vn/
-  urlEseal?: string;          // Url Eseal: https://gwsca.vnpt.vn/esca | UAT: https://rmgateway.vnptit.vn/esca
-  urlQd769?: string;          // Url QD769: https://gwsca.vnpt.vn/sca/sp769 | UAT: https://rmgateway.vnptit.vn/sca/sp769
+  baseUrl: string;            // Url (Root Gateway): https://gwsca.vnpt.vn/
+  urlEseal?: string;          // Url Eseal: https://gwsca.vnpt.vn/esca
+  urlQd769?: string;          // Url QD769: https://gwsca.vnpt.vn/sca/sp769
   clientId: string;           // sp_id: Tên tài khoản của SP do CA cung cấp
   clientSecret: string;       // sp_password: Mật khẩu do CA cung cấp cho SP
   userId: string;             // user_id: Số CCCD/CMND/Hộ chiếu/Mã số thuế của thuê bao CA
@@ -63,11 +62,6 @@ export const VNPT_SMARTCA_DEFAULTS = {
     baseUrl: 'https://gwsca.vnpt.vn/',
     urlEseal: 'https://gwsca.vnpt.vn/esca',
     urlQd769: 'https://gwsca.vnpt.vn/sca/sp769',
-  },
-  uat: {
-    baseUrl: 'https://rmgateway.vnptit.vn/',
-    urlEseal: 'https://rmgateway.vnptit.vn/esca',
-    urlQd769: 'https://rmgateway.vnptit.vn/sca/sp769',
   },
 };
 
@@ -157,8 +151,7 @@ export const getSmartCAConfig = (): SmartCAConfig => {
 
     // Nếu là chế độ lưu tạm trong phiên (session_only), không đọc localStorage
     if (sessionObj && sessionObj.storageMode === 'session_only') {
-      const isUat = (sessionObj.baseUrl || '').includes('rmgateway.vnptit.vn');
-      const defaults = isUat ? VNPT_SMARTCA_DEFAULTS.uat : VNPT_SMARTCA_DEFAULTS.prod;
+      const defaults = VNPT_SMARTCA_DEFAULTS.prod;
       return {
         signMode: sessionObj.signMode || (sessionObj.totpSecret ? 'TOTP' : 'APP'),
         storageMode: 'session_only',
@@ -181,8 +174,7 @@ export const getSmartCAConfig = (): SmartCAConfig => {
     // Nếu người dùng đã từng chọn 'persistent' ở localStorage
     if (localObj && localObj.storageMode === 'persistent') {
       const merged = { ...(sessionObj || {}), ...localObj };
-      const isUat = (merged.baseUrl || '').includes('rmgateway.vnptit.vn');
-      const defaults = isUat ? VNPT_SMARTCA_DEFAULTS.uat : VNPT_SMARTCA_DEFAULTS.prod;
+      const defaults = VNPT_SMARTCA_DEFAULTS.prod;
       return {
         signMode: merged.signMode || (merged.totpSecret ? 'TOTP' : 'APP'),
         storageMode: 'persistent',
@@ -203,8 +195,7 @@ export const getSmartCAConfig = (): SmartCAConfig => {
     }
 
     if (sessionObj) {
-      const isUat = (sessionObj.baseUrl || '').includes('rmgateway.vnptit.vn');
-      const defaults = isUat ? VNPT_SMARTCA_DEFAULTS.uat : VNPT_SMARTCA_DEFAULTS.prod;
+      const defaults = VNPT_SMARTCA_DEFAULTS.prod;
       return {
         signMode: sessionObj.signMode || (sessionObj.totpSecret ? 'TOTP' : 'APP'),
         storageMode: sessionObj.storageMode || 'session_only',
@@ -295,9 +286,6 @@ export function resolveVnptUrl(rawUrl?: string, defaultFallback: string = ''): s
   const cleaned = (rawUrl || defaultFallback).trim().replace(/\/+$/, '');
   if (cleaned.includes('gwsca.vnpt.vn')) {
     return cleaned.replace(/^https?:\/\/gwsca\.vnpt\.vn/i, '/api/vnpt');
-  }
-  if (cleaned.includes('rmgateway.vnptit.vn')) {
-    return cleaned.replace(/^https?:\/\/rmgateway\.vnptit\.vn/i, '/api/vnpt-uat');
   }
   return cleaned;
 }

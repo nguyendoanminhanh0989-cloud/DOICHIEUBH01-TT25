@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/vnpt-uat/(.*)",
-      "destination": "/api/vnpt-proxy?t=uat&p=$1"
-    },
-    {
       "source": "/api/vnpt/(.*)",
       "destination": "/api/vnpt-proxy?t=prod&p=$1"
     },
