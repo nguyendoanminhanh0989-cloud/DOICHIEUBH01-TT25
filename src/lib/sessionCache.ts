@@ -65,7 +65,7 @@ if (isFreshBrowserSession && typeof indexedDB !== 'undefined') {
       const tx = db.transaction(IDB_STORE, 'readwrite');
       tx.objectStore(IDB_STORE).clear();
     })
-    .catch(() => {});
+    .catch(() => { });
 }
 
 /**
@@ -103,9 +103,9 @@ export function setSessionSync<T>(key: string, value: T): void {
     // Nếu dữ liệu lớn vượt quá 5MB của sessionStorage, xóa bản sessionStorage để dùng bản IndexedDB
     try {
       sessionStorage.removeItem(`sc_${key}`);
-    } catch {}
+    } catch { }
   }
-  setSessionCache(key, value).catch(() => {});
+  setSessionCache(key, value).catch(() => { });
 }
 
 function isLargePayload(val: any): boolean {
@@ -143,7 +143,7 @@ export async function setSessionCache<T>(key: string, value: T): Promise<void> {
     // Bỏ qua nếu vượt dung lượng sessionStorage, xóa bản cũ trong sessionStorage để IndexedDB bên dưới lưu đầy đủ 100%
     try {
       sessionStorage.removeItem(`sc_${key}`);
-    } catch {}
+    } catch { }
   }
 
   try {
@@ -155,7 +155,7 @@ export async function setSessionCache<T>(key: string, value: T): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-  } catch {}
+  } catch { }
 }
 
 /**
@@ -176,9 +176,9 @@ export async function getSessionCache<T>(key: string): Promise<T | null> {
       return res.value;
     }
     if (res && res.sessionId !== sid) {
-      removeSessionCache(key).catch(() => {});
+      removeSessionCache(key).catch(() => { });
     }
-  } catch {}
+  } catch { }
 
   const fallback = getSessionSync<T | null>(key, null);
   return fallback;
@@ -190,7 +190,7 @@ export async function getSessionCache<T>(key: string): Promise<T | null> {
 export async function removeSessionCache(key: string): Promise<void> {
   try {
     sessionStorage.removeItem(`sc_${key}`);
-  } catch {}
+  } catch { }
   try {
     const db = await openSessionIdb();
     await new Promise<void>((resolve, reject) => {
@@ -199,7 +199,7 @@ export async function removeSessionCache(key: string): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-  } catch {}
+  } catch { }
 }
 
 /**
@@ -215,7 +215,7 @@ export async function clearAllSessionCache(): Promise<void> {
       }
     }
     keysToRemove.forEach(k => sessionStorage.removeItem(k));
-  } catch {}
+  } catch { }
   try {
     const db = await openSessionIdb();
     await new Promise<void>((resolve, reject) => {
@@ -224,6 +224,6 @@ export async function clearAllSessionCache(): Promise<void> {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
-  } catch {}
+  } catch { }
 }
 

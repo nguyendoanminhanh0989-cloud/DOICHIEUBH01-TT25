@@ -13,6 +13,8 @@ import {
   AlertCircle,
   Search,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   X,
   Building,
   Trash2,
@@ -477,66 +479,61 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
     return true;
   });
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
+  const paginatedRecords = filteredRecords.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
   return (
-    <div className="max-w-[1600px] mx-auto p-6 md:p-8 space-y-6">
+    <div className="max-w-[1600px] w-full mx-auto px-4 py-1.5 flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
 
-      {/* Facility Info Card */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-          <div className="flex gap-4">
-            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0">
-              <Building2 className="w-6 h-6" />
+      {/* Facility Info & Stats Compact Bar */}
+      <div className="shrink-0 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <div className="w-7 h-7 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center shrink-0 border border-blue-100">
+              <Building2 className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">CƠ SỞ KHÁM CHỮA BỆNH</span>
-                <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                <span className="text-xs font-semibold text-slate-600 flex items-center gap-1">
-                  BHXH API: <span className="font-bold">Chưa kết nối</span>
-                </span>
-                <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
-                <span className="text-xs font-semibold text-slate-600 flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                  Chữ ký số: <span className="font-bold">VNPT SmartCA</span>
-                </span>
-              </div>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-bold rounded">MÃ: {cskcbConfig?.cskcb.ma && cskcbConfig.cskcb.ma !== '49006' ? cskcbConfig.cskcb.ma : '48225'}</span>
-              </div>
-              <h2 className="text-xl font-bold text-slate-800 mb-4">{cskcbConfig?.cskcb.ten && !cskcbConfig.cskcb.ten.includes('Duy Xuyên') ? cskcbConfig.cskcb.ten : 'NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG'}</h2>
+            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[11px] font-extrabold rounded border border-blue-200 shrink-0">
+              MÃ: {cskcbConfig?.cskcb.ma && cskcbConfig.cskcb.ma !== '49006' ? cskcbConfig.cskcb.ma : '48225'}
+            </span>
+            <h2 className="text-xs sm:text-sm font-black text-slate-800 truncate max-w-[420px]" title={cskcbConfig?.cskcb.ten}>
+              {cskcbConfig?.cskcb.ten && !cskcbConfig.cskcb.ten.includes('Duy Xuyên')
+                ? cskcbConfig.cskcb.ten
+                : 'NGUYỄN ĐOÀN MINH ÁNH - IT Y TẾ - ĐÀ NẴNG'}
+            </h2>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowConfigModal(true)}
-                  className="px-4 py-1.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition"
-                >
-                  <Settings className="w-4 h-4" />
-                  Cấu hình
-                </button>
-                <button
-                  onClick={() => setShowFacilityModal(true)}
-                  className="px-4 py-1.5 bg-blue-50 text-blue-700 text-sm font-semibold rounded-lg flex items-center gap-2 hover:bg-blue-100 transition"
-                >
-                  <Building className="w-4 h-4" />
-                  Đổi CSKCB
-                </button>
-                <div 
-                  className="px-3.5 py-1.5 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-200 flex items-center gap-2 shadow-sm"
-                  title="Dữ liệu chỉ lưu tạm thời trong RAM của phiên làm việc. F5 hoặc tắt trình duyệt dữ liệu sẽ tự động giải phóng sạch."
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Lưu tạm phiên (RAM) • F5 tự hủy
-                </div>
-                <button className="px-4 py-1.5 bg-slate-50 text-slate-600 text-sm font-semibold rounded-lg border border-slate-200 hover:bg-slate-100 transition">
-                  Trạm trực thuộc (0)
-                </button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => setShowConfigModal(true)}
+                className="px-2.5 py-1 bg-indigo-600 text-white text-[11px] font-bold rounded-lg flex items-center gap-1 hover:bg-indigo-700 transition cursor-pointer"
+              >
+                <Settings className="w-3.5 h-3.5" />
+                Cấu hình
+              </button>
+              <button
+                onClick={() => setShowFacilityModal(true)}
+                className="px-2.5 py-1 bg-blue-50 text-blue-700 text-[11px] font-bold rounded-lg border border-blue-200 flex items-center gap-1 hover:bg-blue-100 transition cursor-pointer"
+              >
+                <Building className="w-3.5 h-3.5" />
+                Đổi CSKCB
+              </button>
+              <div
+                className="px-2 py-0.5 bg-emerald-50 text-emerald-800 text-[10.5px] font-bold rounded-lg border border-emerald-200 flex items-center gap-1.5"
+                title="Dữ liệu chỉ lưu tạm thời trong RAM của phiên làm việc. F5 hoặc tắt trình duyệt dữ liệu sẽ tự động giải phóng sạch."
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                Lưu tạm RAM • F5 tự hủy
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button className="px-4 py-2 bg-white text-slate-700 text-sm font-semibold rounded-lg border border-slate-200 flex items-center gap-2 hover:bg-slate-50 transition">
-              <FileCode2 className="w-4 h-4 text-slate-400" />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button className="px-2.5 py-1 bg-white text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 flex items-center gap-1.5 hover:bg-slate-50 transition cursor-pointer">
+              <FileCode2 className="w-3.5 h-3.5 text-slate-400" />
               Nhúng XML
             </button>
             <input
@@ -548,25 +545,25 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 bg-white text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 flex items-center gap-2 hover:bg-emerald-50 transition"
+              className="px-2.5 py-1 bg-white text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 flex items-center gap-1.5 hover:bg-emerald-50 transition cursor-pointer"
             >
-              <FileSpreadsheet className="w-4 h-4" />
+              <FileSpreadsheet className="w-3.5 h-3.5" />
               Nhập Excel
             </button>
 
             <div className="relative">
               <button
                 onClick={() => setShowTemplateMenu(!showTemplateMenu)}
-                className="px-4 py-2 bg-white text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 flex items-center gap-2 hover:bg-emerald-50 transition"
+                className="px-2.5 py-1 bg-white text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 flex items-center gap-1 hover:bg-emerald-50 transition cursor-pointer"
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-3.5 h-3.5" />
                 Mẫu Excel
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className="w-3.5 h-3.5" />
               </button>
 
               {showTemplateMenu && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
-                  <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 mb-1">
+                <div className="absolute right-0 top-full mt-1.5 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
+                  <div className="px-4 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 mb-1">
                     FILE MẪU CHUẨN BHXH (BỘ Y TẾ)
                   </div>
                   {[
@@ -577,30 +574,30 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                     { id: 'CT06', name: 'Mẫu CT06 - Giấy nghỉ dưỡng thai', fields: 15 },
                     { id: 'CT07', name: 'Mẫu CT07 - Nghỉ việc BHXH', fields: 24 }
                   ].map(tpl => (
-                    <a key={tpl.id} href={`/templates/Template_${tpl.id}_Mau_Chuan_BHXH.xlsx`} className="flex gap-3 px-4 py-2.5 hover:bg-slate-50 transition cursor-pointer items-start" download>
-                      <FileSpreadsheet className="w-5 h-5 text-indigo-500 mt-0.5" />
+                    <a key={tpl.id} href={`/templates/Template_${tpl.id}_Mau_Chuan_BHXH.xlsx`} className="flex gap-3 px-4 py-2 hover:bg-slate-50 transition cursor-pointer items-start" download>
+                      <FileSpreadsheet className="w-4 h-4 text-indigo-500 mt-0.5" />
                       <div>
-                        <div className="text-sm font-semibold text-slate-700">{tpl.name}</div>
-                        <div className="text-xs text-slate-500">Template chuẩn {tpl.fields} trường dữ liệu</div>
+                        <div className="text-xs font-semibold text-slate-700">{tpl.name}</div>
+                        <div className="text-[11px] text-slate-500">Template chuẩn {tpl.fields} trường dữ liệu</div>
                       </div>
                     </a>
                   ))}
 
-                  <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-t border-b border-slate-100 my-1">
+                  <div className="px-4 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-t border-b border-slate-100 my-1">
                     CÔNG CỤ KÝ SỐ USB TOKEN (.BAT)
                   </div>
                   <a href="/tools/Ky_XML_Bang_USB_Token.bat" className="flex gap-3 px-4 py-2 hover:bg-amber-50 transition cursor-pointer items-start" download>
-                    <Usb className="w-5 h-5 text-amber-600 mt-0.5" />
+                    <Usb className="w-4 h-4 text-amber-600 mt-0.5" />
                     <div>
-                      <div className="text-sm font-semibold text-slate-700">Ky_XML_Bang_USB_Token.bat</div>
-                      <div className="text-xs text-slate-500">Ký hàng loạt XML ngoại tuyến bằng USB Token</div>
+                      <div className="text-xs font-semibold text-slate-700">Ky_XML_Bang_USB_Token.bat</div>
+                      <div className="text-[11px] text-slate-500">Ký hàng loạt XML ngoại tuyến bằng USB Token</div>
                     </div>
                   </a>
                   <a href="/tools/Chay_Ky_So_USB_Token.bat" className="flex gap-3 px-4 py-2 hover:bg-blue-50 transition cursor-pointer items-start" download>
-                    <Usb className="w-5 h-5 text-blue-600 mt-0.5" />
+                    <Usb className="w-4 h-4 text-blue-600 mt-0.5" />
                     <div>
-                      <div className="text-sm font-semibold text-slate-700">Chay_Ky_So_USB_Token.bat</div>
-                      <div className="text-xs text-slate-500">Dịch vụ ký trực tiếp 1-click từ trình duyệt</div>
+                      <div className="text-xs font-semibold text-slate-700">Chay_Ky_So_USB_Token.bat</div>
+                      <div className="text-[11px] text-slate-500">Dịch vụ ký trực tiếp 1-click từ trình duyệt</div>
                     </div>
                   </a>
                 </div>
@@ -609,183 +606,110 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
 
             <button
               onClick={() => setShowTaoHoSoModal(true)}
-              className="px-5 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg flex items-center gap-2 hover:bg-blue-700 shadow-md shadow-blue-200 transition"
+              className="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded-lg flex items-center gap-1 hover:bg-blue-700 shadow-xs transition cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               Tạo Hồ Sơ Mới
             </button>
           </div>
         </div>
 
-        {/* Progress Flow */}
-        <div className="mt-8 pt-6 border-t border-slate-100 flex flex-wrap items-center gap-2 md:gap-4 text-xs font-semibold text-slate-500">
-          <span className="text-[10px] uppercase tracking-widest text-slate-400 font-bold mr-2">QUY TRÌNH LIÊN THÔNG:</span>
-
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">1</span>
-            Nhập hồ sơ (Excel / XML)
-          </div>
-          <span className="text-slate-300">→</span>
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">2</span>
-            Kiểm tra Rule TT25
-          </div>
-          <span className="text-slate-300">→</span>
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">3</span>
-            Ký số SmartCA
-          </div>
-          <span className="text-slate-300">→</span>
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px]">4</span>
-            Gửi Cổng BHXH
-          </div>
-          <span className="text-slate-300">→</span>
-          <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">
-            <span className="w-4 h-4 rounded-full bg-emerald-200 flex items-center justify-center text-[10px] text-emerald-800">5</span>
-            Nhận Mã GD (200)
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white p-4 rounded-xl border-2 border-blue-100 shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-bold text-slate-500">Tổng hồ sơ</span>
-            <div className="w-6 h-6 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500">
-              <FileCode2 className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-3xl font-black text-slate-800 mb-1">{records.length}</div>
-          <div className="text-[11px] text-slate-400">Mã CSKCB: {cskcbConfig?.cskcb.ma && cskcbConfig.cskcb.ma !== '49006' ? cskcbConfig.cskcb.ma : '48225'}</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-bold text-slate-500">Đã gửi thành công</span>
-            <div className="w-6 h-6 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-500">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-3xl font-black text-emerald-600 mb-1">{submittedCount}</div>
-          <div className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div> Mã kết quả 200 (BHXH)
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-bold text-slate-500">Đã ký số</span>
-            <div className="w-6 h-6 bg-blue-50 rounded-lg flex items-center justify-center text-blue-500">
-              <ShieldCheck className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-3xl font-black text-blue-600 mb-1">{signedCount}</div>
-          <div className="text-[11px] font-semibold text-blue-600 flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div> Sẵn sàng gửi Cổng
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-bold text-slate-500">Chờ ký duyệt</span>
-            <div className="w-6 h-6 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
-          </div>
-          <div className="text-3xl font-black text-amber-600 mb-1">{draftCount}</div>
-          <div className="text-[11px] font-semibold text-amber-600 flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-500"></div> Cần ký SmartCA
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-bold text-slate-500">Lỗi Rule Engine</span>
-            <div className="w-6 h-6 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-500">
+        {/* Dòng 2: Thống kê thu gọn & Quy trình trên 1 hàng */}
+        <div className="pt-1.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 font-bold flex items-center gap-1.5 text-[11px]">
+              <FileCode2 className="w-3.5 h-3.5 text-slate-500" />
+              Tổng hồ sơ: <strong className="text-slate-900 font-black">{records.length}</strong>
+            </span>
+            <span className="px-2.5 py-0.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold flex items-center gap-1.5 text-[11px]">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              Đã gửi (200): <strong className="font-black">{submittedCount}</strong>
+            </span>
+            <span className="px-2.5 py-0.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-bold flex items-center gap-1.5 text-[11px]">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+              Đã ký số: <strong className="font-black">{signedCount}</strong>
+            </span>
+            <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 font-bold flex items-center gap-1.5 text-[11px]">
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+              Chờ ký duyệt: <strong className="font-black">{draftCount}</strong>
+            </span>
+            <span
+              className={cn(
+                'px-2.5 py-0.5 rounded-lg border font-bold flex items-center gap-1.5 text-[11px]',
+                errorCount > 0
+                  ? 'bg-rose-50 border-rose-200 text-rose-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-600'
+              )}
+            >
               <AlertCircle className="w-3.5 h-3.5" />
-            </div>
+              Lỗi Rule: <strong className="font-black">{errorCount}</strong>
+            </span>
           </div>
-          <div className="text-3xl font-black text-slate-800 mb-1">{errorCount}</div>
-          <div className={cn("text-[11px] font-semibold flex items-center gap-1", errorCount > 0 ? 'text-rose-600' : 'text-emerald-600')}>
-            {errorCount > 0 ? <AlertCircle className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
-            {errorCount > 0 ? `${errorCount} hồ sơ lỗi` : 'Không phát hiện lỗi'}
+
+          <div className="hidden xl:flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-500">
+            <span className="text-[10px] uppercase font-bold text-slate-400">QUY TRÌNH:</span>
+            <span>1. Nhập Excel/XML</span>
+            <span>→</span>
+            <span>2. Kiểm tra Rule TT25</span>
+            <span>→</span>
+            <span>3. Ký số</span>
+            <span>→</span>
+            <span>4. Gửi Cổng BHXH</span>
+            <span>→</span>
+            <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-bold">5. Nhận Mã GD (200)</span>
           </div>
         </div>
       </div>
 
       {/* CSKCB Mismatch Warning Banner */}
       {cskcbMismatch && (
-        <div className="bg-amber-50 border-2 border-amber-400 rounded-xl px-5 py-4 flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
-            <AlertCircle className="w-6 h-6 text-amber-600" />
-          </div>
-          <div className="flex-1">
-            <div className="font-bold text-amber-800 text-sm mb-1">⚠️ CẢNH BÁO: Lệch Mã CSKCB — Có thể nhầm đơn vị!</div>
-            <div className="text-amber-700 text-sm">
-              File Excel đang có mã CSKCB <span className="font-black bg-amber-200 px-1.5 py-0.5 rounded text-amber-900">{cskcbMismatch.excelMa}</span>,
-              trong khi hệ thống đang cấu hình cho đơn vị <span className="font-black bg-blue-100 px-1.5 py-0.5 rounded text-blue-800">{cskcbMismatch.configMa}</span>.
+        <div className="shrink-0 bg-amber-50 border border-amber-400 rounded-xl px-3.5 py-2 flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2 text-xs">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <div className="text-amber-800">
+              <b>⚠️ Cảnh báo lệch Mã CSKCB:</b> File Excel có mã{' '}
+              <span className="font-black bg-amber-200 px-1 py-0.5 rounded text-amber-900">{cskcbMismatch.excelMa}</span>{' '}
+              khác với cấu hình đơn vị{' '}
+              <span className="font-black bg-blue-100 px-1 py-0.5 rounded text-blue-800">{cskcbMismatch.configMa}</span>.
             </div>
-            <div className="text-amber-600 text-xs mt-1 font-medium">Vui lòng kiểm tra lại file Excel hoặc đổi CSKCB trong cấu hình trước khi tiếp tục ký số / gửi cổng.</div>
           </div>
           <button
             onClick={() => setCskcbMismatch(null)}
-            className="p-1.5 hover:bg-amber-200 rounded-lg text-amber-500 transition shrink-0"
+            className="p-1 hover:bg-amber-200 rounded text-amber-600 transition shrink-0"
             title="Đóng cảnh báo"
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* In-Memory Privacy & Security Notice Banner */}
-      <div className="bg-gradient-to-r from-emerald-50/90 via-blue-50/70 to-slate-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 text-xs shadow-sm">
-        <div className="flex items-center gap-3 text-slate-700">
-          <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm shadow-emerald-200">
-            <ShieldCheck className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
-              Chế độ bảo mật phiên làm việc (In-Memory RAM)
-              <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300 uppercase">
-                Không lưu Supabase
-              </span>
-            </div>
-            <div className="text-slate-600 text-xs mt-0.5">
-              Tất cả hồ sơ chứng từ sau khi nhập chỉ lưu tạm trong RAM máy trạm để phục vụ Ký số & Xuất XML / Đẩy cổng BHXH.
-              <span className="font-semibold text-rose-600"> Khi đóng trình duyệt hoặc nhấn F5, toàn bộ dữ liệu sẽ tự động xóa sạch</span> để đảm bảo an toàn thông tin bệnh nhân.
-            </div>
-          </div>
-        </div>
-        <div className="shrink-0 text-right hidden sm:block">
-          <span className="px-2.5 py-1 bg-white border border-slate-200 rounded-md font-mono text-[11px] font-bold text-slate-600 shadow-xs">
-            RAM: {records.length} hồ sơ
-          </span>
-        </div>
-      </div>
-
-      {/* Table Section */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
+      {/* Table Section (Mở rộng tối đa chiều cao) */}
+      <div className="flex-1 min-h-0 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
         {/* Filters */}
-        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1">
-            <div className="relative max-w-sm w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+        <div className="shrink-0 px-3 py-1.5 border-b border-slate-100 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative max-w-xs w-full">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 type="text"
                 value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
+                onChange={e => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 placeholder="Tìm họ tên, CCCD, thẻ BHYT, mã..."
-                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-8 pr-3 py-1 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div className="relative">
               <select
                 value={filterType}
-                onChange={e => setFilterType(e.target.value)}
-                className="appearance-none bg-white border border-slate-200 rounded-lg pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
+                onChange={e => {
+                  setFilterType(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="appearance-none bg-white border border-slate-200 rounded-lg pl-2.5 pr-7 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="ALL">Tất cả loại chứng từ</option>
                 <option value="CT03">Giấy ra viện (CT03)</option>
@@ -794,14 +718,17 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 <option value="CT06">Giấy nghỉ dưỡng thai (CT06)</option>
                 <option value="CT07">Nghỉ việc BHXH (CT07)</option>
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
             </div>
 
             <div className="relative">
               <select
                 value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-                className="appearance-none bg-white border border-slate-200 rounded-lg pl-4 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
+                onChange={e => {
+                  setFilterStatus(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="appearance-none bg-white border border-slate-200 rounded-lg pl-2.5 pr-7 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="ALL">Tất cả trạng thái</option>
                 <option value="SUBMITTED">Đã gửi Cổng (200)</option>
@@ -809,11 +736,11 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                 <option value="UNSIGNED">Chờ ký duyệt</option>
                 <option value="ERROR">Lỗi Rule TT25</option>
               </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {records.length > 0 && (
               <div className="relative">
                 <select
@@ -824,7 +751,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                     }
                   }}
                   defaultValue=""
-                  className="px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-sm font-semibold hover:bg-amber-100 transition cursor-pointer"
+                  className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-semibold hover:bg-amber-100 transition cursor-pointer"
                   title="Chuyển đổi loại mẫu chứng từ cho các hồ sơ đang chọn (hoặc tất cả)"
                 >
                   <option value="" disabled>
@@ -842,44 +769,44 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
               <>
                 <button
                   onClick={() => setKySoMode('sign')}
-                  className="px-4 py-2 text-blue-700 text-sm font-bold flex items-center gap-2 border border-blue-200 rounded-lg bg-blue-50 hover:bg-blue-100 transition"
+                  className="px-2.5 py-1 text-blue-700 text-xs font-bold flex items-center gap-1 border border-blue-200 rounded-lg bg-blue-50 hover:bg-blue-100 transition cursor-pointer"
                 >
-                  <ShieldCheck className="w-4 h-4" />
+                  <ShieldCheck className="w-3.5 h-3.5" />
                   Ký số ({selectedIds.size})
                 </button>
                 <button
                   onClick={() => setKySoMode('submit')}
                   className={cn(
-                    "px-4 py-2 text-sm font-bold flex items-center gap-2 border rounded-lg transition",
+                    "px-2.5 py-1 text-xs font-bold flex items-center gap-1 border rounded-lg transition cursor-pointer",
                     selectedRecords.some(isRecordSigned)
                       ? 'text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100'
                       : 'text-slate-400 border-slate-100 bg-slate-50 cursor-not-allowed'
                   )}
                 >
-                  <CheckCircle2 className="w-4 h-4" />
+                  <CheckCircle2 className="w-3.5 h-3.5" />
                   Gửi BHXH ({selectedRecords.filter(isRecordSigned).length})
                 </button>
                 <button
                   onClick={() => setKySoMode('sign_then_submit')}
-                  className="px-4 py-2 text-indigo-700 text-sm font-bold flex items-center gap-2 border border-indigo-200 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition"
+                  className="px-2.5 py-1 text-indigo-700 text-xs font-bold flex items-center gap-1 border border-indigo-200 rounded-lg bg-indigo-50 hover:bg-indigo-100 transition cursor-pointer"
                 >
-                  <ShieldCheck className="w-4 h-4" /> Ký & Gửi ({selectedIds.size})
+                  <ShieldCheck className="w-3.5 h-3.5" /> Ký &amp; Gửi ({selectedIds.size})
                 </button>
                 <button
                   onClick={handleDeleteSelected}
-                  className="px-4 py-2 text-rose-700 text-sm font-bold flex items-center gap-2 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition"
+                  className="px-2.5 py-1 text-rose-700 text-xs font-bold flex items-center gap-1 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition cursor-pointer"
                 >
-                  <Trash2 className="w-4 h-4" /> Xóa ({selectedIds.size})
+                  <Trash2 className="w-3.5 h-3.5" /> Xóa ({selectedIds.size})
                 </button>
               </>
             ) : (
               <>
-                <button className="px-4 py-2 text-slate-400 text-sm font-semibold flex items-center gap-2 border border-slate-100 rounded-lg bg-slate-50 cursor-not-allowed">
-                  <ShieldCheck className="w-4 h-4" />
+                <button className="px-2.5 py-1 text-slate-400 text-xs font-semibold flex items-center gap-1 border border-slate-100 rounded-lg bg-slate-50 cursor-not-allowed">
+                  <ShieldCheck className="w-3.5 h-3.5" />
                   Ký số ({signedCount})
                 </button>
-                <button className="px-4 py-2 text-slate-400 text-sm font-semibold flex items-center gap-2 border border-slate-100 rounded-lg bg-slate-50 cursor-not-allowed">
-                  <CheckCircle2 className="w-4 h-4" />
+                <button className="px-2.5 py-1 text-slate-400 text-xs font-semibold flex items-center gap-1 border border-slate-100 rounded-lg bg-slate-50 cursor-not-allowed">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
                   Đã gửi ({submittedCount})
                 </button>
               </>
@@ -887,9 +814,9 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             {records.length > 0 && selectedIds.size === 0 && (
               <button
                 onClick={handleDeleteAll}
-                className="px-4 py-2 text-rose-600 text-sm font-semibold flex items-center gap-2 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition"
+                className="px-2.5 py-1 text-rose-600 text-xs font-semibold flex items-center gap-1 border border-rose-200 rounded-lg bg-rose-50 hover:bg-rose-100 transition cursor-pointer"
               >
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-3.5 h-3.5" />
                 Xóa tất cả
               </button>
             )}
@@ -897,60 +824,60 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
               onClick={() => handleExportXml()}
               disabled={records.length === 0}
               className={cn(
-                "px-4 py-2 text-sm font-bold flex items-center gap-2 border rounded-lg transition",
+                "px-2.5 py-1 text-xs font-bold flex items-center gap-1 border rounded-lg transition cursor-pointer",
                 records.length > 0
-                  ? "text-blue-700 border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 shadow-xs"
+                  ? "text-blue-700 border-blue-200 bg-blue-50/60 hover:bg-blue-100/80 shadow-2xs"
                   : "text-slate-400 border-slate-200 bg-slate-50 cursor-not-allowed"
               )}
               title="Xuất file XML chuẩn Phụ lục 02 để nộp hoặc lưu trữ"
             >
-              <FileCode2 className="w-4 h-4 text-blue-600" />
+              <FileCode2 className="w-3.5 h-3.5 text-blue-600" />
               Xuất XML {selectedIds.size > 0 ? `(${selectedIds.size})` : records.length > 0 ? `(${records.length})` : ''}
             </button>
             <button
               onClick={handleExportExcel}
-              className="px-4 py-2 text-slate-600 text-sm font-semibold flex items-center gap-2 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition"
+              className="px-2.5 py-1 text-slate-600 text-xs font-semibold flex items-center gap-1 border border-slate-200 rounded-lg bg-white hover:bg-slate-50 transition cursor-pointer"
             >
-              <FileSpreadsheet className="w-4 h-4" />
+              <FileSpreadsheet className="w-3.5 h-3.5" />
               Xuất Excel ({records.length})
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto bg-white">
+        <div className="flex-1 min-h-0 overflow-auto bg-white">
           <table className="w-full text-left border-collapse min-w-[1000px]">
-            <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider sticky top-0 z-10">
+            <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider sticky top-0 z-10">
               <tr>
-                <th className="px-4 py-3 w-[40px]"><input type="checkbox" className="rounded border-slate-300" onChange={toggleSelectAll} checked={records.length > 0 && selectedIds.size === records.length} /></th>
-                <th className="px-4 py-3 w-[80px]">LOẠI HS</th>
-                <th className="px-4 py-3 w-[230px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.dinhDanhLabel || 'HỌ VÀ TÊN / ĐỊNH DANH' : 'HỌ VÀ TÊN / ĐỊNH DANH'}</th>
-                <th className="px-4 py-3 w-[160px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.khoaLabel || 'KHOA / THỜI GIAN' : 'KHOA / THỜI GIAN'}</th>
-                <th className="px-4 py-3 w-[200px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.chanDoanLabel || 'CHẨN ĐOÁN / THÔNG TIN' : 'CHẨN ĐOÁN / THÔNG TIN'}</th>
-                <th className="px-4 py-3 w-[180px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.nguoiKyLabel || 'NGƯỜI KÝ / CCHN' : 'NGƯỜI KÝ / CCHN'}</th>
-                <th className="px-4 py-3 w-[130px]">TRẠNG THÁI</th>
-                <th className="px-4 py-3 w-[120px] text-center">THAO TÁC</th>
+                <th className="px-3 py-2 w-[36px]"><input type="checkbox" className="rounded border-slate-300" onChange={toggleSelectAll} checked={records.length > 0 && selectedIds.size === records.length} /></th>
+                <th className="px-3 py-2 w-[75px]">LOẠI HS</th>
+                <th className="px-3 py-2 w-[230px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.dinhDanhLabel || 'HỌ VÀ TÊN / ĐỊNH DANH' : 'HỌ VÀ TÊN / ĐỊNH DANH'}</th>
+                <th className="px-3 py-2 w-[160px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.khoaLabel || 'KHOA / THỜI GIAN' : 'KHOA / THỜI GIAN'}</th>
+                <th className="px-3 py-2 w-[200px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.chanDoanLabel || 'CHẨN ĐOÁN / THÔNG TIN' : 'CHẨN ĐOÁN / THÔNG TIN'}</th>
+                <th className="px-3 py-2 w-[180px]">{filterType !== 'ALL' ? COLUMN_DISPLAY[filterType]?.nguoiKyLabel || 'NGƯỜI KÝ / CCHN' : 'NGƯỜI KÝ / CCHN'}</th>
+                <th className="px-3 py-2 w-[130px]">TRẠNG THÁI</th>
+                <th className="px-3 py-2 w-[120px] text-center">THAO TÁC</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-12 text-center">
+                  <td colSpan={8} className="p-8 text-center">
                     <div className="flex flex-col items-center justify-center">
-                      <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-300 mb-4">
-                        <FileCode2 className="w-8 h-8" />
+                      <div className="w-12 h-12 bg-slate-50 rounded-xl flex items-center justify-center text-slate-300 mb-2">
+                        <FileCode2 className="w-6 h-6" />
                       </div>
-                      <h3 className="text-base font-bold text-slate-700 mb-1">Chưa có hồ sơ chứng từ nào</h3>
-                      <p className="text-sm text-slate-500 max-w-sm mb-6">Bạn có thể Tạo hồ sơ mới, Nhập Excel từ mẫu của BHXH, hoặc Nhúng XML.</p>
-                      <div className="flex items-center justify-center gap-3">
+                      <h3 className="text-sm font-bold text-slate-700 mb-1">Chưa có hồ sơ chứng từ nào</h3>
+                      <p className="text-xs text-slate-500 max-w-sm mb-3">Bạn có thể Tạo hồ sơ mới, Nhập Excel từ mẫu của BHXH, hoặc Nhúng XML.</p>
+                      <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => fileInputRef.current?.click()}
-                          className="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-semibold rounded-lg border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-2"
+                          className="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-200 hover:bg-emerald-100 transition flex items-center gap-1.5 cursor-pointer"
                         >
-                          <FileSpreadsheet className="w-4 h-4" /> Nhập Excel ngay
+                          <FileSpreadsheet className="w-3.5 h-3.5" /> Nhập Excel ngay
                         </button>
                         <button
                           onClick={() => setShowTaoHoSoModal(true)}
-                          className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition"
+                          className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition cursor-pointer"
                         >
                           + Tạo mới
                         </button>
@@ -959,7 +886,7 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map(r => (
+                paginatedRecords.map(r => (
                   <tr key={r.id} className={cn(
                     "hover:bg-slate-50 transition-colors",
                     selectedIds.has(r.id) && 'bg-blue-50/50',
@@ -1164,6 +1091,129 @@ export default function HoSoChungTu({ onGoHome }: { onGoHome?: () => void }) {
             </tbody>
           </table>
         </div>
+
+        {/* Phân trang cố định dưới chân bảng (Kèm danh sách số trang & Ô nhập nhảy tới trang) */}
+        {filteredRecords.length > 0 && (
+          <div className="shrink-0 px-3 py-1.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-slate-600 font-medium">
+              <span>
+                Trang <b className="text-blue-700">{currentPage}</b> / <b>{totalPages}</b> (Hiển thị{' '}
+                <b>
+                  {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredRecords.length)}
+                </b>{' '}
+                / <b>{filteredRecords.length.toLocaleString()}</b> hồ sơ)
+              </span>
+
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] text-slate-500">Hiển thị:</span>
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-[11px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value={50}>50 dòng/trang</option>
+                  <option value={100}>100 dòng/trang</option>
+                  <option value={200}>200 dòng/trang</option>
+                  <option value={500}>500 dòng/trang</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1">
+              {/* Ô nhập số trang trực tiếp */}
+              <div className="flex items-center gap-1 mr-1 bg-white px-2 py-0.5 rounded border border-slate-300">
+                <span className="text-[11px] font-semibold text-slate-600">Đến trang:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={currentPage}
+                  onChange={e => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) {
+                      setCurrentPage(Math.min(Math.max(1, val), totalPages));
+                    }
+                  }}
+                  className="w-14 px-1.5 py-0.5 text-center font-extrabold text-blue-700 bg-blue-50/60 border border-blue-300 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <span className="text-[11px] text-slate-500 font-semibold">/ {totalPages}</span>
+              </div>
+
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(1)}
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
+              >
+                « Đầu
+              </button>
+              <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold flex items-center gap-0.5 text-[11px] cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Trước
+              </button>
+
+              {(() => {
+                const pages: (number | string)[] = [];
+                if (totalPages <= 7) {
+                  for (let i = 1; i <= totalPages; i++) pages.push(i);
+                } else {
+                  pages.push(1);
+                  if (currentPage > 4) pages.push('...');
+                  const start = Math.max(2, currentPage - 2);
+                  const end = Math.min(totalPages - 1, currentPage + 2);
+                  for (let i = start; i <= end; i++) pages.push(i);
+                  if (currentPage < totalPages - 3) pages.push('...');
+                  pages.push(totalPages);
+                }
+                return pages.map((p, idx) =>
+                  typeof p === 'string' ? (
+                    <span key={`dots-${idx}`} className="px-1 text-slate-400 font-bold">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setCurrentPage(p)}
+                      className={cn(
+                        'min-w-[28px] px-1.5 py-0.5 rounded border text-[11px] font-extrabold transition cursor-pointer',
+                        p === currentPage
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50 hover:border-blue-300'
+                      )}
+                    >
+                      {p}
+                    </button>
+                  )
+                );
+              })()}
+
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold flex items-center gap-0.5 text-[11px] cursor-pointer"
+              >
+                Sau <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
+              >
+                Cuối »
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modals */}

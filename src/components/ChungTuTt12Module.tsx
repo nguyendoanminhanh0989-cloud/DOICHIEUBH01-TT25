@@ -250,7 +250,7 @@ export default function ChungTuTt12Module() {
   const [searchQuery, setSearchQuery] = useState('');
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState<number>(50);
 
   const [statusMsg, setStatusMsg] = useState<string>('Sẵn sàng. Hãy chọn danh mục, tải mẫu trống hoặc nhập dữ liệu.');
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error' | 'loading'>('info');
@@ -1099,65 +1099,58 @@ export default function ChungTuTt12Module() {
   };
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
-      {/* HEADER MODULE CỐ ĐỊNH TRÊN CÙNG */}
-      <div className="shrink-0 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-2xl px-4 py-2.5 text-white shadow-md border border-blue-700/40 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
-        <div className="flex items-start sm:items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center shrink-0 shadow-inner">
-            <ShieldCheck className="w-6 h-6 text-cyan-300" />
+    <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
+      {/* HEADER MODULE THU GỌN TRÊN 1 DÒNG */}
+      <div className="shrink-0 bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-xl px-3 py-1.5 text-white shadow-sm border border-blue-700/40 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-lg bg-blue-500/20 border border-blue-400/40 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
           </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-base sm:text-lg font-black tracking-tight text-white">
-                CHỨNG TỪ TT12 BHXH - BH01 - BH02
-              </h1>
-              <span className="bg-cyan-500/20 text-cyan-200 border border-cyan-400/30 text-[10px] font-extrabold px-2 py-0.5 rounded-full">
-                CHUẨN TT12 BYT & BHXH 2026
-              </span>
-            </div>
-            <p className="text-[11px] text-blue-200 mt-0.5">
-              Xuất & Ký số XML Danh mục TT12 (Bảng 1–6) • Báo cáo Mẫu 01/BH (C79 / 7980a) • Ký số PDF Mẫu 02/BH (Hỗ trợ Import Ảnh chữ ký tay trong suốt & Ký nhiều chữ ký)
-            </p>
-          </div>
+          <h1 className="text-xs sm:text-sm font-black tracking-tight text-white truncate">
+            CHỨNG TỪ TT12 BHXH - BH01 - BH02
+          </h1>
+          <span className="hidden md:inline-block bg-cyan-500/20 text-cyan-200 border border-cyan-400/30 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full shrink-0">
+            CHUẨN TT12 &amp; BHXH 2026
+          </span>
         </div>
 
         {/* Chuyển đổi 2 Tab lớn & Nút Cấu hình Ký số */}
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => setSubTab('XML_TT12_01BH')}
             className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer border',
+              'px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition cursor-pointer border',
               subTab === 'XML_TT12_01BH'
-                ? 'bg-white text-blue-950 border-white shadow-md'
+                ? 'bg-white text-blue-950 border-white shadow-xs'
                 : 'bg-white/10 text-blue-100 border-white/20 hover:bg-white/20'
             )}
           >
-            <FileCode2 className="w-4 h-4 text-blue-600" />
-            1. DANH MỤC TT12 & MẪU 01/BH (XML)
+            <FileCode2 className="w-3.5 h-3.5 text-blue-600" />
+            1. DANH MỤC TT12 &amp; MẪU 01/BH (XML)
           </button>
 
           <button
             type="button"
             onClick={() => setSubTab('PDF_02BH')}
             className={cn(
-              'px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer border',
+              'px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 transition cursor-pointer border',
               subTab === 'PDF_02BH'
-                ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md'
+                ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-xs'
                 : 'bg-white/10 text-amber-200 border-white/20 hover:bg-white/20'
             )}
           >
-            <FileText className="w-4 h-4" />
+            <FileText className="w-3.5 h-3.5" />
             2. KÝ SỐ PDF (MẪU 02/BH)
           </button>
 
           <button
             type="button"
             onClick={() => setShowConfigModal(true)}
-            className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40 flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+            className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/40 flex items-center gap-1 shadow-xs transition cursor-pointer"
           >
-            <Settings className="w-4 h-4" />
-            ⚙ Cấu hình Chữ ký số
+            <Settings className="w-3.5 h-3.5" />
+            ⚙ Cấu hình CKS
           </button>
         </div>
       </div>
@@ -1166,277 +1159,239 @@ export default function ChungTuTt12Module() {
       {/* TAB 1: DANH MỤC TT12 (BẢNG 1–6) & BÁO CÁO MẪU 01/BH (C79 / 7980a)          */}
       {/* ========================================================================== */}
       {subTab === 'XML_TT12_01BH' && (
-        <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
-          {/* KHỐI CÔNG CỤ & THANH KÝ SỐ CỐ ĐỊNH TRÊN CÙNG (KHÔNG BỊ CUỘN MẤT KHI LĂN CHUỘT) */}
-          <div className="shrink-0 space-y-2">
-            {/* Thanh chọn nhanh 8 biểu mẫu TT12 & 01/BH */}
-            <div className="bg-white rounded-2xl p-2.5 border border-slate-200 shadow-xs space-y-2">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-1.5">
-                <div className="text-xs font-black uppercase text-slate-700 tracking-wide flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-indigo-600" />
-                  Chọn Biểu mẫu Danh mục TT12 (Bảng 1–6) hoặc Báo cáo Mẫu 01/BH:
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  Thẻ gốc XML: <code className="font-mono font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">&lt;{currentConfig.xmlRootElement}&gt;</code> • Danh sách:{' '}
-                  <code className="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">&lt;{currentConfig.xmlListElement}&gt;</code> • Số cột chuẩn:{' '}
-                  <strong className="text-slate-800">{currentConfig.targetXmlColumns.length} cột</strong>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5">
+        <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
+          {/* KHỐI CÔNG CỤ THU GỌN TỐI ĐA ĐỂ DÀNH KHÔNG GIAN CHO BẢNG DANH SÁCH */}
+          <div className="shrink-0 bg-white rounded-xl px-2.5 py-1.5 border border-slate-200 shadow-2xs space-y-1.5">
+            {/* Dòng 1: Chọn nhanh 8 biểu mẫu TT12 & 01/BH trên 1 hàng gọn */}
+            <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="text-[10.5px] font-black uppercase text-slate-600 mr-1 flex items-center gap-1">
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
+                  Biểu mẫu:
+                </span>
                 {TT12_CONFIGS.map(cfg => {
                   const active = cfg.tableCode === selectedTableCode;
                   const is01Bh = cfg.tableCode.includes('01BH');
+                  const countInTable = (rowsByTable[cfg.tableCode] || []).length;
                   return (
                     <button
                       key={cfg.tableCode}
                       type="button"
                       onClick={() => handleSelectTable(cfg.tableCode)}
+                      title={`${cfg.tableName} (${cfg.targetXmlColumns.length} cột chuẩn)`}
                       className={cn(
-                        'px-2.5 py-1.5 rounded-xl text-left border transition cursor-pointer flex flex-col justify-between',
+                        'px-2 py-0.5 rounded-lg text-[11px] font-extrabold border transition cursor-pointer inline-flex items-center gap-1',
                         active
                           ? is01Bh
-                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm ring-2 ring-emerald-300'
-                            : 'bg-indigo-600 text-white border-indigo-700 shadow-sm ring-2 ring-indigo-300'
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs ring-1 ring-emerald-300'
+                            : 'bg-indigo-600 text-white border-indigo-700 shadow-2xs ring-1 ring-indigo-300'
                           : is01Bh
-                            ? 'bg-emerald-50/60 hover:bg-emerald-100/70 text-emerald-950 border-emerald-200'
+                            ? 'bg-emerald-50/70 hover:bg-emerald-100 text-emerald-950 border-emerald-200'
                             : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
                       )}
                     >
-                      <div className="text-[11px] font-extrabold leading-tight">{cfg.shortLabel}</div>
-                      <div
-                        className={cn(
-                          'text-[9.5px] mt-0.5 truncate',
-                          active ? 'text-white/85' : 'text-slate-500'
-                        )}
-                        title={cfg.tableName}
-                      >
-                        {cfg.tableName}
-                      </div>
+                      <span>{cfg.shortLabel}</span>
+                      {countInTable > 0 && (
+                        <span
+                          className={cn(
+                            'px-1 py-px rounded text-[9.5px] font-black',
+                            active ? 'bg-white/25 text-white' : 'bg-indigo-100 text-indigo-800'
+                          )}
+                        >
+                          {countInTable.toLocaleString()}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* 2 Khung thao tác & Thanh ký số cố định */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-              {/* Khung 1: Thao tác Excel & Biểu mẫu trống */}
-              <div className="bg-white rounded-2xl px-3.5 py-2.5 border border-slate-200 shadow-xs flex flex-col justify-between gap-2">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-xs font-black uppercase text-slate-800 tracking-wide">
-                      1. Biểu mẫu Excel Trống & Import:
-                    </h2>
-                    <strong className="text-xs text-indigo-700">{currentConfig.tableName}</strong>
-                  </div>
-                  <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">
-                    Mẫu: {currentConfig.templateFileName}
-                  </span>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={handleDownloadExcelTemplate}
-                    className="px-3 py-1.5 rounded-xl bg-slate-600 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                    title="Tải file Excel mẫu trống (chỉ gồm tiêu đề các cột chuẩn quy định, không chứa dữ liệu)"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Tải Excel Mẫu Trống
-                  </button>
-
-                  <label className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer">
-                    <Upload className="w-3.5 h-3.5" />
-                    Nhập Excel (.xlsx / .xls)
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      multiple
-                      className="hidden"
-                      disabled={isBusy}
-                      onChange={handleImportExcelFile}
-                    />
-                  </label>
-
-                  <label className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer">
-                    <FileCode2 className="w-3.5 h-3.5" />
-                    Import XML Có Sẵn
-                    <input
-                      type="file"
-                      accept=".xml"
-                      multiple
-                      className="hidden"
-                      disabled={isBusy}
-                      onChange={handleImportXmlFile}
-                    />
-                  </label>
-
-                  <label
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer select-none"
-                    title="Khi bật: chọn thêm file Excel/XML sẽ nối tiếp vào danh sách hiện có thay vì ghi đè"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={appendOnImport}
-                      onChange={e => setAppendOnImport(e.target.checked)}
-                      className="rounded text-indigo-600 focus:ring-indigo-500"
-                    />
-                    Gộp nối tiếp file
-                  </label>
-                </div>
-              </div>
-
-              {/* Khung 2: Xuất & Ký Số XML cố định */}
-              <div className="bg-white rounded-2xl px-3.5 py-2.5 border border-slate-200 shadow-xs flex flex-col justify-between gap-2">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                  <h2 className="text-xs font-black uppercase text-slate-800 tracking-wide">
-                    2. Xuất & Ký Số XML (Tự động chia file tối đa 4.999 HS/file)
-                  </h2>
-                  <div className="flex items-center gap-1.5">
-                    {plannedXmlParts.length > 0 && (
-                      <span className="text-[10px] font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200">
-                        {plannedXmlParts.length === 1
-                          ? `1 file XML (${rows.length.toLocaleString()} HS)`
-                          : `Tự chia ${plannedXmlParts.length} file XML (${plannedXmlParts
-                              .map(p => `${p.recordCount.toLocaleString()}`)
-                              .join(' + ')} HS)`}
-                      </span>
-                    )}
-                    <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
-                      SHA-256 XMLDSig
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={isBusy || rows.length === 0}
-                    onClick={() => handleProcessXmlAction(false)}
-                    className={cn(
-                      'px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition cursor-pointer',
-                      rows.length > 0 && !isBusy
-                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    )}
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    XUẤT XML
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isBusy || rows.length === 0}
-                    onClick={() => handleProcessXmlAction(true, 'SMARTCA')}
-                    className={cn(
-                      'px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition cursor-pointer',
-                      rows.length > 0 && !isBusy
-                        ? 'bg-sky-600 hover:bg-sky-700 text-white'
-                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    )}
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    ☁ KÝ SỐ VNPT SMARTCA
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isBusy || rows.length === 0}
-                    onClick={() => handleProcessXmlAction(true, 'USB_TOKEN')}
-                    className={cn(
-                      'px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-xs transition cursor-pointer',
-                      rows.length > 0 && !isBusy
-                        ? 'bg-purple-700 hover:bg-purple-800 text-white'
-                        : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    )}
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    🔐 KÝ SỐ USB TOKEN
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowConfigModal(true)}
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
-                    title="Mở cài đặt VNPT SmartCA / USB Token"
-                  >
-                    <Settings className="w-3.5 h-3.5" />
-                    Cấu hình CKS
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Thanh thông báo trạng thái */}
-            <div
-              className={cn(
-                'px-3.5 py-1.5 rounded-xl border text-xs font-bold flex items-center justify-between gap-3',
-                statusType === 'success' && 'bg-emerald-50 text-emerald-800 border-emerald-200',
-                statusType === 'error' && 'bg-rose-50 text-rose-800 border-rose-200',
-                statusType === 'loading' && 'bg-blue-50 text-blue-800 border-blue-200',
-                statusType === 'info' && 'bg-slate-50 text-slate-700 border-slate-200'
-              )}
-            >
-              <div className="flex items-center gap-2">
-                {statusType === 'loading' && <RefreshCw className="w-4 h-4 animate-spin text-blue-600 shrink-0" />}
-                {statusType === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
-                {statusType === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
-                <span>{statusMsg}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                {plannedXmlParts.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1">
-                    {plannedXmlParts.map(p => (
-                      <span
-                        key={p.partIndex}
-                        className="text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md"
-                        title={`Bộ ${p.partIndex}/${p.totalParts}: từ dòng ${p.startRow.toLocaleString()} đến dòng ${p.endRow.toLocaleString()}`}
-                      >
-                        Bộ {p.partIndex}: {p.recordCount.toLocaleString()} HS ({p.startRow.toLocaleString()}→{p.endRow.toLocaleString()})
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {lastExportedChunks.length > 1 && (
-                  <div className="flex flex-wrap items-center gap-1">
-                    {lastExportedChunks.map(c => (
-                      <button
-                        key={c.partIndex}
-                        type="button"
-                        onClick={() => triggerDownloadXml(c.xmlContent, c.fileName)}
-                        className="text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer shadow-2xs"
-                        title={`Tải về ${c.fileName} (${c.recordCount.toLocaleString()} hồ sơ)`}
-                      >
-                        <Download className="w-2.5 h-2.5" />
-                        Tải Bộ {c.partIndex} ({c.recordCount.toLocaleString()} HS)
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <span className="text-[11px] font-extrabold text-indigo-700">
-                  Tổng số: {rows.length.toLocaleString()} bản ghi
+              <div className="hidden xl:flex items-center gap-1.5 text-[10.5px] text-slate-500 shrink-0">
+                <span>
+                  Mẫu: <strong className="text-indigo-700">{currentConfig.tableName}</strong>
                 </span>
+                <span>•</span>
+                <code className="font-mono font-bold text-indigo-700 bg-indigo-50 px-1 py-px rounded">
+                  &lt;{currentConfig.xmlRootElement}&gt;
+                </code>
+                <span>•</span>
+                <strong className="text-slate-700">{currentConfig.targetXmlColumns.length} cột</strong>
+              </div>
+            </div>
+
+            {/* Dòng 2: Gộp chung Import Excel/XML + Xuất & Ký số XML + Trạng thái vào 1 thanh ngang gọn */}
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              {/* Nhóm nút 1: Mẫu trống & Import */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={handleDownloadExcelTemplate}
+                  className="px-2.5 py-1 rounded-lg bg-slate-600 hover:bg-slate-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                  title={`Tải file Excel mẫu trống (${currentConfig.templateFileName})`}
+                >
+                  <Download className="w-3 h-3" />
+                  Mẫu Trống
+                </button>
+
+                <label className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer">
+                  <Upload className="w-3 h-3" />
+                  Nhập Excel (.xlsx/.xls)
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    multiple
+                    className="hidden"
+                    disabled={isBusy}
+                    onChange={handleImportExcelFile}
+                  />
+                </label>
+
+                <label className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer">
+                  <FileCode2 className="w-3 h-3" />
+                  Import XML
+                  <input
+                    type="file"
+                    accept=".xml"
+                    multiple
+                    className="hidden"
+                    disabled={isBusy}
+                    onChange={handleImportXmlFile}
+                  />
+                </label>
+
+                <label
+                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-[10.5px] font-bold flex items-center gap-1 cursor-pointer select-none"
+                  title="Khi bật: chọn thêm file Excel/XML sẽ nối tiếp vào danh sách hiện có thay vì ghi đè"
+                >
+                  <input
+                    type="checkbox"
+                    checked={appendOnImport}
+                    onChange={e => setAppendOnImport(e.target.checked)}
+                    className="rounded text-indigo-600 focus:ring-indigo-500 w-3 h-3"
+                  />
+                  Gộp nối tiếp
+                </label>
+
+                <span className="hidden sm:inline-block h-4 w-px bg-slate-200 mx-0.5" />
+
+                {/* Nhóm nút 2: Xuất & Ký số XML (Tự động chia <= 4.999 HS/file) */}
+                <button
+                  type="button"
+                  disabled={isBusy || rows.length === 0}
+                  onClick={() => handleProcessXmlAction(false)}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition cursor-pointer',
+                    rows.length > 0 && !isBusy
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  )}
+                >
+                  <Download className="w-3 h-3" />
+                  XUẤT XML
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isBusy || rows.length === 0}
+                  onClick={() => handleProcessXmlAction(true, 'SMARTCA')}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition cursor-pointer',
+                    rows.length > 0 && !isBusy
+                      ? 'bg-sky-600 hover:bg-sky-700 text-white'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  )}
+                >
+                  <ShieldCheck className="w-3 h-3" />
+                  ☁ KÝ SMARTCA
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isBusy || rows.length === 0}
+                  onClick={() => handleProcessXmlAction(true, 'USB_TOKEN')}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-[11px] font-extrabold flex items-center gap-1 shadow-2xs transition cursor-pointer',
+                    rows.length > 0 && !isBusy
+                      ? 'bg-purple-700 hover:bg-purple-800 text-white'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  )}
+                >
+                  <KeyRound className="w-3 h-3" />
+                  🔐 KÝ USB TOKEN
+                </button>
+
+                {plannedXmlParts.length > 0 && (
+                  <span className="text-[10px] font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200">
+                    {plannedXmlParts.length === 1
+                      ? `1 file XML (${rows.length.toLocaleString()} HS)`
+                      : `Tự chia ${plannedXmlParts.length} bộ XML (${plannedXmlParts
+                          .map(p => `${p.recordCount.toLocaleString()}`)
+                          .join(' + ')} HS)`}
+                  </span>
+                )}
+              </div>
+
+              {/* Thanh trạng thái & nút tải nhanh các bộ đã chia */}
+              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                {lastExportedChunks.length > 1 &&
+                  lastExportedChunks.map(c => (
+                    <button
+                      key={c.partIndex}
+                      type="button"
+                      onClick={() => triggerDownloadXml(c.xmlContent, c.fileName)}
+                      className="text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer shadow-2xs"
+                      title={`Tải về ${c.fileName} (${c.recordCount.toLocaleString()} hồ sơ)`}
+                    >
+                      <Download className="w-2.5 h-2.5" />
+                      Bộ {c.partIndex} ({c.recordCount.toLocaleString()} HS)
+                    </button>
+                  ))}
+
+                <div
+                  className={cn(
+                    'px-2 py-0.5 rounded-lg border text-[10.5px] font-bold flex items-center gap-1.5 max-w-xl truncate',
+                    statusType === 'success' && 'bg-emerald-50 text-emerald-800 border-emerald-200',
+                    statusType === 'error' && 'bg-rose-50 text-rose-800 border-rose-200',
+                    statusType === 'loading' && 'bg-blue-50 text-blue-800 border-blue-200',
+                    statusType === 'info' && 'bg-slate-50 text-slate-600 border-slate-200'
+                  )}
+                  title={statusMsg}
+                >
+                  {statusType === 'loading' && <RefreshCw className="w-3 h-3 animate-spin text-blue-600 shrink-0" />}
+                  {statusType === 'success' && <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />}
+                  {statusType === 'error' && <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />}
+                  <span className="truncate">{statusMsg}</span>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* BẢNG DỮ LIỆU XEM TRƯỚC & CHỈNH SỬA TRỰC TIẾP (CHỈ CUỘN NỘI DUNG BẢNG KHI LĂN CHUỘT) */}
-          <div className="flex-1 min-h-0 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
-            <div className="shrink-0 px-3.5 py-2 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase text-slate-700">
-                  Dữ liệu xem trước (Cho phép click vào ô để chỉnh sửa trực tiếp):
+          {/* BẢNG DỮ LIỆU XEM TRƯỚC & CHỈNH SỬA TRỰC TIẾP (MỞ RỘNG TỐI ĐA CHIỀU CAO) */}
+          <div className="flex-1 min-h-0 bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
+            <div className="shrink-0 px-2.5 py-1 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-black uppercase text-slate-700">
+                  Danh sách hồ sơ:
                 </span>
-                <span className="text-[11px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full">
-                  {filteredRowsWithIndex.length} / {rows.length} dòng
+                <span className="text-[10.5px] bg-indigo-100 text-indigo-800 font-extrabold px-2 py-0.5 rounded-full">
+                  {filteredRowsWithIndex.length.toLocaleString()} / {rows.length.toLocaleString()} dòng
                 </span>
+                {plannedXmlParts.length > 1 &&
+                  plannedXmlParts.map(p => (
+                    <span
+                      key={p.partIndex}
+                      className="hidden md:inline-block text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-px rounded"
+                      title={`Bộ ${p.partIndex}/${p.totalParts}: từ dòng ${p.startRow.toLocaleString()} đến dòng ${p.endRow.toLocaleString()}`}
+                    >
+                      Bộ {p.partIndex}: {p.recordCount.toLocaleString()} HS ({p.startRow.toLocaleString()}→{p.endRow.toLocaleString()})
+                    </span>
+                  ))}
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchQuery}
@@ -1444,17 +1399,17 @@ export default function ChungTuTt12Module() {
                       setSearchQuery(e.target.value);
                       setCurrentPage(1);
                     }}
-                    placeholder="Tìm kiếm trong bảng..."
-                    className="pl-8 pr-3 py-1 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 outline-none w-52"
+                    placeholder="Tìm kiếm nhanh..."
+                    className="pl-6 pr-2.5 py-0.5 bg-white border border-slate-300 rounded-md text-[11px] focus:ring-1 focus:ring-indigo-500 outline-none w-44"
                   />
                 </div>
 
                 <button
                   type="button"
                   onClick={handleAddRow}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                  className="px-2 py-0.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3 h-3" />
                   Thêm dòng
                 </button>
 
@@ -1472,11 +1427,11 @@ export default function ChungTuTt12Module() {
                         );
                         setStatusType('success');
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                      className="px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
                       title="Tự động chuẩn hóa định dạng ngày/số tiền, bù dữ liệu thiếu và sắp xếp đúng thứ tự cột theo quy định"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Chuẩn hóa đúng mẫu
+                      <RefreshCw className="w-3 h-3" />
+                      Chuẩn hóa
                     </button>
 
                     <button
@@ -1488,11 +1443,11 @@ export default function ChungTuTt12Module() {
                         );
                         setStatusType('success');
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                      className="px-2 py-0.5 rounded-md bg-teal-600 hover:bg-teal-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
                       title="Tải về file Excel đã được sắp xếp lại đúng vị trí các cột theo quy định"
                     >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      Xuất Excel Chuẩn
+                      <FileSpreadsheet className="w-3 h-3" />
+                      Xuất Excel
                     </button>
 
                     <button
@@ -1520,9 +1475,9 @@ export default function ChungTuTt12Module() {
                           });
                         }
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                      className="px-2 py-0.5 rounded-md bg-slate-700 hover:bg-slate-800 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
                     >
-                      <Eye className="w-3.5 h-3.5" />
+                      <Eye className="w-3 h-3" />
                       Xem XML ({plannedXmlParts.length} bộ)
                     </button>
 
@@ -1534,9 +1489,9 @@ export default function ChungTuTt12Module() {
                           setCurrentPage(1);
                         }
                       }}
-                      className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                      className="px-2 py-0.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3 h-3" />
                       Xóa bảng
                     </button>
                   </>
@@ -1548,8 +1503,8 @@ export default function ChungTuTt12Module() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead className="bg-slate-100 sticky top-0 z-10 shadow-2xs">
                   <tr>
-                    <th className="px-2 py-2 border-b border-r border-slate-200 text-center font-black text-slate-600 w-12 align-top">
-                      <div>Xóa</div>
+                    <th className="px-1.5 py-1 border-b border-r border-slate-200 text-center font-black text-slate-600 w-10 align-middle">
+                      <div className="text-[10px]">Xóa</div>
                       {activeColFilterEntries.length > 0 && (
                         <button
                           type="button"
@@ -1557,7 +1512,7 @@ export default function ChungTuTt12Module() {
                             setColumnFilters({});
                             setCurrentPage(1);
                           }}
-                          className="mt-1.5 px-1.5 py-0.5 rounded bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9.5px] font-bold transition cursor-pointer whitespace-nowrap"
+                          className="mt-0.5 px-1 py-px rounded bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold transition cursor-pointer whitespace-nowrap"
                           title="Xóa tất cả bộ lọc cột"
                         >
                           Bỏ lọc
@@ -1569,21 +1524,24 @@ export default function ChungTuTt12Module() {
                       return (
                         <th
                           key={col}
-                          className="px-2 py-1.5 border-b border-r border-slate-200 whitespace-nowrap min-w-[130px] align-top"
+                          className="px-1.5 py-1 border-b border-r border-slate-200 whitespace-nowrap min-w-[120px] align-top"
+                          title={`${idx + 1}. ${col} — ${TT12_COLUMN_LABELS[col] || col}`}
                         >
-                          <div className="flex items-center gap-1">
-                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-1 py-px rounded border border-indigo-200">
-                              {idx + 1}
-                            </span>
-                            <span className="font-extrabold text-slate-800 font-mono text-[11px]">
-                              {col}
+                          <div className="flex items-center justify-between gap-1 leading-tight">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className="text-[9.5px] font-black text-indigo-600 bg-indigo-50 px-1 rounded border border-indigo-200">
+                                {idx + 1}
+                              </span>
+                              <span className="font-extrabold text-slate-800 font-mono text-[10.5px]">
+                                {col}
+                              </span>
+                            </div>
+                            <span className="text-[9.5px] font-medium text-slate-500 truncate max-w-[90px]">
+                              {TT12_COLUMN_LABELS[col] || ''}
                             </span>
                           </div>
-                          <div className="text-[10px] font-semibold text-slate-500 mt-0.5 truncate">
-                            {TT12_COLUMN_LABELS[col] || col}
-                          </div>
-                          <div className="relative mt-1">
-                            <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <div className="relative mt-0.5">
+                            <Search className="w-2.5 h-2.5 text-slate-400 absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
                               type="text"
                               value={colFilterVal}
@@ -1597,7 +1555,7 @@ export default function ChungTuTt12Module() {
                               }}
                               placeholder={`Lọc ${col}...`}
                               className={cn(
-                                'w-full pl-6 pr-5 py-1 rounded-md border text-[11px] font-normal outline-none transition',
+                                'w-full pl-5 pr-4 py-0.5 rounded border text-[10.5px] font-normal outline-none transition',
                                 colFilterVal
                                   ? 'bg-indigo-50/70 border-indigo-500 text-indigo-950 font-semibold ring-1 ring-indigo-400'
                                   : 'bg-white border-slate-300 text-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400'
@@ -1613,10 +1571,10 @@ export default function ChungTuTt12Module() {
                                   }));
                                   setCurrentPage(1);
                                 }}
-                                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
                                 title="Xóa lọc cột này"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-2.5 h-2.5" />
                               </button>
                             )}
                           </div>
@@ -1643,11 +1601,11 @@ export default function ChungTuTt12Module() {
                   ) : (
                     paginatedRows.map(({ row, globalIdx }) => (
                       <tr key={globalIdx} className="hover:bg-blue-50/40 transition-colors">
-                        <td className="px-2 py-1 border-r border-slate-200 text-center">
+                        <td className="px-1.5 py-0.5 border-r border-slate-200 text-center">
                           <button
                             type="button"
                             onClick={() => handleDeleteRow(globalIdx)}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                            className="p-0.5 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
                             title="Xóa dòng này"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1659,7 +1617,7 @@ export default function ChungTuTt12Module() {
                               type="text"
                               value={row[col] ?? ''}
                               onChange={e => handleCellEdit(globalIdx, col, e.target.value)}
-                              className="w-full px-2.5 py-1.5 text-xs bg-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-800"
+                              className="w-full px-2 py-1 text-xs bg-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-800"
                             />
                           </td>
                         ))}
@@ -1670,52 +1628,152 @@ export default function ChungTuTt12Module() {
               </table>
 
               {rows.length === 0 && (
-                <div className="flex-1 min-h-[160px] p-6 text-center flex flex-col items-center justify-center space-y-2">
-                  <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-                    <FileSpreadsheet className="w-5 h-5" />
+                <div className="flex-1 min-h-[140px] p-4 text-center flex flex-col items-center justify-center space-y-1.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+                    <FileSpreadsheet className="w-4 h-4" />
                   </div>
-                  <div className="text-sm font-bold text-slate-700">
+                  <div className="text-xs font-bold text-slate-700">
                     Chưa có dữ liệu cho {currentConfig.tableName} ({currentConfig.targetXmlColumns.length} cột hiển thị phía trên)
                   </div>
-                  <p className="text-xs text-slate-500 max-w-lg mx-auto">
-                    Bạn có thể kéo thanh cuộn ngang phía trên để xem đầy đủ <b>{currentConfig.targetXmlColumns.length} tiêu đề cột</b> của bảng này, bấm <b>"Tải Excel Mẫu Trống"</b>, <b>"Nhập Excel"</b>, <b>"Import XML Có Sẵn"</b> hoặc bấm <b>"+ Thêm dòng"</b> để nhập trực tiếp.
+                  <p className="text-[11px] text-slate-500 max-w-lg mx-auto">
+                    Bấm <b>"Mẫu Trống"</b>, <b>"Nhập Excel"</b>, <b>"Import XML"</b> hoặc <b>"+ Thêm dòng"</b> để nhập dữ liệu.
                   </p>
-                  <div className="pt-1 flex justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDownloadExcelTemplate}
-                      className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" />
-                      Tải Excel Mẫu Trống ({currentConfig.templateFileName})
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
 
-            {/* Phân trang cố định dưới chân bảng */}
-            {rows.length > 0 && totalPages > 1 && (
-              <div className="shrink-0 px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
-                <span className="text-slate-600 font-medium">
-                  Trang <b>{currentPage}</b> / <b>{totalPages}</b> (Hiển thị {paginatedRows.length} dòng)
-                </span>
-                <div className="flex items-center gap-1.5">
+            {/* Phân trang cố định dưới chân bảng (Kèm danh sách số trang & Ô nhập nhảy tới trang bất kỳ) */}
+            {rows.length > 0 && (
+              <div className="shrink-0 px-3 py-1.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2 text-slate-600 font-medium">
+                  <span>
+                    Trang <b className="text-indigo-700">{currentPage}</b> / <b>{totalPages}</b> (Hiển thị{' '}
+                    <b>
+                      {filteredRowsWithIndex.length === 0
+                        ? 0
+                        : (currentPage - 1) * pageSize + 1}
+                      –
+                      {Math.min(currentPage * pageSize, filteredRowsWithIndex.length)}
+                    </b>{' '}
+                    / <b>{filteredRowsWithIndex.length.toLocaleString()}</b> dòng)
+                  </span>
+
+                  <div className="flex items-center gap-1">
+                    <span className="text-[11px] text-slate-500">Hiển thị:</span>
+                    <select
+                      value={pageSize}
+                      onChange={e => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-[11px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value={50}>50 dòng/trang</option>
+                      <option value={100}>100 dòng/trang</option>
+                      <option value={200}>200 dòng/trang</option>
+                      <option value={500}>500 dòng/trang</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  {/* Ô nhập số trang trực tiếp */}
+                  <div className="flex items-center gap-1 mr-1 bg-white px-2 py-0.5 rounded border border-slate-300">
+                    <span className="text-[11px] font-semibold text-slate-600">Đến trang:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      value={currentPage}
+                      onChange={e => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) {
+                          setCurrentPage(Math.min(Math.max(1, val), totalPages));
+                        }
+                      }}
+                      className="w-14 px-1.5 py-0.5 text-center font-extrabold text-indigo-700 bg-indigo-50/60 border border-indigo-300 rounded text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                      title={`Nhập số trang từ 1 đến ${totalPages}`}
+                    />
+                    <span className="text-[11px] text-slate-500 font-semibold">/ {totalPages}</span>
+                  </div>
+
+                  {/* Nút Đầu */}
+                  <button
+                    type="button"
+                    disabled={currentPage <= 1}
+                    onClick={() => setCurrentPage(1)}
+                    className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
+                    title="Về trang đầu tiên (Trang 1)"
+                  >
+                    « Đầu
+                  </button>
+
+                  {/* Nút Trước */}
                   <button
                     type="button"
                     disabled={currentPage <= 1}
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                    className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 font-bold flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold flex items-center gap-0.5 text-[11px] cursor-pointer"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" /> Trước
                   </button>
+
+                  {/* Danh sách các ô số trang */}
+                  {(() => {
+                    const pages: (number | string)[] = [];
+                    if (totalPages <= 7) {
+                      for (let i = 1; i <= totalPages; i++) pages.push(i);
+                    } else {
+                      pages.push(1);
+                      if (currentPage > 4) pages.push('...');
+                      const start = Math.max(2, currentPage - 2);
+                      const end = Math.min(totalPages - 1, currentPage + 2);
+                      for (let i = start; i <= end; i++) pages.push(i);
+                      if (currentPage < totalPages - 3) pages.push('...');
+                      pages.push(totalPages);
+                    }
+                    return pages.map((p, idx) =>
+                      typeof p === 'string' ? (
+                        <span key={`dots-${idx}`} className="px-1 text-slate-400 font-bold">
+                          ...
+                        </span>
+                      ) : (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setCurrentPage(p)}
+                          className={cn(
+                            'min-w-[28px] px-1.5 py-0.5 rounded border text-[11px] font-extrabold transition cursor-pointer',
+                            p === currentPage
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-indigo-50 hover:border-indigo-300'
+                          )}
+                        >
+                          {p}
+                        </button>
+                      )
+                    );
+                  })()}
+
+                  {/* Nút Sau */}
                   <button
                     type="button"
                     disabled={currentPage >= totalPages}
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                    className="px-2.5 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 font-bold flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold flex items-center gap-0.5 text-[11px] cursor-pointer"
                   >
                     Sau <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Nút Cuối */}
+                  <button
+                    type="button"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => setCurrentPage(totalPages)}
+                    className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
+                    title={`Đến trang cuối cùng (Trang ${totalPages})`}
+                  >
+                    Cuối »
                   </button>
                 </div>
               </div>

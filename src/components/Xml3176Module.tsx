@@ -51,7 +51,7 @@ export default function Xml3176Module() {
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
   const [selectedHosoFilter, setSelectedHosoFilter] = useState<string>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState<number>(50);
 
   // Danh sách các hosoIndex được tích chọn ở Bảng 1 để Ký số / Xuất XML
   const [selectedHosoIndices, setSelectedHosoIndices] = useState<Set<number>>(() => {
@@ -284,7 +284,7 @@ export default function Xml3176Module() {
   const pagedRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return currentTableRows.slice(start, start + pageSize);
-  }, [currentTableRows, currentPage]);
+  }, [currentTableRows, currentPage, pageSize]);
 
   // Thao tác tích chọn hồ sơ ở Bảng 1
   const toggleSelectHoso = (hosoIndex: number) => {
@@ -1141,31 +1141,24 @@ export default function Xml3176Module() {
   }, [doc, activeTab, activeTableMeta]);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
-      {/* THANH CÔNG CỤ & THÔNG TIN TỔNG QUAN HỒ SƠ 3176 (CỐ ĐỊNH TRÊN CÙNG) */}
-      <div className="shrink-0 bg-white rounded-2xl border border-slate-200 shadow-sm p-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-sm">
-              <Layers className="w-6 h-6" />
+    <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden">
+      {/* THANH CÔNG CỤ & THÔNG TIN TỔNG QUAN HỒ SƠ 3176 THU GỌN TỐI ĐA */}
+      <div className="shrink-0 bg-white rounded-xl border border-slate-200 shadow-xs px-3 py-2 space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-2xs shrink-0">
+              <Layers className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-slate-900">
-                  ĐỌC, CHỈNH SỬA & KÝ SỐ XML 3176 / 130 (BẢNG 1 → BẢNG 15)
-                </h2>
-                <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Không lưu dữ liệu (F5 tự xóa sạch)
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Tích chọn từng hồ sơ hoặc tất cả ở Bảng 1 • Sửa trực tiếp nội dung XML • Ký số SmartCA / USB Token • Xuất XML theo đúng nội dung đã sửa
-              </p>
-            </div>
+            <h2 className="text-xs sm:text-sm font-black text-slate-900">
+              ĐỌC, SỬA &amp; KÝ SỐ XML 3176 / 130 (BẢNG 1–15)
+            </h2>
+            <span className="hidden lg:inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Không lưu dữ liệu (F5 tự xóa)
+            </span>
           </div>
 
           {/* CÁC NÚT TÁC VỤ CHÍNH */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1">
             <input
               ref={fileInputRef}
               type="file"
@@ -1175,30 +1168,30 @@ export default function Xml3176Module() {
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-transparent bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-md border border-transparent bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
             >
-              <Upload className="w-3.5 h-3.5" />
-              {isLoading ? 'Đang đọc XML...' : 'Mở file XML 3176'}
+              <Upload className="w-3 h-3" />
+              {isLoading ? 'Đang đọc...' : 'Mở XML 3176'}
             </button>
 
             {doc && (
               <button
                 onClick={handleClearLoadedXml}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold transition-colors cursor-pointer"
                 title="Xóa toàn bộ dữ liệu XML đang mở khỏi bộ nhớ RAM"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Xóa dữ liệu đang mở
+                <Trash2 className="w-3 h-3" />
+                Xóa
               </button>
             )}
 
             <button
               onClick={() => setShowConfigModal(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold transition-colors cursor-pointer"
               title="Cấu hình chung VNPT SmartCA & USB Token từ hệ thống"
             >
-              <Settings className="w-3.5 h-3.5" />
-              Cấu hình CKS / SmartCA
+              <Settings className="w-3 h-3" />
+              Cấu hình CKS
             </button>
 
             <button
@@ -1208,10 +1201,10 @@ export default function Xml3176Module() {
                 openSignModal('SELECTED');
               }}
               disabled={!doc || selectedHosoIndices.size === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-transparent bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-md border border-transparent bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Ký số ({selectedHosoIndices.size} HS đã chọn)
+              <ShieldCheck className="w-3 h-3" />
+              Ký số ({selectedHosoIndices.size} HS)
             </button>
 
             <button
@@ -1221,10 +1214,10 @@ export default function Xml3176Module() {
                 openSignModal('ALL');
               }}
               disabled={!doc}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 disabled:opacity-50 text-[11px] font-bold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 disabled:opacity-50 text-[11px] font-bold transition-colors cursor-pointer"
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Ký tất cả ({doc ? doc.hosoFiles.length : 0} HS)
+              <ShieldCheck className="w-3 h-3" />
+              Ký tất cả ({doc ? doc.hosoFiles.length : 0})
             </button>
 
             <button
@@ -1234,50 +1227,47 @@ export default function Xml3176Module() {
                 openSignModal('SELECTED');
               }}
               disabled={!doc || selectedHosoIndices.size === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-transparent bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-md border border-transparent bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
               title="Ký số rồi gửi từng hồ sơ đã chọn lên Cổng BHXH qua API 3176 bằng tài khoản Cổng đã cấu hình"
             >
-              <Upload className="w-3.5 h-3.5" />
-              Ký & Gửi Cổng ({selectedHosoIndices.size} HS)
+              <Upload className="w-3 h-3" />
+              Ký &amp; Gửi Cổng ({selectedHosoIndices.size})
             </button>
 
             <button
               onClick={() => handleExportUnsignedXml()}
               disabled={!doc || selectedHosoIndices.size === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 disabled:opacity-50 text-[11px] font-bold transition-colors cursor-pointer"
-              title="Xuất file XML chuẩn không có chữ ký số (<CHUKYDONVI />) cho các hồ sơ đã tích chọn với nội dung đã sửa"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 disabled:opacity-50 text-[11px] font-bold transition-colors cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" />
-              Xuất XML Không ký ({selectedHosoIndices.size} HS)
+              <Download className="w-3 h-3" />
+              Xuất K.Ký ({selectedHosoIndices.size})
             </button>
 
             <button
               onClick={() => handleExportSignedXml()}
               disabled={!doc || selectedHosoIndices.size === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50 text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
-              title="Xuất file XML chuẩn đã nhúng chữ ký số trong thẻ <CHUKYDONVI> cho các hồ sơ đã tích chọn với nội dung đã sửa"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50 text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
             >
-              <Download className="w-3.5 h-3.5" />
-              Xuất XML Có ký số ({selectedHosoIndices.size} HS)
+              <Download className="w-3 h-3" />
+              Xuất Đã Ký ({selectedHosoIndices.size})
             </button>
 
             <button
               onClick={() => handleExportUnencodedXml()}
               disabled={!doc || selectedHosoIndices.size === 0}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 text-[11px] font-bold shadow-sm transition-colors cursor-pointer"
-              title="Xuất file XML KHÔNG MÃ HÓA Base64 — Hiển thị đầy đủ rõ ràng toàn bộ các thẻ XML1..XML15 và dữ liệu bên trong"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50 text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
             >
-              <FileCode2 className="w-3.5 h-3.5" />
-              Xuất XML Không mã hóa ({selectedHosoIndices.size} HS)
+              <FileCode2 className="w-3 h-3" />
+              Xuất Rõ ({selectedHosoIndices.size})
             </button>
 
             <button
               onClick={handleExportExcel}
               disabled={!doc}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-50 text-[11px] font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-50 text-[11px] font-semibold transition-colors cursor-pointer"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              Xuất Excel
+              <FileSpreadsheet className="w-3 h-3" />
+              Excel
             </button>
 
             <button
@@ -1286,9 +1276,9 @@ export default function Xml3176Module() {
                 setShowXmlPreviewModal(true);
               }}
               disabled={!doc}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 text-[11px] font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-50 text-[11px] font-semibold transition-colors cursor-pointer"
             >
-              <Eye className="w-3.5 h-3.5" />
+              <Eye className="w-3 h-3" />
               Xem XML
             </button>
           </div>
@@ -1296,34 +1286,28 @@ export default function Xml3176Module() {
 
         {/* NẾU CHƯA TẢI FILE XML: HIỂN THỊ KHUNG CHỌN FILE (KHÔNG LƯU SẴN FILE MẪU) */}
         {!doc ? (
-          <div className="py-14 px-4 text-center">
+          <div className="py-10 px-4 text-center">
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="max-w-xl mx-auto border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/40 hover:bg-blue-50/80 rounded-2xl p-8 transition-all cursor-pointer"
+              className="max-w-xl mx-auto border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/40 hover:bg-blue-50/80 rounded-2xl p-6 transition-all cursor-pointer"
             >
-              <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-3 shadow-md">
-                <Upload className="w-7 h-7" />
+              <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center mx-auto mb-2 shadow-md">
+                <Upload className="w-6 h-6" />
               </div>
-              <h3 className="text-base font-bold text-slate-800">
+              <h3 className="text-sm font-bold text-slate-800">
                 Bấm vào đây để chọn file XML theo chuẩn 3176 / 130 (.xml)
               </h3>
-              <p className="text-xs text-slate-500 mt-1.5">
+              <p className="text-xs text-slate-500 mt-1">
                 Hệ thống sẽ tự động giải mã Base64 và tách riêng từng bảng (Bảng lỗi, Bảng 1 → Bảng 15) để bạn kiểm tra, chỉnh sửa nội dung, tích chọn ký số từng hồ sơ hoặc tất cả và xuất XML chuẩn.
               </p>
-              <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-slate-200 text-[11px] font-semibold text-slate-600">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                Bảo mật tuyệt đối: Không lưu dữ liệu trên web — Nhấn F5 hoặc tắt trang tự động mất hoàn toàn
-              </div>
             </div>
           </div>
         ) : (
-          /* THÔNG TIN THẺ <THONGTINDONVI>, <THONGTINHOSO> & TRẠNG THÁI CHỌN / KÝ SỐ */
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 pt-3">
-            <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200">
-              <label className="block text-[10px] font-bold uppercase text-slate-400">
-                File đang mở / Mã CSKCB
-              </label>
-              <div className="flex items-center gap-2 mt-1">
+          /* THÔNG TIN TỔNG HỢP TRÊN 1 DÒNG THU GỌN */
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">
+                <span className="text-[10.5px] font-bold text-slate-500">CSKCB:</span>
                 <input
                   type="text"
                   value={doc.maCskcb}
@@ -1334,20 +1318,16 @@ export default function Xml3176Module() {
                       signature: { ...doc.signature, isSigned: false },
                     })
                   }
-                  className="w-24 px-2 py-1 text-xs font-bold text-blue-700 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-16 px-1.5 py-0.5 text-xs font-bold text-blue-700 bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                   title="Chỉnh sửa thẻ <MACSKCB>"
                 />
-                <span className="text-xs font-semibold text-slate-700 truncate" title={doc.fileName}>
+                <span className="text-[11px] font-semibold text-slate-700 truncate max-w-[140px]" title={doc.fileName}>
                   {doc.fileName}
                 </span>
               </div>
-            </div>
 
-            <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200">
-              <label className="block text-[10px] font-bold uppercase text-slate-400">
-                Ngày lập (&lt;NGAYLAP&gt;) & Đã chọn
-              </label>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">
+                <span className="text-[10.5px] font-bold text-slate-500">Ngày lập:</span>
                 <input
                   type="text"
                   value={doc.ngayLap}
@@ -1358,69 +1338,42 @@ export default function Xml3176Module() {
                       signature: { ...doc.signature, isSigned: false },
                     })
                   }
-                  className="w-24 px-2 py-1 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  title="Chỉnh sửa thẻ <NGAYLAP> (YYYYMMDD)"
+                  className="w-20 px-1.5 py-0.5 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-xs font-bold">
+                <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10.5px] font-extrabold">
                   Chọn {selectedHosoIndices.size}/{doc.hosoFiles.length} HS
                 </span>
               </div>
-            </div>
 
-            <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200">
-              <label className="block text-[10px] font-bold uppercase text-slate-400">
-                Tổng chi BV ({costSummary.count} HS đang chọn)
-              </label>
-              <div className="text-sm font-extrabold text-slate-900 mt-1">
-                {costSummary.tongChiBv.toLocaleString('vi-VN')} đ
-              </div>
-              <div className="text-[10px] text-slate-500">
-                Thuốc: {costSummary.thuoc.toLocaleString('vi-VN')} • VTYT: {costSummary.vtyt.toLocaleString('vi-VN')}
-              </div>
-            </div>
-
-            <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200">
-              <label className="block text-[10px] font-bold uppercase text-slate-400">
-                Quỹ BHYT TT ({costSummary.count} HS đang chọn)
-              </label>
-              <div className="text-sm font-extrabold text-emerald-700 mt-1">
-                {costSummary.bhtt.toLocaleString('vi-VN')} đ
-              </div>
-              <div className="text-[10px] text-slate-500">
-                Cùng chi trả / Tự trả: {costSummary.bntt.toLocaleString('vi-VN')} đ
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200">
+                <span className="text-[10.5px] font-bold text-slate-500">Tổng chi BV:</span>
+                <strong className="text-slate-900 font-extrabold">
+                  {costSummary.tongChiBv.toLocaleString('vi-VN')} đ
+                </strong>
+                <span className="text-slate-300">|</span>
+                <span className="text-[10.5px] font-bold text-slate-500">BHYT TT:</span>
+                <strong className="text-emerald-700 font-extrabold">
+                  {costSummary.bhtt.toLocaleString('vi-VN')} đ
+                </strong>
               </div>
             </div>
 
-            <div className="md:col-span-2 rounded-xl p-2.5 border flex items-center justify-between gap-2 bg-gradient-to-r from-slate-50 to-indigo-50/40 border-indigo-200">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase text-slate-500">
-                    Trạng thái Ký số:
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Đã ký: {signStats.signedCount} HS
-                  </span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    Chưa ký: {signStats.unsignedCount} HS
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-600 truncate mt-1">
-                  {signStats.modifiedCount > 0
-                    ? `Có ${signStats.modifiedCount} hồ sơ đã sửa nội dung XML — Khi xuất XML sẽ lấy đúng nội dung đã sửa!`
-                    : doc.signature.subjectName
-                    ? `Chứng thư số: ${doc.signature.subjectName}`
-                    : 'Tích chọn hồ sơ ở Bảng 1 để Ký số từng HS hoặc Tất cả và Xuất XML.'}
-                </p>
-              </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                <CheckCircle2 className="w-3 h-3" />
+                Đã ký: {signStats.signedCount} HS
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                <AlertTriangle className="w-3 h-3" />
+                Chưa ký: {signStats.unsignedCount} HS
+              </span>
               {doc.signature.isSigned && (
                 <button
                   onClick={() => {
                     setPreviewMode('SIGNATURE_ONLY');
                     setShowXmlPreviewModal(true);
                   }}
-                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold cursor-pointer"
+                  className="px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10.5px] font-bold cursor-pointer"
                 >
                   Xem CKS
                 </button>
@@ -1985,27 +1938,120 @@ export default function Xml3176Module() {
             </div>
           )}
 
-          {/* PHÂN TRANG */}
-          <div className="shrink-0 px-4 py-2 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
-            <div>
-              Đang hiển thị trang <b>{currentPage}</b> / <b>{totalPages}</b> (Tổng số:{' '}
-              <b>{activeTab === 'ERRORS' ? filteredErrors.length : currentTableRows.length}</b> dòng • Đã tích chọn:{' '}
-              <b className="text-blue-700">{selectedHosoIndices.size}</b> hồ sơ)
+          {/* PHÂN TRANG (KÈM DANH SÁCH SỐ TRANG & Ô NHẬP NHẢY TỚI TRANG) */}
+          <div className="shrink-0 px-3 py-1.5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+            <div className="flex flex-wrap items-center gap-2 font-medium">
+              <span>
+                Trang <b className="text-blue-700">{currentPage}</b> / <b>{totalPages}</b> (Tổng số:{' '}
+                <b>{(activeTab === 'ERRORS' ? filteredErrors.length : currentTableRows.length).toLocaleString()}</b> dòng • Đã tích chọn:{' '}
+                <b className="text-blue-700">{selectedHosoIndices.size}</b> hồ sơ)
+              </span>
+
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] text-slate-500">Hiển thị:</span>
+                <select
+                  value={pageSize}
+                  onChange={e => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="px-1.5 py-0.5 rounded border border-slate-300 bg-white text-[11px] font-bold text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value={50}>50 dòng/trang</option>
+                  <option value={100}>100 dòng/trang</option>
+                  <option value={200}>200 dòng/trang</option>
+                  <option value={500}>500 dòng/trang</option>
+                </select>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
+
+            <div className="flex flex-wrap items-center gap-1">
+              {/* Ô nhập số trang trực tiếp */}
+              <div className="flex items-center gap-1 mr-1 bg-white px-2 py-0.5 rounded border border-slate-300">
+                <span className="text-[11px] font-semibold text-slate-600">Đến trang:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={currentPage}
+                  onChange={e => {
+                    const val = parseInt(e.target.value, 10);
+                    if (!isNaN(val)) {
+                      setCurrentPage(Math.min(Math.max(1, val), totalPages));
+                    }
+                  }}
+                  className="w-14 px-1.5 py-0.5 text-center font-extrabold text-blue-700 bg-blue-50/60 border border-blue-300 rounded text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <span className="text-[11px] text-slate-500 font-semibold">/ {totalPages}</span>
+              </div>
+
               <button
+                type="button"
                 disabled={currentPage <= 1}
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                className="px-3 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-semibold cursor-pointer"
+                onClick={() => setCurrentPage(1)}
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
               >
-                Trang trước
+                « Đầu
               </button>
               <button
+                type="button"
+                disabled={currentPage <= 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
+              >
+                ‹ Trước
+              </button>
+
+              {(() => {
+                const pages: (number | string)[] = [];
+                if (totalPages <= 7) {
+                  for (let i = 1; i <= totalPages; i++) pages.push(i);
+                } else {
+                  pages.push(1);
+                  if (currentPage > 4) pages.push('...');
+                  const start = Math.max(2, currentPage - 2);
+                  const end = Math.min(totalPages - 1, currentPage + 2);
+                  for (let i = start; i <= end; i++) pages.push(i);
+                  if (currentPage < totalPages - 3) pages.push('...');
+                  pages.push(totalPages);
+                }
+                return pages.map((p, idx) =>
+                  typeof p === 'string' ? (
+                    <span key={`dots-${idx}`} className="px-1 text-slate-400 font-bold">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setCurrentPage(p)}
+                      className={`min-w-[28px] px-1.5 py-0.5 rounded border text-[11px] font-extrabold transition cursor-pointer ${
+                        p === currentPage
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-blue-50 hover:border-blue-300'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                );
+              })()}
+
+              <button
+                type="button"
                 disabled={currentPage >= totalPages}
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                className="px-3 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-semibold cursor-pointer"
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
               >
-                Trang sau
+                Sau ›
+              </button>
+              <button
+                type="button"
+                disabled={currentPage >= totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 font-bold text-[11px] cursor-pointer"
+              >
+                Cuối »
               </button>
             </div>
           </div>
