@@ -229,8 +229,28 @@ export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Recor
     case 'CT03':
       if (!raw['MA_KHOA'] && raw['MA_YTE']) raw['MA_KHOA'] = raw['MA_YTE'];
       if (!raw['MA_CCHN_TRUONGKHOA'] && raw['MA_TRUONGKHOA']) raw['MA_CCHN_TRUONGKHOA'] = raw['MA_TRUONGKHOA'];
+      if (!raw['NGAY_CHUNG_TU']) raw['NGAY_CHUNG_TU'] = raw['NGAY_CT'] || raw['NGAY_TAO'] || '';
+      if (!raw['BENHICD10_ID']) raw['BENHICD10_ID'] = raw['BENH_ICD10_ID'] || raw['BENHICD10'] || raw['MA_BENH'] || '';
+      if (!raw['TENBENHNICD10']) raw['TENBENHNICD10'] = raw['TENBENHICD10'] || raw['BENH_ICD10_TEN'] || raw['CHAN_DOAN'] || '';
+      if (!raw['GIOI_TINH']) raw['GIOI_TINH'] = '1';
+      if (!raw['MA_DANTOC']) raw['MA_DANTOC'] = '01';
+      if (!raw['DINH_CHI_THAI_NGHEN']) raw['DINH_CHI_THAI_NGHEN'] = '0';
+      if (!raw['TEKT']) raw['TEKT'] = '0';
+      if (!raw['LOAI_GIAYTO']) raw['LOAI_GIAYTO'] = '1';
       break;
     case 'CT04':
+      if (!raw['MA_CT']) raw['MA_CT'] = raw['SO_SERI'] || raw['SERI'] || '';
+      if (!raw['NGAY_CT']) raw['NGAY_CT'] = raw['NGAY_CHUNG_TU'] || raw['NGAY_TAO'] || '';
+      if (!raw['CHAN_DOAN_RA']) raw['CHAN_DOAN_RA'] = raw['CHAN_DOAN'] || '';
+      if (!raw['BENH_ICD10_ID']) raw['BENH_ICD10_ID'] = raw['BENHICD10_ID'] || raw['BENHICD10'] || raw['MA_BENH'] || '';
+      if (!raw['BENH_ICD10_TEN']) raw['BENH_ICD10_TEN'] = raw['TENBENHICD10'] || raw['TENBENHNICD10'] || raw['CHAN_DOAN_RA'] || raw['CHAN_DOAN'] || '';
+      if (!raw['GIOI_TINH']) raw['GIOI_TINH'] = '1';
+      if (!raw['MA_DANTOC']) raw['MA_DANTOC'] = '01';
+      if (!raw['SO_CONCHET']) raw['SO_CONCHET'] = '0';
+      if (!raw['TT_RAVIEN']) raw['TT_RAVIEN'] = '1';
+      if (!raw['TEKT']) raw['TEKT'] = '0';
+      if (!raw['LOAI_GIAYTO']) raw['LOAI_GIAYTO'] = '1';
+      if (!raw['LYDO_VVIEN']) raw['LYDO_VVIEN'] = '1';
       break;
     case 'CT05':
       if (!raw['HOTEN_NND'] && raw['HO_TEN_ME']) raw['HOTEN_NND'] = raw['HO_TEN_ME'];
@@ -238,31 +258,42 @@ export function mapRowToRawData(type: HoSoType, row: Record<string, any>): Recor
       if (!raw['SO_CMND_NND'] && raw['CMND']) raw['SO_CMND_NND'] = raw['CMND'];
       if (!raw['NGAYCAP_CMND_NND'] && raw['NGAY_CAP_CMND']) raw['NGAYCAP_CMND_NND'] = raw['NGAY_CAP_CMND'];
       if (!raw['NOICAP_CMND_NND'] && raw['NOI_CAP_CMND']) raw['NOICAP_CMND_NND'] = raw['NOI_CAP_CMND'];
-      if (!raw['MA_DANTOC_NND'] && raw['DAN_TOC']) raw['MA_DANTOC_NND'] = raw['DAN_TOC'];
+      if (!raw['MA_DANTOC_NND']) raw['MA_DANTOC_NND'] = raw['DAN_TOC'] || '01';
       if (!raw['NOI_DK_THUONGTRU_NND'] && raw['DIA_CHI']) raw['NOI_DK_THUONGTRU_NND'] = raw['DIA_CHI'];
       if (!raw['NGAY_SINH_CON'] && raw['NGAY_SINHCON']) raw['NGAY_SINH_CON'] = raw['NGAY_SINHCON'];
       if (!raw['THU_TRUONG_DVI'] && raw['NGUOI_DAI_DIEN']) raw['THU_TRUONG_DVI'] = raw['NGUOI_DAI_DIEN'];
       if (!raw['SO_SERI'] && raw['SO']) raw['SO_SERI'] = raw['SO'];
       if (!raw['NGAYSINH_NND'] && raw['NGAY_SINH']) raw['NGAYSINH_NND'] = raw['NGAY_SINH'];
       if (!raw['MA_THE_NND'] && raw['MA_THE']) raw['MA_THE_NND'] = raw['MA_THE'];
+      if (!raw['SO_CON']) raw['SO_CON'] = '1';
+      if (!raw['SINHCON_PHAUTHUAT']) raw['SINHCON_PHAUTHUAT'] = '0';
+      if (!raw['SINHCON_DUOI32TUAN']) raw['SINHCON_DUOI32TUAN'] = '0';
       break;
     case 'CT06':
-      if (!raw['MA_CT']) raw['MA_CT'] = 'CT06';
+      if (!raw['MA_CT']) raw['MA_CT'] = raw['SO_SERI'] || 'CT06';
+      if (!raw['NGAY_CT']) raw['NGAY_CT'] = raw['NGAY_CHUNG_TU'] || '';
+      if (!raw['BENH_ICD10_ID']) raw['BENH_ICD10_ID'] = raw['BENHICD10_ID'] || raw['BENHICD10'] || '';
+      if (!raw['BENH_ICD10_TEN']) raw['BENH_ICD10_TEN'] = raw['TENBENHICD10'] || raw['TENBENHNICD10'] || raw['CHAN_DOAN'] || '';
+      if (!raw['LOAI_GIAYTO']) raw['LOAI_GIAYTO'] = '1';
       break;
     case 'CT07':
-      if (!raw['BENH_ICD10_ID']) raw['BENH_ICD10_ID'] = raw['BENHICD10'] || raw['MA_BENH'] || raw['ICD10'] || '';
+      if (!raw['BENH_ICD10_ID']) raw['BENH_ICD10_ID'] = raw['BENHICD10'] || raw['BENHICD10_ID'] || raw['MA_BENH'] || raw['ICD10'] || '';
       if (!raw['TEN_NGUOI_HANH_NGHE']) raw['TEN_NGUOI_HANH_NGHE'] = raw['TEN_BSY'] || raw['TEN_BS'] || '';
       if (!raw['MA_CCHN']) raw['MA_CCHN'] = raw['MA_BS'] || raw['MA_BSY'] || '';
       if (!raw['CHANDOAN_DIEUTRI']) raw['CHANDOAN_DIEUTRI'] = raw['PP_DIEUTRI'] || raw['TENBENHICD10'] || raw['TEN_BENH'] || raw['CHAN_DOAN'] || '';
-      if (!raw['THU_TRUONG_DV']) raw['THU_TRUONG_DV'] = raw['NGUOI_DAI_DIEN'] || '';
+      if (!raw['BENH_ICD10_TEN']) raw['BENH_ICD10_TEN'] = raw['TENBENHICD10'] || raw['TENBENHNICD10'] || raw['TEN_BENH'] || raw['CHANDOAN_DIEUTRI'] || '';
+      if (!raw['THU_TRUONG_DV']) raw['THU_TRUONG_DV'] = raw['THU_TRUONG_DVI'] || raw['NGUOI_DAI_DIEN'] || '';
       if (!raw['SO_KCB']) raw['SO_KCB'] = raw['SERI'] || raw['SO_SERI'] || '';
       if (!raw['SO_SERI']) raw['SO_SERI'] = raw['SERI'] || raw['SO_KCB'] || '';
-      if (!raw['NGAY_KCB']) raw['NGAY_KCB'] = raw['NGAY_KB'] || '';
+      if (!raw['MA_CT']) raw['MA_CT'] = raw['SO_SERI'] || raw['SERI'] || '';
+      if (!raw['NGAY_KCB']) raw['NGAY_KCB'] = raw['NGAY_KB'] || raw['TU_NGAY'] || '';
       if (!raw['DON_VI']) raw['DON_VI'] = raw['TEN_DVI'] || raw['TEN_DON_VI'] || '';
       if (!raw['NGAY_CHUNG_TU']) raw['NGAY_CHUNG_TU'] = raw['NGAY_CT'] || raw['NGAY_TAO'] || '';
       if (!raw['NGAYCAP_CCCD']) raw['NGAYCAP_CCCD'] = raw['NGAY_CAP_CCCD'] || raw['NGAYCAP_CMND'] || '';
       if (!raw['NOICAP_CCCD']) raw['NOICAP_CCCD'] = raw['NOI_CAP_CCCD'] || raw['NOICAP_CMND'] || '';
       if (!raw['LOAI_GIAYTO']) raw['LOAI_GIAYTO'] = raw['LOAI_GIAY_TO'] || '1';
+      if (!raw['TEKT']) raw['TEKT'] = '0';
+      if (!raw['GIOI_TINH']) raw['GIOI_TINH'] = '1';
       if (!raw['MAU_SO']) raw['MAU_SO'] = 'CT07';
       break;
   }
