@@ -47,17 +47,23 @@ export const parseGiamDinhXml = (xmlStr: string): any[] => {
     }
   }
 
-  // Fallback direct XML1 or TONG_HOP tags
+  // Fallback direct XML1 or TONG_HOP or CHITIET_HS01BH tags
   if (results.length === 0) {
-    const tongHops = xmlDoc.getElementsByTagName('TONG_HOP');
-    for (let i = 0; i < tongHops.length; i++) {
-      const tongHopNode = tongHops[i];
-      const rowData: any = {};
-      for (let j = 0; j < tongHopNode.children.length; j++) {
-        const child = tongHopNode.children[j];
-        rowData[child.tagName] = child.textContent;
+    const fallbackTags = ['TONG_HOP', 'CHITIET_HS01BH'];
+    for (const tag of fallbackTags) {
+      const nodes = xmlDoc.getElementsByTagName(tag);
+      if (nodes.length > 0) {
+        for (let i = 0; i < nodes.length; i++) {
+          const node = nodes[i];
+          const rowData: any = {};
+          for (let j = 0; j < node.children.length; j++) {
+            const child = node.children[j];
+            rowData[child.tagName] = child.textContent;
+          }
+          results.push(rowData);
+        }
+        break;
       }
-      results.push(rowData);
     }
   }
 

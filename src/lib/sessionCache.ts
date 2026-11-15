@@ -108,8 +108,22 @@ export function setSessionSync<T>(key: string, value: T): void {
   setSessionCache(key, value).catch(() => {});
 }
 
+function isLargePayload(val: any): boolean {
+  if (!val || typeof val !== 'object') return false;
+  if (val instanceof Uint8Array) return true;
+  if (Array.isArray(val)) return val.length > 1200;
+  let totalRows = 0;
+  for (const v of Object.values(val)) {
+    if (Array.isArray(v)) {
+      totalRows += v.length;
+      if (totalRows > 1200) return true;
+    }
+  }
+  return false;
+}
+
 /**
- * Lưu dữ liệu (kể cả bảng dữ liệu lớn hoặc file PDF Uint8Array) vào IndexedDB gắn với phiên trình duyệt hiện tại
+ * Lưu dữ liệu (kể cả bảng dữ liệu lớn 5.000 - 50.000+ dòng hoặc file PDF Uint8Array) vào IndexedDB gắn với phiên trình duyệt hiện tại
  */
 export async function setSessionCache<T>(key: string, value: T): Promise<void> {
   const sid = initBrowserSessionId();
@@ -119,11 +133,17 @@ export async function setSessionCache<T>(key: string, value: T): Promise<void> {
     value,
   };
   try {
-    if (!(value instanceof Uint8Array)) {
+    if (!isLargePayload(value)) {
       sessionStorage.setItem(`sc_${key}`, JSON.stringify(env));
+    } else {
+      // Nếu dữ liệu lớn (> 1200 dòng, VD: 5000, 7000, 14000 hồ sơ), xóa bản cũ trong sessionStorage (tránh giới hạn 5MB và tránh dữ liệu cũ ghi đè)
+      sessionStorage.removeItem(`sc_${key}`);
     }
   } catch {
-    // Bỏ qua nếu vượt dung lượng sessionStorage, IndexedDB bên dưới sẽ lưu đầy đủ
+    // Bỏ qua nếu vượt dung lượng sessionStorage, xóa bản cũ trong sessionStorage để IndexedDB bên dưới lưu đầy đủ 100%
+    try {
+      sessionStorage.removeItem(`sc_${key}`);
+    } catch {}
   }
 
   try {

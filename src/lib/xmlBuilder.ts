@@ -544,12 +544,35 @@ export function canonicalizeElementC14n(
     collectOwnNamespaces(anc, initialScope);
   }
 
+  const chunks: string[] = [];
+
   const serialize = (
     el: Element,
     parentInScope: Map<string, string>,
     renderedNs: Map<string, string>
-  ): string => {
-    if (omitPredicate?.(el)) return '';
+  ): void => {
+    if (omitPredicate?.(el)) return;
+
+    // Fast-path cho 99.9% thẻ dữ liệu con (không có thuộc tính, không đổi namespace):
+    // Tránh cấp phát Map/Array hàng trăm nghìn lần khi ký file 4.999 hồ sơ (~105.000 thẻ DOM)
+    if (
+      el.attributes.length === 0 &&
+      !el.prefix &&
+      (el.namespaceURI || '') === (renderedNs.get('') ?? '')
+    ) {
+      chunks.push(`<${el.tagName}>`);
+      const childNodes = el.childNodes;
+      for (let i = 0; i < childNodes.length; i++) {
+        const child = childNodes[i];
+        if (child.nodeType === 1) {
+          serialize(child as Element, parentInScope, renderedNs);
+        } else if (child.nodeType === 3 || child.nodeType === 4) {
+          chunks.push(escC14nText(child.nodeValue || ''));
+        }
+      }
+      chunks.push(`</${el.tagName}>`);
+      return;
+    }
 
     const curScope = new Map(parentInScope);
     collectOwnNamespaces(el, curScope);
@@ -601,20 +624,20 @@ export function canonicalizeElementC14n(
       ...regAttrs.map(a => `${a.name}="${escC14nAttr(a.value)}"`),
     ];
 
-    let out = `<${el.tagName}${parts.length ? ' ' + parts.join(' ') : ''}>`;
+    chunks.push(`<${el.tagName}${parts.length ? ' ' + parts.join(' ') : ''}>`);
     for (let i = 0; i < el.childNodes.length; i++) {
       const child = el.childNodes[i];
       if (child.nodeType === 1 /* ELEMENT_NODE */) {
-        out += serialize(child as Element, curScope, nextRendered);
+        serialize(child as Element, curScope, nextRendered);
       } else if (child.nodeType === 3 /* TEXT_NODE */ || child.nodeType === 4 /* CDATA */) {
-        out += escC14nText(child.nodeValue || '');
+        chunks.push(escC14nText(child.nodeValue || ''));
       }
     }
-    out += `</${el.tagName}>`;
-    return out;
+    chunks.push(`</${el.tagName}>`);
   };
 
-  return serialize(targetEl, initialScope, new Map([['', '']]));
+  serialize(targetEl, initialScope, new Map([['', '']]));
+  return chunks.join('');
 }
 
 /** Chèn hoặc thay thế khối <CHUKYDONVI>...</CHUKYDONVI> trong chuỗi XML gốc */

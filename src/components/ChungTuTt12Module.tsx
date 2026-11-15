@@ -27,6 +27,7 @@ import { cn } from '../lib/utils';
 import {
   TT12_CONFIGS,
   TT12TableConfig,
+  Tt12XmlChunk,
   parseTt12ExcelBufferWithMeta,
   parseTt12XmlTextWithMeta,
   downloadBlankTt12ExcelTemplate,
@@ -193,11 +194,40 @@ export default function ChungTuTt12Module() {
     getSessionSync('tt12_rows_by_table_v1', {})
   );
   const [cacheHydrated, setCacheHydrated] = useState(false);
+  const userModifiedTablesRef = useRef<Set<string>>(new Set());
+  const [appendOnImport, setAppendOnImport] = useState<boolean>(false);
 
   const rows = useMemo(
     () => rowsByTable[selectedTableCode] || [],
     [rowsByTable, selectedTableCode]
   );
+
+  // Tự động tính toán phương án chia file XML (tối đa 4.999 hồ sơ / 1 file XML)
+  const plannedXmlParts = useMemo(() => {
+    const total = rows.length;
+    if (total === 0) return [];
+    const maxPerFile = 4999;
+    const totalParts = Math.ceil(total / maxPerFile);
+    const parts: Array<{
+      partIndex: number;
+      totalParts: number;
+      recordCount: number;
+      startRow: number;
+      endRow: number;
+    }> = [];
+    for (let i = 0; i < totalParts; i++) {
+      const startRow = i * maxPerFile + 1;
+      const endRow = Math.min((i + 1) * maxPerFile, total);
+      parts.push({
+        partIndex: i + 1,
+        totalParts,
+        recordCount: endRow - startRow + 1,
+        startRow,
+        endRow,
+      });
+    }
+    return parts;
+  }, [rows.length]);
 
   const setRows = (
     updater:
@@ -206,6 +236,7 @@ export default function ChungTuTt12Module() {
     overrideTableCode?: string
   ) => {
     const targetCode = overrideTableCode || selectedTableCode;
+    userModifiedTablesRef.current.add(targetCode);
     setRowsByTable(prevMap => {
       const prevRows = prevMap[targetCode] || [];
       const nextRows = typeof updater === 'function' ? updater(prevRows) : updater;
@@ -225,12 +256,37 @@ export default function ChungTuTt12Module() {
   const [statusType, setStatusType] = useState<'info' | 'success' | 'error' | 'loading'>('info');
   const [isBusy, setIsBusy] = useState(false);
 
-  // Xem trước XML đã tạo / đã ký
+  // Lưu danh sách các bộ file XML vừa xuất / ký số để người dùng có thể tải lại từng bộ bất kỳ lúc nào
+  const [lastExportedChunks, setLastExportedChunks] = useState<
+    Array<{
+      partIndex: number;
+      totalParts: number;
+      recordCount: number;
+      startRow: number;
+      endRow: number;
+      fileName: string;
+      xmlContent: string;
+      isSigned: boolean;
+    }>
+  >([]);
+
+  // Xem trước XML đã tạo / đã ký (hỗ trợ nhiều bộ file khi > 4.999 hồ sơ)
   const [previewXmlModal, setPreviewXmlModal] = useState<{
     title: string;
     fileName: string;
     xmlContent: string;
     isSigned: boolean;
+    chunks?: Array<{
+      partIndex: number;
+      totalParts: number;
+      recordCount: number;
+      startRow: number;
+      endRow: number;
+      fileName: string;
+      xmlContent: string;
+      isSigned: boolean;
+    }>;
+    activePartIndex?: number;
   } | null>(null);
 
   // ============================================================================
@@ -279,7 +335,19 @@ export default function ChungTuTt12Module() {
       .then(([cachedRowsMap, cachedPdf]) => {
         if (!mounted) return;
         if (cachedRowsMap && typeof cachedRowsMap === 'object') {
-          setRowsByTable(prev => ({ ...cachedRowsMap, ...prev }));
+          setRowsByTable(prev => {
+            const merged: Record<string, Record<string, string>[]> = {
+              ...prev,
+              ...cachedRowsMap,
+            };
+            // Giữ nguyên các bảng mà người dùng vừa thao tác/import trong lần mount hiện tại
+            for (const modifiedKey of userModifiedTablesRef.current) {
+              if (prev[modifiedKey]) {
+                merged[modifiedKey] = prev[modifiedKey];
+              }
+            }
+            return merged;
+          });
         }
         if (cachedPdf && cachedPdf.pdfBytes) {
           const bytes =
@@ -432,39 +500,89 @@ export default function ChungTuTt12Module() {
   };
 
   const handleImportExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
-    if (!file) return;
+    if (fileList.length === 0) return;
 
     setIsBusy(true);
     setStatusType('loading');
-    setStatusMsg(`⏳ Đang đọc và tự động chuẩn hóa vị trí các cột từ file Excel "${file.name}"...`);
+    setStatusMsg(
+      `⏳ Đang đọc và tự động chuẩn hóa vị trí các cột từ ${fileList.length} file Excel (${fileList.map(f => f.name).join(', ')})...`
+    );
 
     try {
-      const buf = await file.arrayBuffer();
-      const meta = parseTt12ExcelBufferWithMeta(buf, currentConfig);
-      if (meta.autoSwitchedTable) {
-        setSelectedTableCode(meta.effectiveConfig.tableCode);
+      // Nhường 1 nhịp frame để UI kịp hiển thị trạng thái loading đối với file lớn (5.000 - 50.000 dòng)
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      let effectiveCfg = currentConfig;
+      let autoSwitched = false;
+      let reordered = false;
+      const renamedSet = new Set<string>();
+      const collectedRows: Record<string, string>[] = [];
+
+      for (const file of fileList) {
+        const buf = await file.arrayBuffer();
+        const meta = parseTt12ExcelBufferWithMeta(buf, effectiveCfg);
+        if (meta.autoSwitchedTable) {
+          effectiveCfg = meta.effectiveConfig;
+          autoSwitched = true;
+        }
+        if (meta.reorderedColumns) reordered = true;
+        for (const col of meta.renamedColumns) renamedSet.add(col);
+        for (let i = 0; i < meta.rows.length; i++) {
+          collectedRows.push(meta.rows[i]);
+        }
       }
-      setRows(meta.rows, meta.effectiveConfig.tableCode);
+
+      if (autoSwitched) {
+        setSelectedTableCode(effectiveCfg.tableCode);
+      }
+
+      const existingRows = appendOnImport ? rowsByTable[effectiveCfg.tableCode] || [] : [];
+      const finalRows =
+        existingRows.length > 0
+          ? [...existingRows, ...collectedRows].map((row, idx) => ({
+              ...row,
+              STT: String(idx + 1),
+            }))
+          : collectedRows.map((row, idx) => ({
+              ...row,
+              STT: String(idx + 1),
+            }));
+
+      setRows(finalRows, effectiveCfg.tableCode);
+      setLastExportedChunks([]);
       setCurrentPage(1);
 
+      const totalXmlFiles = Math.ceil(finalRows.length / 4999);
+      const splitInfo =
+        totalXmlFiles > 1
+          ? ` • Tự động chia thành ${totalXmlFiles} bộ file XML (tối đa 4.999 HS/file: ${Array.from(
+              { length: totalXmlFiles },
+              (_, idx) => {
+                const s = idx * 4999 + 1;
+                const eRow = Math.min((idx + 1) * 4999, finalRows.length);
+                return `Bộ ${idx + 1}: ${(eRow - s + 1).toLocaleString()} HS`;
+              }
+            ).join(', ')})`
+          : '';
+
       const notes: string[] = [];
-      if (meta.autoSwitchedTable) {
-        notes.push(`tự động nhận diện đúng biểu mẫu "${meta.effectiveConfig.tableName}"`);
+      if (autoSwitched) {
+        notes.push(`tự động nhận diện đúng biểu mẫu "${effectiveCfg.tableName}"`);
       }
-      if (meta.reorderedColumns) {
+      if (reordered) {
         notes.push(
-          `tự động điều chỉnh & sắp xếp lại vị trí ${meta.effectiveConfig.targetXmlColumns.length} cột về đúng quy định`
+          `tự động điều chỉnh & sắp xếp lại vị trí ${effectiveCfg.targetXmlColumns.length} cột về đúng quy định`
         );
       }
-      if (meta.renamedColumns.length > 0) {
-        notes.push(`chuẩn hóa tên cột (${meta.renamedColumns.slice(0, 4).join(', ')})`);
+      if (renamedSet.size > 0) {
+        notes.push(`chuẩn hóa tên cột (${Array.from(renamedSet).slice(0, 4).join(', ')})`);
       }
 
       const detailNote = notes.length > 0 ? ` — Đã ${notes.join(', ')}!` : '';
       setStatusMsg(
-        `✅ Đã nhập thành công ${meta.rows.length} dòng từ "${file.name}" (${meta.effectiveConfig.tableName})${detailNote}`
+        `✅ Đã nhập thành công ${collectedRows.length.toLocaleString()} hồ sơ từ ${fileList.length} file Excel (Tổng danh sách: ${finalRows.length.toLocaleString()} hồ sơ - ${effectiveCfg.tableName})${splitInfo}${detailNote}`
       );
       setStatusType('success');
     } catch (err: any) {
@@ -477,36 +595,83 @@ export default function ChungTuTt12Module() {
   };
 
   const handleImportXmlFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const fileList = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
-    if (!file) return;
+    if (fileList.length === 0) return;
 
     setIsBusy(true);
     setStatusType('loading');
-    setStatusMsg(`⏳ Đang đọc và tự động chuẩn hóa cấu trúc từ file XML "${file.name}"...`);
+    setStatusMsg(
+      `⏳ Đang đọc và tự động chuẩn hóa cấu trúc từ ${fileList.length} file XML (${fileList.map(f => f.name).join(', ')})...`
+    );
 
     try {
-      const text = await file.text();
-      const meta = parseTt12XmlTextWithMeta(text, currentConfig);
-      if (meta.autoSwitchedTable) {
-        setSelectedTableCode(meta.effectiveConfig.tableCode);
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      let effectiveCfg = currentConfig;
+      let autoSwitched = false;
+      let reordered = false;
+      const collectedRows: Record<string, string>[] = [];
+
+      for (const file of fileList) {
+        const text = await file.text();
+        const meta = parseTt12XmlTextWithMeta(text, effectiveCfg);
+        if (meta.autoSwitchedTable) {
+          effectiveCfg = meta.effectiveConfig;
+          autoSwitched = true;
+        }
+        if (meta.reorderedColumns) reordered = true;
+        for (let i = 0; i < meta.rows.length; i++) {
+          collectedRows.push(meta.rows[i]);
+        }
       }
-      setRows(meta.rows, meta.effectiveConfig.tableCode);
+
+      if (autoSwitched) {
+        setSelectedTableCode(effectiveCfg.tableCode);
+      }
+
+      const existingRows = appendOnImport ? rowsByTable[effectiveCfg.tableCode] || [] : [];
+      const finalRows =
+        existingRows.length > 0
+          ? [...existingRows, ...collectedRows].map((row, idx) => ({
+              ...row,
+              STT: String(idx + 1),
+            }))
+          : collectedRows.map((row, idx) => ({
+              ...row,
+              STT: String(idx + 1),
+            }));
+
+      setRows(finalRows, effectiveCfg.tableCode);
+      setLastExportedChunks([]);
       setCurrentPage(1);
 
+      const totalXmlFiles = Math.ceil(finalRows.length / 4999);
+      const splitInfo =
+        totalXmlFiles > 1
+          ? ` • Tự động chia thành ${totalXmlFiles} bộ file XML (tối đa 4.999 HS/file: ${Array.from(
+              { length: totalXmlFiles },
+              (_, idx) => {
+                const s = idx * 4999 + 1;
+                const eRow = Math.min((idx + 1) * 4999, finalRows.length);
+                return `Bộ ${idx + 1}: ${(eRow - s + 1).toLocaleString()} HS`;
+              }
+            ).join(', ')})`
+          : '';
+
       const notes: string[] = [];
-      if (meta.autoSwitchedTable) {
-        notes.push(`tự động chuyển sang biểu mẫu "${meta.effectiveConfig.tableName}"`);
+      if (autoSwitched) {
+        notes.push(`tự động chuyển sang biểu mẫu "${effectiveCfg.tableName}"`);
       }
-      if (meta.reorderedColumns) {
+      if (reordered) {
         notes.push(
-          `tự động điều chỉnh & sắp xếp lại đủ ${meta.effectiveConfig.targetXmlColumns.length} cột theo đúng quy định`
+          `tự động điều chỉnh & sắp xếp lại đủ ${effectiveCfg.targetXmlColumns.length} cột theo đúng quy định`
         );
       }
 
       const detailNote = notes.length > 0 ? ` (${notes.join('; ')})` : '';
       setStatusMsg(
-        `✅ Đã Import thành công ${meta.rows.length} bản ghi từ file XML "${file.name}" vào ${meta.effectiveConfig.tableName}${detailNote}.`
+        `✅ Đã Import thành công ${collectedRows.length.toLocaleString()} hồ sơ từ ${fileList.length} file XML (Tổng danh sách: ${finalRows.length.toLocaleString()} hồ sơ - ${effectiveCfg.tableName})${splitInfo}${detailNote}.`
       );
       setStatusType('success');
     } catch (err: any) {
@@ -527,7 +692,18 @@ export default function ChungTuTt12Module() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
+  const triggerDownloadAllChunks = async (
+    chunkItems: Array<{ fileName: string; xmlContent: string }>
+  ) => {
+    for (let i = 0; i < chunkItems.length; i++) {
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 450));
+      }
+      triggerDownloadXml(chunkItems[i].xmlContent, chunkItems[i].fileName);
+    }
   };
 
   const handleProcessXmlAction = async (
@@ -543,48 +719,97 @@ export default function ChungTuTt12Module() {
     setStatusType('loading');
 
     try {
-      // Chia thành các phần <= 4999 dòng giống hệt ProcessXmlActionAsync trong MainView.xaml.cs
-      const chunks = buildTt12XmlChunks(rows, currentConfig, 4999);
-      let lastXml = '';
-      let lastFileName = '';
+      await new Promise(resolve => setTimeout(resolve, 25));
+      // Tự động chia thành các bộ <= 4999 hồ sơ / 1 file XML (kể cả ký số hay không ký số)
+      const chunks: Tt12XmlChunk[] = buildTt12XmlChunks(rows, currentConfig, 4999);
+      const processedChunks: Array<{
+        partIndex: number;
+        totalParts: number;
+        recordCount: number;
+        startRow: number;
+        endRow: number;
+        fileName: string;
+        xmlContent: string;
+        isSigned: boolean;
+      }> = [];
 
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         if (!signAction) {
           setStatusMsg(
-            `⏳ Đang xuất file XML phần ${chunk.partIndex}/${chunk.totalParts} (${chunk.recordCount} dòng)...`
+            `⏳ Đang xuất bộ file XML ${chunk.partIndex}/${chunk.totalParts} (${chunk.recordCount.toLocaleString()} hồ sơ: dòng ${chunk.startRow.toLocaleString()} → ${chunk.endRow.toLocaleString()})...`
           );
+          if (i > 0) {
+            // Giãn cách 450ms giữa các lần tải file để trình duyệt Chrome/Edge không chặn tải nhiều file cùng lúc
+            await new Promise(resolve => setTimeout(resolve, 450));
+          }
           triggerDownloadXml(chunk.xmlContent, chunk.suggestedFileName);
-          lastXml = chunk.xmlContent;
-          lastFileName = chunk.suggestedFileName;
+          processedChunks.push({
+            partIndex: chunk.partIndex,
+            totalParts: chunk.totalParts,
+            recordCount: chunk.recordCount,
+            startRow: chunk.startRow,
+            endRow: chunk.endRow,
+            fileName: chunk.suggestedFileName,
+            xmlContent: chunk.xmlContent,
+            isSigned: false,
+          });
         } else {
           setStatusMsg(
-            `🔐 Đang ký số XML (${signMethod === 'SMARTCA' ? 'VNPT SmartCA' : 'USB Token'}) phần ${chunk.partIndex}/${chunk.totalParts}...`
+            `🔐 Đang ký số XML (${signMethod === 'SMARTCA' ? 'VNPT SmartCA' : 'USB Token'}) bộ ${chunk.partIndex}/${chunk.totalParts} (${chunk.recordCount.toLocaleString()} hồ sơ: dòng ${chunk.startRow.toLocaleString()} → ${chunk.endRow.toLocaleString()})...`
           );
           const signRes = await signTt12XmlString(chunk.xmlContent, signMethod, msg => {
-            setStatusMsg(`[Phần ${chunk.partIndex}/${chunk.totalParts}] ${msg}`);
+            setStatusMsg(
+              `[Bộ ${chunk.partIndex}/${chunk.totalParts} • ${chunk.recordCount.toLocaleString()} HS] ${msg}`
+            );
           });
           const signedFileName = chunk.suggestedFileName.replace(/\.xml$/i, '_Signed.xml');
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, 450));
+          }
           triggerDownloadXml(signRes.signedXml, signedFileName);
-          lastXml = signRes.signedXml;
-          lastFileName = signedFileName;
+          processedChunks.push({
+            partIndex: chunk.partIndex,
+            totalParts: chunk.totalParts,
+            recordCount: chunk.recordCount,
+            startRow: chunk.startRow,
+            endRow: chunk.endRow,
+            fileName: signedFileName,
+            xmlContent: signRes.signedXml,
+            isSigned: true,
+          });
         }
       }
 
+      setLastExportedChunks(processedChunks);
+
+      const partsSummary =
+        processedChunks.length > 1
+          ? ` (${processedChunks
+              .map(
+                c =>
+                  `Bộ ${c.partIndex}: ${c.recordCount.toLocaleString()} HS [${c.startRow.toLocaleString()}-${c.endRow.toLocaleString()}]`
+              )
+              .join(' | ')})`
+          : '';
+
       const successText = signAction
-        ? `✅ Đã Xuất và Ký số thành công ${chunks.length} file XML (${rows.length} bản ghi)!`
-        : `✅ Đã Xuất thành công ${chunks.length} file XML (${rows.length} bản ghi)!`;
+        ? `✅ Đã Ký số & Xuất thành công ${processedChunks.length} bộ file XML (Tổng ${rows.length.toLocaleString()} hồ sơ)${partsSummary}!`
+        : `✅ Đã Xuất thành công ${processedChunks.length} bộ file XML (Tổng ${rows.length.toLocaleString()} hồ sơ)${partsSummary}!`;
       setStatusMsg(successText);
       setStatusType('success');
 
-      if (lastXml) {
+      if (processedChunks.length > 0) {
+        const firstChunk = processedChunks[0];
         setPreviewXmlModal({
           title: signAction
-            ? `XML ĐÃ KÝ SỐ (${signMethod === 'SMARTCA' ? 'VNPT SMARTCA' : 'USB TOKEN'})`
-            : 'XEM TRƯỚC MÃ NGUỒN XML CHUẨN TT12 / 01BH',
-          fileName: lastFileName,
-          xmlContent: lastXml,
+            ? `XML ĐÃ KÝ SỐ (${signMethod === 'SMARTCA' ? 'VNPT SMARTCA' : 'USB TOKEN'}) — ${processedChunks.length} BỘ FILE (${rows.length.toLocaleString()} HỒ SƠ)`
+            : `XEM TRƯỚC MÃ NGUỒN XML CHUẨN TT12 / 01BH — ${processedChunks.length} BỘ FILE (${rows.length.toLocaleString()} HỒ SƠ)`,
+          fileName: firstChunk.fileName,
+          xmlContent: firstChunk.xmlContent,
           isSigned: signAction,
+          chunks: processedChunks,
+          activePartIndex: 1,
         });
       }
     } catch (err: any) {
@@ -1028,6 +1253,7 @@ export default function ChungTuTt12Module() {
                     <input
                       type="file"
                       accept=".xlsx,.xls"
+                      multiple
                       className="hidden"
                       disabled={isBusy}
                       onChange={handleImportExcelFile}
@@ -1040,10 +1266,24 @@ export default function ChungTuTt12Module() {
                     <input
                       type="file"
                       accept=".xml"
+                      multiple
                       className="hidden"
                       disabled={isBusy}
                       onChange={handleImportXmlFile}
                     />
+                  </label>
+
+                  <label
+                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-[11px] font-bold flex items-center gap-1.5 cursor-pointer select-none"
+                    title="Khi bật: chọn thêm file Excel/XML sẽ nối tiếp vào danh sách hiện có thay vì ghi đè"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={appendOnImport}
+                      onChange={e => setAppendOnImport(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    Gộp nối tiếp file
                   </label>
                 </div>
               </div>
@@ -1052,11 +1292,22 @@ export default function ChungTuTt12Module() {
               <div className="bg-white rounded-2xl px-3.5 py-2.5 border border-slate-200 shadow-xs flex flex-col justify-between gap-2">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
                   <h2 className="text-xs font-black uppercase text-slate-800 tracking-wide">
-                    2. Xuất & Ký Số XML (Tự động tách file khi &gt; 4999 dòng)
+                    2. Xuất & Ký Số XML (Tự động chia file tối đa 4.999 HS/file)
                   </h2>
-                  <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
-                    SHA-256 XMLDSig
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {plannedXmlParts.length > 0 && (
+                      <span className="text-[10px] font-extrabold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200">
+                        {plannedXmlParts.length === 1
+                          ? `1 file XML (${rows.length.toLocaleString()} HS)`
+                          : `Tự chia ${plannedXmlParts.length} file XML (${plannedXmlParts
+                              .map(p => `${p.recordCount.toLocaleString()}`)
+                              .join(' + ')} HS)`}
+                      </span>
+                    )}
+                    <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
+                      SHA-256 XMLDSig
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -1134,9 +1385,40 @@ export default function ChungTuTt12Module() {
                 {statusType === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />}
                 <span>{statusMsg}</span>
               </div>
-              <span className="text-[11px] font-extrabold text-indigo-700 shrink-0">
-                Tổng số: {rows.length.toLocaleString()} bản ghi
-              </span>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {plannedXmlParts.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {plannedXmlParts.map(p => (
+                      <span
+                        key={p.partIndex}
+                        className="text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md"
+                        title={`Bộ ${p.partIndex}/${p.totalParts}: từ dòng ${p.startRow.toLocaleString()} đến dòng ${p.endRow.toLocaleString()}`}
+                      >
+                        Bộ {p.partIndex}: {p.recordCount.toLocaleString()} HS ({p.startRow.toLocaleString()}→{p.endRow.toLocaleString()})
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {lastExportedChunks.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {lastExportedChunks.map(c => (
+                      <button
+                        key={c.partIndex}
+                        type="button"
+                        onClick={() => triggerDownloadXml(c.xmlContent, c.fileName)}
+                        className="text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-0.5 rounded-md flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title={`Tải về ${c.fileName} (${c.recordCount.toLocaleString()} hồ sơ)`}
+                      >
+                        <Download className="w-2.5 h-2.5" />
+                        Tải Bộ {c.partIndex} ({c.recordCount.toLocaleString()} HS)
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <span className="text-[11px] font-extrabold text-indigo-700">
+                  Tổng số: {rows.length.toLocaleString()} bản ghi
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1218,18 +1500,30 @@ export default function ChungTuTt12Module() {
                       onClick={() => {
                         const chunks = buildTt12XmlChunks(rows, currentConfig, 4999);
                         if (chunks.length > 0) {
-                          setPreviewXmlModal({
-                            title: `XEM TRƯỚC MÃ NGUỒN XML (${currentConfig.tableName})`,
-                            fileName: chunks[0].suggestedFileName,
-                            xmlContent: chunks[0].xmlContent,
+                          const mappedChunks = chunks.map(c => ({
+                            partIndex: c.partIndex,
+                            totalParts: c.totalParts,
+                            recordCount: c.recordCount,
+                            startRow: c.startRow,
+                            endRow: c.endRow,
+                            fileName: c.suggestedFileName,
+                            xmlContent: c.xmlContent,
                             isSigned: false,
+                          }));
+                          setPreviewXmlModal({
+                            title: `XEM TRƯỚC MÃ NGUỒN XML (${currentConfig.tableName} — ${mappedChunks.length} BỘ FILE / ${rows.length.toLocaleString()} HỒ SƠ)`,
+                            fileName: mappedChunks[0].fileName,
+                            xmlContent: mappedChunks[0].xmlContent,
+                            isSigned: false,
+                            chunks: mappedChunks,
+                            activePartIndex: 1,
                           });
                         }
                       }}
                       className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer"
                     >
                       <Eye className="w-3.5 h-3.5" />
-                      Xem XML
+                      Xem XML ({plannedXmlParts.length} bộ)
                     </button>
 
                     <button
@@ -1749,20 +2043,29 @@ export default function ChungTuTt12Module() {
       {previewXmlModal && (
         <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
-            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-5 py-3.5 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <FileCode2 className="w-5 h-5 text-cyan-400" />
+                <FileCode2 className="w-5 h-5 text-cyan-400 shrink-0" />
                 <div>
                   <div className="text-sm font-black">{previewXmlModal.title}</div>
                   <div className="text-[11px] text-slate-300 font-mono">{previewXmlModal.fileName}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {previewXmlModal.chunks && previewXmlModal.chunks.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => triggerDownloadAllChunks(previewXmlModal.chunks!)}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Tải tất cả ({previewXmlModal.chunks.length} file XML)
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
                     navigator.clipboard.writeText(previewXmlModal.xmlContent);
-                    alert('Đã sao chép toàn bộ nội dung XML vào bộ nhớ tạm!');
+                    alert('Đã sao chép toàn bộ nội dung XML của bộ đang chọn vào bộ nhớ tạm!');
                   }}
                   className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
                 >
@@ -1786,8 +2089,62 @@ export default function ChungTuTt12Module() {
                 </button>
               </div>
             </div>
+
+            {/* Thanh chọn các Bộ XML được chia tự động (tối đa 4.999 hồ sơ / bộ) */}
+            {previewXmlModal.chunks && previewXmlModal.chunks.length > 1 && (
+              <div className="px-4 py-2 bg-slate-800 border-b border-slate-700 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-extrabold text-amber-300 mr-1">
+                    Danh sách bộ file XML đã chia (tối đa 4.999 HS/file):
+                  </span>
+                  {previewXmlModal.chunks.map(chunk => {
+                    const isActive =
+                      (previewXmlModal.activePartIndex || 1) === chunk.partIndex;
+                    return (
+                      <div key={chunk.partIndex} className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreviewXmlModal(prev =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    activePartIndex: chunk.partIndex,
+                                    fileName: chunk.fileName,
+                                    xmlContent: chunk.xmlContent,
+                                  }
+                                : null
+                            )
+                          }
+                          className={cn(
+                            'px-2.5 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer',
+                            isActive
+                              ? 'bg-cyan-500 text-slate-950 shadow-xs'
+                              : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                          )}
+                        >
+                          Bộ {chunk.partIndex}/{chunk.totalParts}: {chunk.recordCount.toLocaleString()} HS (dòng{' '}
+                          {chunk.startRow.toLocaleString()}→{chunk.endRow.toLocaleString()})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => triggerDownloadXml(chunk.xmlContent, chunk.fileName)}
+                          className="px-2 py-1 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold cursor-pointer"
+                          title={`Tải ngay ${chunk.fileName}`}
+                        >
+                          ⬇ Tải
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="p-4 bg-slate-950 text-emerald-300 font-mono text-xs overflow-auto flex-1 leading-relaxed whitespace-pre-wrap break-all">
-              {previewXmlModal.xmlContent}
+              {previewXmlModal.xmlContent.length > 16000
+                ? `${previewXmlModal.xmlContent.slice(0, 10000)}\n\n... [Đã rút gọn hiển thị trên màn hình (${previewXmlModal.xmlContent.length.toLocaleString()} ký tự) để tránh đơ trình duyệt — Khi bấm "Tải về" hoặc "Sao chép XML" vẫn giữ nguyên đủ 100% toàn bộ hồ sơ] ...\n\n${previewXmlModal.xmlContent.slice(-5000)}`
+                : previewXmlModal.xmlContent}
             </div>
           </div>
         </div>

@@ -745,6 +745,8 @@ const GLOBAL_COLUMN_ALIASES: Record<string, string> = {
   THANGQT: 'THANG_QT',
 };
 
+const columnResolutionCache = new WeakMap<TT12TableConfig, Map<string, string>>();
+
 /**
  * Chuẩn hóa tên cột bất kỳ trong file Excel / XML về đúng tên cột chuẩn trong `config.targetXmlColumns`
  */
@@ -755,48 +757,62 @@ export function resolveStandardColumnName(
   const trimmed = String(rawColName ?? '').trim();
   if (!trimmed) return '';
 
-  // 1. Nếu khớp trực tiếp (không phân biệt hoa/thường) với targetXmlColumns
-  const exactTarget = config.targetXmlColumns.find(
-    t => t.toUpperCase() === trimmed.toUpperCase()
-  );
-  if (exactTarget) return exactTarget;
+  let cacheForConfig = columnResolutionCache.get(config);
+  if (!cacheForConfig) {
+    cacheForConfig = new Map<string, string>();
+    columnResolutionCache.set(config, cacheForConfig);
+  }
+  const cached = cacheForConfig.get(trimmed);
+  if (cached !== undefined) return cached;
 
-  // 2. Chuyển sang slug ASCII in hoa (VD: "Mã loại KCB" -> "MA_LOAI_KCB", "ma_loaikcb" -> "MA_LOAIKCB")
-  const slug = toAsciiSlug(trimmed);
-  if (!slug) return trimmed;
+  const compute = (): string => {
+    // 1. Nếu khớp trực tiếp (không phân biệt hoa/thường) với targetXmlColumns
+    const exactTarget = config.targetXmlColumns.find(
+      t => t.toUpperCase() === trimmed.toUpperCase()
+    );
+    if (exactTarget) return exactTarget;
 
-  const slugTarget = config.targetXmlColumns.find(t => t.toUpperCase() === slug);
-  if (slugTarget) return slugTarget;
+    // 2. Chuyển sang slug ASCII in hoa (VD: "Mã loại KCB" -> "MA_LOAI_KCB", "ma_loaikcb" -> "MA_LOAIKCB")
+    const slug = toAsciiSlug(trimmed);
+    if (!slug) return trimmed;
 
-  // 3. Kiểm tra trong config.columnMap của từng bảng (ưu tiên bảng hiện tại)
-  for (const [mapFrom, mapTo] of Object.entries(config.columnMap)) {
-    if (mapFrom.toUpperCase() === slug || mapFrom.replace(/_/g, '') === slug.replace(/_/g, '')) {
-      if (config.targetXmlColumns.includes(mapTo)) {
-        return mapTo;
+    const slugTarget = config.targetXmlColumns.find(t => t.toUpperCase() === slug);
+    if (slugTarget) return slugTarget;
+
+    // 3. Kiểm tra trong config.columnMap của từng bảng (ưu tiên bảng hiện tại)
+    for (const [mapFrom, mapTo] of Object.entries(config.columnMap)) {
+      if (mapFrom.toUpperCase() === slug || mapFrom.replace(/_/g, '') === slug.replace(/_/g, '')) {
+        if (config.targetXmlColumns.includes(mapTo)) {
+          return mapTo;
+        }
       }
     }
-  }
 
-  // 4. Kiểm tra trong từ điển đồng nghĩa toàn cục GLOBAL_COLUMN_ALIASES
-  const globalMapped = GLOBAL_COLUMN_ALIASES[slug] || GLOBAL_COLUMN_ALIASES[slug.replace(/_/g, '')];
-  if (globalMapped) {
-    if (config.targetXmlColumns.includes(globalMapped)) {
-      return globalMapped;
+    // 4. Kiểm tra trong từ điển đồng nghĩa toàn cục GLOBAL_COLUMN_ALIASES
+    const globalMapped = GLOBAL_COLUMN_ALIASES[slug] || GLOBAL_COLUMN_ALIASES[slug.replace(/_/g, '')];
+    if (globalMapped) {
+      if (config.targetXmlColumns.includes(globalMapped)) {
+        return globalMapped;
+      }
+      // Xử lý chéo giữa Bảng 3, Bảng 4, Bảng 6 (VD: CONGTY_SX <-> NHA_SX, HD_TU <-> TU_NGAY_HD, MA_TBYT <-> MA_MAY)
+      if (config.columnMap[globalMapped] && config.targetXmlColumns.includes(config.columnMap[globalMapped])) {
+        return config.columnMap[globalMapped];
+      }
     }
-    // Xử lý chéo giữa Bảng 3, Bảng 4, Bảng 6 (VD: CONGTY_SX <-> NHA_SX, HD_TU <-> TU_NGAY_HD, MA_TBYT <-> MA_MAY)
-    if (config.columnMap[globalMapped] && config.targetXmlColumns.includes(config.columnMap[globalMapped])) {
-      return config.columnMap[globalMapped];
-    }
-  }
 
-  // 5. So sánh bỏ toàn bộ dấu gạch dưới (VD: "DANHSACH" hoặc "MALOAIKCB" vs "MA_LOAI_KCB")
-  const compactSlug = slug.replace(/_/g, '');
-  const compactTarget = config.targetXmlColumns.find(
-    t => t.toUpperCase().replace(/_/g, '') === compactSlug
-  );
-  if (compactTarget) return compactTarget;
+    // 5. So sánh bỏ toàn bộ dấu gạch dưới (VD: "DANHSACH" hoặc "MALOAIKCB" vs "MA_LOAI_KCB")
+    const compactSlug = slug.replace(/_/g, '');
+    const compactTarget = config.targetXmlColumns.find(
+      t => t.toUpperCase().replace(/_/g, '') === compactSlug
+    );
+    if (compactTarget) return compactTarget;
 
-  return slug;
+    return slug;
+  };
+
+  const result = compute();
+  cacheForConfig.set(trimmed, result);
+  return result;
 }
 
 /**
@@ -990,9 +1006,57 @@ export function normalizeAndEnrichRow(
 }
 
 /**
- * Đọc file Excel (.xlsx, .xls) thông minh:
+ * Mở rộng vùng tham chiếu `!ref` của trang tính Excel để đảm bảo đọc đủ 100% số dòng thực tế
+ * (Khắc phục lỗi nhiều phần mềm HIS xuất file .xls/.xlsx bị giới hạn thẻ dimension <ref="A1:T4999"/> dù bên dưới có 7.000 - 20.000+ dòng)
+ */
+export function ensureWorksheetFullRange(ws: XLSX.WorkSheet): void {
+  if (!ws || typeof ws !== 'object') return;
+  let maxR = 0;
+  let maxC = 0;
+  let hasCell = false;
+
+  if (ws['!ref']) {
+    try {
+      const curRange = XLSX.utils.decode_range(ws['!ref']);
+      maxR = curRange.e.r;
+      maxC = curRange.e.c;
+      hasCell = true;
+    } catch {}
+  }
+
+  const cellKeys = Object.keys(ws);
+  for (let i = 0; i < cellKeys.length; i++) {
+    const key = cellKeys[i];
+    if (key.charCodeAt(0) === 33 /* '!' */) continue;
+    // Kiểm tra nhanh định dạng tọa độ ô Excel (VD: A1, AP7000)
+    const m = key.match(/^([A-Z]+)(\d+)$/);
+    if (!m) continue;
+    const rowIdx = parseInt(m[2], 10) - 1;
+    if (rowIdx > maxR) maxR = rowIdx;
+    let colIdx = 0;
+    const colLetters = m[1];
+    for (let c = 0; c < colLetters.length; c++) {
+      colIdx = colIdx * 26 + (colLetters.charCodeAt(c) - 64);
+    }
+    colIdx -= 1;
+    if (colIdx > maxC) maxC = colIdx;
+    hasCell = true;
+  }
+
+  if (hasCell) {
+    ws['!ref'] = XLSX.utils.encode_range({
+      s: { r: 0, c: 0 },
+      e: { r: maxR, c: maxC },
+    });
+  }
+}
+
+/**
+ * Đọc file Excel (.xlsx, .xls) thông minh (Không giới hạn số lượng dòng: 5.000, 7.000, 14.000, 50.000+ hồ sơ):
+ * - Tự động mở rộng `!ref` nếu file HIS xuất bị khóa giới hạn 4999 dòng
+ * - Tự động đọc và gộp dữ liệu trên tất cả các Sheet nếu file Excel chia làm nhiều Sheet
  * - Chấp nhận các cột bị đảo vị trí (sai thứ tự cột), thừa cột, thiếu cột STT hoặc dùng tên cột tương đương
- * - Tự động phát hiện dòng tiêu đề trong 15 dòng đầu tiên
+ * - Tự động phát hiện dòng tiêu đề trong 35 dòng đầu tiên
  * - Tự động nhận diện biểu mẫu nếu người dùng đang đứng ở tab bảng khác
  * - Tự động sắp xếp lại toàn bộ các cột về đúng mẫu quy định (targetXmlColumns)
  */
@@ -1004,53 +1068,59 @@ export function parseTt12ExcelBufferWithMeta(
   if (!wb.SheetNames || wb.SheetNames.length === 0) {
     throw new Error('File Excel không có trang tính (Sheet) nào.');
   }
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const matrix = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
 
-  if (!matrix || matrix.length === 0) {
-    throw new Error('Sheet Excel trống, không có dữ liệu.');
+  // Tìm dòng tiêu đề tốt nhất trên các Sheet (ưu tiên Sheet đầu tiên có tiêu đề hợp lệ)
+  let primarySheetIdx = -1;
+  let primaryHeaderRowIdx = -1;
+  let bestHeaderScore = 0;
+  const sheetMatrices: any[][][] = [];
+
+  for (let sIdx = 0; sIdx < wb.SheetNames.length; sIdx++) {
+    const ws = wb.Sheets[wb.SheetNames[sIdx]];
+    ensureWorksheetFullRange(ws);
+    const mat = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
+    sheetMatrices.push(mat || []);
   }
 
-  // Tìm dòng tiêu đề trong 15 dòng đầu tiên:
-  // Chọn dòng có số cột khớp với bộ cột chuẩn nhiều nhất (hoặc có chứa cột STT + ít nhất 2 cột dữ liệu)
-  let headerRowIdx = -1;
-  let bestHeaderScore = 0;
-  const maxSearchRow = Math.min(15, matrix.length);
+  for (let sIdx = 0; sIdx < sheetMatrices.length; sIdx++) {
+    const matrix = sheetMatrices[sIdx];
+    const maxSearchRow = Math.min(35, matrix.length);
+    for (let r = 0; r < maxSearchRow; r++) {
+      const rowCells = (matrix[r] || [])
+        .map(c => String(c ?? '').trim())
+        .filter(Boolean);
+      if (rowCells.length < 2) continue;
 
-  for (let r = 0; r < maxSearchRow; r++) {
-    const rowCells = (matrix[r] || [])
-      .map(c => String(c ?? '').trim())
-      .filter(Boolean);
-    if (rowCells.length < 2) continue;
-
-    // Tính số cột khớp với bất kỳ biểu mẫu nào trong TT12_CONFIGS
-    let maxMatchedForThisRow = 0;
-    for (const cfg of TT12_CONFIGS) {
-      let matched = 0;
-      for (const cell of rowCells) {
-        const resolved = resolveStandardColumnName(cell, cfg);
-        if (cfg.targetXmlColumns.includes(resolved)) {
-          matched++;
+      let maxMatchedForThisRow = 0;
+      for (const cfg of TT12_CONFIGS) {
+        let matched = 0;
+        for (const cell of rowCells) {
+          const resolved = resolveStandardColumnName(cell, cfg);
+          if (cfg.targetXmlColumns.includes(resolved)) {
+            matched++;
+          }
+        }
+        if (matched > maxMatchedForThisRow) {
+          maxMatchedForThisRow = matched;
         }
       }
-      if (matched > maxMatchedForThisRow) {
-        maxMatchedForThisRow = matched;
+
+      const hasStt = rowCells.some(c => {
+        const slug = toAsciiSlug(c);
+        return slug === 'STT' || slug === 'TT' || slug === 'SO_TT';
+      });
+
+      const totalScore = maxMatchedForThisRow * 2 + (hasStt ? 3 : 0);
+      if (maxMatchedForThisRow >= 2 && totalScore > bestHeaderScore) {
+        bestHeaderScore = totalScore;
+        primarySheetIdx = sIdx;
+        primaryHeaderRowIdx = r;
       }
     }
-
-    const hasStt = rowCells.some(c => {
-      const slug = toAsciiSlug(c);
-      return slug === 'STT' || slug === 'TT' || slug === 'SO_TT';
-    });
-
-    const totalScore = maxMatchedForThisRow * 2 + (hasStt ? 3 : 0);
-    if (maxMatchedForThisRow >= 2 && totalScore > bestHeaderScore) {
-      bestHeaderScore = totalScore;
-      headerRowIdx = r;
-    }
+    if (primarySheetIdx !== -1) break;
   }
 
-  if (headerRowIdx === -1) {
+  if (primarySheetIdx === -1 || primaryHeaderRowIdx === -1) {
     throw new Error(
       `Không tìm thấy dòng tiêu đề hợp lệ trong file Excel!\n` +
         `Các cột chuẩn theo quy định của "${preferredConfig.tableName}" gồm: ${preferredConfig.targetXmlColumns.slice(0, 8).join(', ')}...\n` +
@@ -1058,37 +1128,53 @@ export function parseTt12ExcelBufferWithMeta(
     );
   }
 
-  const headerRow = (matrix[headerRowIdx] || []).map(c => String(c ?? '').trim());
+  const primaryMatrix = sheetMatrices[primarySheetIdx];
+  const headerRow = (primaryMatrix[primaryHeaderRowIdx] || []).map(c => String(c ?? '').trim());
   const nonEmptyHeaders = headerRow.filter(Boolean);
 
   // Tự động nhận diện bảng phù hợp nhất từ dòng tiêu đề
   const effectiveConfig = detectBestTt12ConfigForHeaders(nonEmptyHeaders, preferredConfig);
   const autoSwitchedTable = effectiveConfig.tableCode !== preferredConfig.tableCode;
 
-  const colIndexToName: Record<number, string> = {};
-  const renamedColumns: string[] = [];
-  const resolvedSequenceInFile: string[] = [];
+  const buildColumnMapping = (hdrRow: string[]) => {
+    const map: Record<number, string> = {};
+    const renamed: string[] = [];
+    const seq: string[] = [];
 
-  for (let c = 0; c < headerRow.length; c++) {
-    const rawCol = headerRow[c];
-    if (!rawCol) continue;
-    const resolvedCol = resolveStandardColumnName(rawCol, effectiveConfig);
-    if (
-      effectiveConfig.targetXmlColumns.includes(resolvedCol) &&
-      rawCol.toUpperCase() !== resolvedCol.toUpperCase()
-    ) {
-      renamedColumns.push(`${rawCol} → ${resolvedCol}`);
+    for (let c = 0; c < hdrRow.length; c++) {
+      const rawCol = hdrRow[c];
+      if (!rawCol) continue;
+      const resolvedCol = resolveStandardColumnName(rawCol, effectiveConfig);
+      if (
+        effectiveConfig.targetXmlColumns.includes(resolvedCol) &&
+        rawCol.toUpperCase() !== resolvedCol.toUpperCase()
+      ) {
+        renamed.push(`${rawCol} → ${resolvedCol}`);
+      }
+      if (effectiveConfig.targetXmlColumns.includes(resolvedCol)) {
+        seq.push(resolvedCol);
+      }
+      if (!Object.values(map).includes(resolvedCol)) {
+        map[c] = resolvedCol;
+      } else {
+        map[c] = `${resolvedCol}_${c}`;
+      }
     }
-    if (effectiveConfig.targetXmlColumns.includes(resolvedCol)) {
-      resolvedSequenceInFile.push(resolvedCol);
-    }
-    // Nếu trùng tên cột chuẩn trong cùng 1 dòng tiêu đề, ưu tiên cột đầu tiên có trong targetXmlColumns
-    if (!Object.values(colIndexToName).includes(resolvedCol)) {
-      colIndexToName[c] = resolvedCol;
-    } else {
-      colIndexToName[c] = `${resolvedCol}_${c}`;
-    }
-  }
+    return { map, renamed, seq };
+  };
+
+  const {
+    map: primaryColIndexToName,
+    renamedColumns,
+    seq: resolvedSequenceInFile,
+  } = (() => {
+    const res = buildColumnMapping(headerRow);
+    return {
+      map: res.map,
+      renamedColumns: res.renamed,
+      seq: res.seq,
+    };
+  })();
 
   // Kiểm tra xem thứ tự cột trong file Excel có bị lệch vị trí so với targetXmlColumns hay không
   const expectedFilteredOrder = effectiveConfig.targetXmlColumns.filter(col =>
@@ -1099,24 +1185,90 @@ export function parseTt12ExcelBufferWithMeta(
     resolvedSequenceInFile.some((col, i) => col !== expectedFilteredOrder[i]);
 
   const rows: Record<string, string>[] = [];
-  for (let r = headerRowIdx + 1; r < matrix.length; r++) {
-    const rowArr = matrix[r] || [];
-    const rawObj: Record<string, string> = {};
-    let nonSttDataCount = 0;
 
-    for (const [colIdxStr, colName] of Object.entries(colIndexToName)) {
-      const colIdx = Number(colIdxStr);
-      const cellVal = String(rowArr[colIdx] ?? '').trim();
-      rawObj[colName] = cellVal;
-      if (colName !== 'STT' && cellVal !== '') {
-        nonSttDataCount++;
+  // Đọc dữ liệu từ tất cả các Sheet trong file Excel (hỗ trợ cả trường hợp file Excel lớn bị chia ra nhiều Sheet)
+  for (let sIdx = primarySheetIdx; sIdx < sheetMatrices.length; sIdx++) {
+    const matrix = sheetMatrices[sIdx];
+    if (!matrix || matrix.length === 0) continue;
+
+    let startDataRow = 0;
+    let activeColMap = primaryColIndexToName;
+
+    if (sIdx === primarySheetIdx) {
+      startDataRow = primaryHeaderRowIdx + 1;
+    } else {
+      // Kiểm tra xem Sheet tiếp theo có dòng tiêu đề lặp lại không
+      let subHeaderRow = -1;
+      const maxCheck = Math.min(20, matrix.length);
+      for (let r = 0; r < maxCheck; r++) {
+        const cells = (matrix[r] || []).map(c => String(c ?? '').trim()).filter(Boolean);
+        let matched = 0;
+        for (const cell of cells) {
+          const resolved = resolveStandardColumnName(cell, effectiveConfig);
+          if (effectiveConfig.targetXmlColumns.includes(resolved)) matched++;
+        }
+        if (matched >= 3) {
+          subHeaderRow = r;
+          break;
+        }
+      }
+      if (subHeaderRow !== -1) {
+        const subHdr = (matrix[subHeaderRow] || []).map(c => String(c ?? '').trim());
+        activeColMap = buildColumnMapping(subHdr).map;
+        startDataRow = subHeaderRow + 1;
+      } else {
+        // Nếu Sheet phụ là các dòng dữ liệu nối tiếp (không lặp lại tiêu đề), kiểm tra số cột tương ứng
+        const firstRowLen = (matrix[0] || []).length;
+        if (firstRowLen < 3) continue;
+        startDataRow = 0;
       }
     }
 
-    // Chấp nhận dòng dữ liệu ngay cả khi cột STT bị bỏ trống hoặc nằm lệch cột (miễn là có dữ liệu trên dòng)
-    const hasSttVal = Boolean(rawObj.STT && rawObj.STT.trim() !== '');
-    if (nonSttDataCount > 0 || (hasSttVal && Object.values(rawObj).some(v => v !== ''))) {
-      rows.push(normalizeAndEnrichRow(rawObj, effectiveConfig, rows.length + 1));
+    const colEntries = Object.entries(activeColMap).map(([idxStr, name]) => [
+      Number(idxStr),
+      name,
+    ] as const);
+
+    for (let r = startDataRow; r < matrix.length; r++) {
+      const rowArr = matrix[r];
+      if (!rowArr || rowArr.length === 0) continue;
+
+      const rawObj: Record<string, string> = {};
+      let nonSttDataCount = 0;
+      let headerRepeatCount = 0;
+
+      for (let i = 0; i < colEntries.length; i++) {
+        const [colIdx, colName] = colEntries[i];
+        const cellVal = String(rowArr[colIdx] ?? '').trim();
+        rawObj[colName] = cellVal;
+        if (colName !== 'STT' && cellVal !== '') {
+          nonSttDataCount++;
+          if (cellVal.toUpperCase() === colName.toUpperCase()) {
+            headerRepeatCount++;
+          }
+        }
+      }
+
+      // Bỏ qua dòng tiêu đề bị lặp lại ở giữa trang (khi HIS phân trang báo cáo mỗi 4999/5000 dòng)
+      if (headerRepeatCount >= 3) continue;
+
+      // Bỏ qua dòng tổng cộng cuối báo cáo (VD: HO_TEN = "Tổng cộng" / "Cộng" mà không có MA_THE_BHYT & NGAY_VAO)
+      const hoTenUpper = (rawObj.HO_TEN || '').toUpperCase();
+      if (
+        (hoTenUpper.startsWith('TỔNG CỘNG') ||
+          hoTenUpper.startsWith('TONG CONG') ||
+          hoTenUpper === 'CỘNG' ||
+          hoTenUpper === 'TỔNG') &&
+        !rawObj.MA_THE_BHYT &&
+        !rawObj.NGAY_VAO
+      ) {
+        continue;
+      }
+
+      const hasSttVal = Boolean(rawObj.STT && rawObj.STT.trim() !== '');
+      if (nonSttDataCount > 0 || (hasSttVal && Object.values(rawObj).some(v => v !== ''))) {
+        rows.push(normalizeAndEnrichRow(rawObj, effectiveConfig, rows.length + 1));
+      }
     }
   }
 
@@ -1253,18 +1405,18 @@ export function parseTt12XmlTextWithMeta(
     throw new Error('File XML không hợp lệ hoặc bị lỗi cú pháp.');
   }
 
-  const allElements = Array.from(xmlDoc.getElementsByTagName('*'));
-  const fileHoSoNodes = allElements.filter(el => el.localName === 'FILEHOSO');
+  const fileHoSoNodes = Array.from(xmlDoc.getElementsByTagName('FILEHOSO'));
   const rawRecords: Record<string, string>[] = [];
   let effectiveConfig = preferredConfig;
 
   if (fileHoSoNodes.length > 0) {
-    // Trường hợp 1: File XML Giám định có chứa thẻ <NOIDUNGFILE> mã hóa Base64 (VD: MAU_XML79_HIS.xml)
+    // Trường hợp 1: File XML Giám định có chứa thẻ <NOIDUNGFILE> mã hóa Base64 (VD: MAU_XML79_HIS.xml, không giới hạn số lượng hồ sơ)
     if (!effectiveConfig.tableCode.includes('01BH')) {
       effectiveConfig =
         TT12_CONFIGS.find(c => c.tableCode === 'MAU_01BH_7980') || preferredConfig;
     }
-    for (const fileNode of fileHoSoNodes) {
+    for (let i = 0; i < fileHoSoNodes.length; i++) {
+      const fileNode = fileHoSoNodes[i];
       const children = Array.from(fileNode.children);
       const loaiHoSoEl = children.find(c => c.localName === 'LOAIHOSO');
       const noiDungEl = children.find(c => c.localName === 'NOIDUNGFILE');
@@ -1281,18 +1433,20 @@ export function parseTt12XmlTextWithMeta(
         const decodedXml = decodeBase64Utf8(base64Str);
         const subDoc = parser.parseFromString(decodedXml.trim(), 'text/xml');
         const extracted = extractLeafRecordsFromXmlDoc(subDoc);
-        rawRecords.push(...extracted);
+        for (let j = 0; j < extracted.length; j++) {
+          rawRecords.push(extracted[j]);
+        }
       } catch {
         // Bỏ qua nếu không phải Base64 hợp lệ
       }
     }
   } else {
-    // Trường hợp 2: File XML thuần (HSDANHMUC hoặc HSTH01BH)
+    // Trường hợp 2: File XML thuần (HSDANHMUC hoặc HSTH01BH, không giới hạn số lượng dòng)
     // Tự động nhận diện bảng theo tên thẻ danh sách / thẻ bản ghi nếu người dùng đang chọn tab khác
     const matchedConfigByTag = TT12_CONFIGS.find(
       cfg =>
-        allElements.some(el => el.localName === cfg.xmlItemElement) &&
-        allElements.some(el => el.localName === cfg.xmlListElement)
+        xmlDoc.getElementsByTagName(cfg.xmlItemElement).length > 0 &&
+        xmlDoc.getElementsByTagName(cfg.xmlListElement).length > 0
     );
     if (matchedConfigByTag && !preferredConfig.tableCode.includes('01BH')) {
       effectiveConfig = matchedConfigByTag;
@@ -1301,7 +1455,9 @@ export function parseTt12XmlTextWithMeta(
     }
 
     const extracted = extractLeafRecordsFromXmlDoc(xmlDoc, effectiveConfig.xmlItemElement);
-    rawRecords.push(...extracted);
+    for (let j = 0; j < extracted.length; j++) {
+      rawRecords.push(extracted[j]);
+    }
   }
 
   if (rawRecords.length === 0) {
@@ -1309,7 +1465,7 @@ export function parseTt12XmlTextWithMeta(
   }
 
   const firstKeys = Object.keys(rawRecords[0] || {});
-  if (fileHoSoNodes.length === 0 && !allElements.some(el => el.localName === effectiveConfig.xmlItemElement)) {
+  if (fileHoSoNodes.length === 0 && xmlDoc.getElementsByTagName(effectiveConfig.xmlItemElement).length === 0) {
     effectiveConfig = detectBestTt12ConfigForHeaders(firstKeys, effectiveConfig);
   }
 
@@ -1354,7 +1510,7 @@ export function parseTt12XmlText(
 }
 
 /**
- * Trích xuất các bản ghi từ DOM XML (hỗ trợ cả cấu trúc lồng <DS_THUOCPX><TT_THUOCPX> của Bảng 5)
+ * Trích xuất các bản ghi từ DOM XML (hỗ trợ cả cấu trúc lồng <DS_THUOCPX><TT_THUOCPX> của Bảng 5 và tập dữ liệu lớn 5.000 - 50.000+ dòng)
  */
 function extractLeafRecordsFromXmlDoc(
   xmlDoc: Document,
@@ -1364,14 +1520,13 @@ function extractLeafRecordsFromXmlDoc(
   if (!root) return [];
 
   const results: Record<string, string>[] = [];
-  const allEls = Array.from(xmlDoc.getElementsByTagName('*'));
 
-  // Nếu có chỉ định tên thẻ Item (VD: DMBOPHANCHUYENMON, DMDICHVUKBCB, CHITIET_HS01BH)
+  // Nếu có chỉ định tên thẻ Item (VD: DMBOPHANCHUYENMON, DMDICHVUKBCB, CHITIET_HS01BH): truy vấn trực tiếp O(1)
   if (preferredItemName) {
-    const matchedItems = allEls.filter(el => el.localName === preferredItemName);
-    if (matchedItems.length > 0) {
-      for (const itemEl of matchedItems) {
-        results.push(parseItemElementToRecord(itemEl));
+    const directItems = xmlDoc.getElementsByTagName(preferredItemName);
+    if (directItems.length > 0) {
+      for (let i = 0; i < directItems.length; i++) {
+        results.push(parseItemElementToRecord(directItems[i]));
       }
       return results;
     }
@@ -1382,6 +1537,17 @@ function extractLeafRecordsFromXmlDoc(
     const hasLeafChildren = Array.from(root.children).some(c => c.children.length === 0);
     if (hasLeafChildren) {
       results.push(parseItemElementToRecord(root));
+      return results;
+    }
+  }
+
+  const allEls = Array.from(xmlDoc.getElementsByTagName('*'));
+  if (preferredItemName) {
+    const matchedItems = allEls.filter(el => el.localName === preferredItemName);
+    if (matchedItems.length > 0) {
+      for (const itemEl of matchedItems) {
+        results.push(parseItemElementToRecord(itemEl));
+      }
       return results;
     }
   }
@@ -1497,24 +1663,38 @@ export function buildTt12Xml(
   );
 }
 
+export interface Tt12XmlChunk {
+  partIndex: number;
+  totalParts: number;
+  recordCount: number;
+  startRow: number;
+  endRow: number;
+  xmlContent: string;
+  suggestedFileName: string;
+}
+
 /**
  * Chia dữ liệu thành các phần <= 4999 bản ghi (giống maxRecords = 4999 trong MainView.xaml.cs dòng 703)
+ * VD: 7000 hồ sơ -> Bộ 1 (4999 HS: 1..4999), Bộ 2 (2001 HS: 5000..7000)
+ *     14000 hồ sơ -> Bộ 1 (4999 HS: 1..4999), Bộ 2 (4999 HS: 5000..9998), Bộ 3 (4002 HS: 9999..14000)
  */
 export function buildTt12XmlChunks(
   rows: Record<string, string>[],
   config: TT12TableConfig,
   maxRecords = 4999
-): Array<{ partIndex: number; totalParts: number; recordCount: number; xmlContent: string; suggestedFileName: string }> {
+): Tt12XmlChunk[] {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
 
   const totalRecords = rows.length;
   const totalParts = Math.max(1, Math.ceil(totalRecords / maxRecords));
-  const chunks: Array<{ partIndex: number; totalParts: number; recordCount: number; xmlContent: string; suggestedFileName: string }> = [];
+  const chunks: Tt12XmlChunk[] = [];
 
   for (let i = 0; i < totalParts; i++) {
-    const slice = rows.slice(i * maxRecords, (i + 1) * maxRecords);
+    const startIdx = i * maxRecords;
+    const endIdx = Math.min(totalRecords, (i + 1) * maxRecords);
+    const slice = rows.slice(startIdx, endIdx);
     const xmlContent = buildTt12Xml(slice, config);
     const suffix = totalParts > 1 ? `_P${i + 1}` : '';
     const filePrefix = config.tableCode.includes('01BH') ? 'HSTH01BH' : config.tableCode;
@@ -1522,6 +1702,8 @@ export function buildTt12XmlChunks(
       partIndex: i + 1,
       totalParts,
       recordCount: slice.length,
+      startRow: slice.length > 0 ? startIdx + 1 : 0,
+      endRow: endIdx,
       xmlContent,
       suggestedFileName: `${filePrefix}_${ts}${suffix}.xml`,
     });

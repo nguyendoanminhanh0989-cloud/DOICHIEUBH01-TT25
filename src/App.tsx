@@ -406,9 +406,45 @@ export default function App() {
             jsonData = parseGiamDinhXml(result as string);
           } else {
             const wb = XLSX.read(result, { type: 'binary' });
-            const wsname = wb.SheetNames[0];
-            const ws = wb.Sheets[wsname];
-            jsonData = XLSX.utils.sheet_to_json(ws, { defval: "" });
+            for (const wsname of wb.SheetNames) {
+              const ws = wb.Sheets[wsname];
+              if (!ws) continue;
+              // Mở rộng !ref nếu file Excel từ HIS bị giới hạn vùng <dimension ref="A1:T4999"/>
+              const cellRefRegex = /^[A-Za-z]{1,3}\d+$/;
+              let maxR = -1;
+              let maxC = -1;
+              let minR = Number.MAX_SAFE_INTEGER;
+              let minC = Number.MAX_SAFE_INTEGER;
+              if (ws['!ref']) {
+                try {
+                  const cur = XLSX.utils.decode_range(ws['!ref']);
+                  minR = cur.s.r;
+                  minC = cur.s.c;
+                  maxR = cur.e.r;
+                  maxC = cur.e.c;
+                } catch {
+                  // ignore
+                }
+              }
+              for (const k of Object.keys(ws)) {
+                if (k.startsWith('!') || !cellRefRegex.test(k)) continue;
+                const addr = XLSX.utils.decode_cell(k);
+                if (addr.r < minR) minR = addr.r;
+                if (addr.c < minC) minC = addr.c;
+                if (addr.r > maxR) maxR = addr.r;
+                if (addr.c > maxC) maxC = addr.c;
+              }
+              if (maxR >= 0 && maxC >= 0) {
+                ws['!ref'] = XLSX.utils.encode_range({
+                  s: { r: Math.min(minR, 0), c: Math.min(minC, 0) },
+                  e: { r: maxR, c: maxC },
+                });
+              }
+              const sheetRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+              for (let rIdx = 0; rIdx < sheetRows.length; rIdx++) {
+                jsonData.push(sheetRows[rIdx]);
+              }
+            }
           }
           
           if (jsonData.length > 0) {
