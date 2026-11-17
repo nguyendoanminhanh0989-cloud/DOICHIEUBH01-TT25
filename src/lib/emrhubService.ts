@@ -23,18 +23,31 @@
  */
 
 export interface EmrhubConfig {
-  apiUrl: string;
-  senderId: string; // Mã GLN 13 số của CSKCB
-  username: string; // <GLN>_api
-  password?: string;
-  privateKey: string; // PEM PKCS#8
-  receiverId?: string; // Mặc định "emrhub" theo chuẩn Postman BYT
+  apiUrl: string;           // kskUrlDomain
+  loginUrl?: string;        // kskLoginUrl
+  pushUrl?: string;         // kskPushUrl
+  senderId: string;         // kskSenderId (Username chính cổng KSK toàn dân)
+  username: string;         // kskUsername (Username API cổng KSK toàn dân)
+  password?: string;        // kskPassword (Password API cổng KSK toàn dân)
+  version?: string;         // kskVersion
+  serviceType?: string;     // kskServiceType
+  receiverId?: string;      // kskReceiverId
+  txnType?: string;         // kskTxnType
+  msgType?: string;         // kskMsgType
+  publicKey?: string;       // kskPublicKey
+  privateKey: string;       // kskPrivateKey (PEM PKCS#8)
+  guiCongVneidMoi?: string; // kskGuiCongVneidMoi
 }
 
 export const EMRHUB_DEFAULT_BASE_URL = 'https://api.emrhub.vn';
-export const EMRHUB_DEFAULT_RECEIVER_ID = 'emrhub';
+export const EMRHUB_DEFAULT_LOGIN_URL = '/api/auth/login';
+export const EMRHUB_DEFAULT_PUSH_URL = '/api/platform/data-sync/push';
+export const EMRHUB_DEFAULT_RECEIVER_ID = 'TTYQG';
 export const EMRHUB_PROTOCOL_VERSION = '1.0.6';
 export const EMRHUB_SERVICE_TYPE = '100';
+export const EMRHUB_DEFAULT_TXN_TYPE = 'sync_checkup';
+export const EMRHUB_DEFAULT_MSG_TYPE = '101';
+export const EMRHUB_DEFAULT_GUI_CONG_VNEID_MOI = '1';
 
 export interface EmrhubPushResult {
   ok: boolean;
@@ -144,7 +157,8 @@ export async function emrhubLogin(cfg: EmrhubConfig, force = false): Promise<str
     return tokenCache.token;
   }
 
-  const res = await fetchWithCorsFallback(base, '/api/auth/login', {
+  const loginPath = (cfg.loginUrl || EMRHUB_DEFAULT_LOGIN_URL).trim();
+  const res = await fetchWithCorsFallback(base, loginPath.startsWith('/') ? loginPath : `/${loginPath}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     body: JSON.stringify({ username, password: cfg.password || '' }),
@@ -176,19 +190,25 @@ export async function pushKskXml(
   fallbackSignature?: string
 ): Promise<EmrhubPushResult> {
   const senderId = (cfg.senderId || '').trim();
-  if (!/^\d{13}$/.test(senderId)) throw new Error('sender_id phải là mã GLN gồm 13 chữ số.');
+  if (!senderId) throw new Error('Thiếu Username chính / sender_id (kskSenderId) trong cấu hình EMRHUB.');
 
   const base = normalizeBaseUrl(cfg.apiUrl);
+  const pushPathRaw = (cfg.pushUrl || EMRHUB_DEFAULT_PUSH_URL).trim();
+  const pushPath = pushPathRaw.startsWith('/') ? pushPathRaw : `/${pushPathRaw}`;
   const dataBase64 = utf8ToBase64(xmlContent).trim();
   const receiverId = (cfg.receiverId || '').trim() || EMRHUB_DEFAULT_RECEIVER_ID;
+  const version = (cfg.version || '').trim() || EMRHUB_PROTOCOL_VERSION;
+  const txnType = (cfg.txnType || '').trim() || EMRHUB_DEFAULT_TXN_TYPE;
+  const msgType = (cfg.msgType || '').trim() || EMRHUB_DEFAULT_MSG_TYPE;
+  const serviceType = (cfg.serviceType || '').trim() || EMRHUB_SERVICE_TYPE;
 
   // Header chuẩn đúng thứ tự theo tài liệu Postman chính thức của BYT
   const header = {
-    version: EMRHUB_PROTOCOL_VERSION,
+    version,
     sender_id: senderId,
     receiver_id: receiverId,
-    txn_type: 'sync_checkup',
-    msg_type: '101',
+    txn_type: txnType,
+    msg_type: msgType,
     data_type: 'xml/base64',
     send_datetime: Date.now(),
     msg_id: buildMsgId(senderId),
@@ -210,12 +230,12 @@ export async function pushKskXml(
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const token = await emrhubLogin(cfg);
-      const res = await fetchWithCorsFallback(base, '/api/platform/data-sync/push', {
+      const res = await fetchWithCorsFallback(base, pushPath, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'service-type': EMRHUB_SERVICE_TYPE,
+          'service-type': serviceType,
         },
         body,
       });
