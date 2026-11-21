@@ -216,6 +216,18 @@ const NumericEditableCell = ({
   );
 };
 
+export interface LoadedSheetInfo {
+  name: string;
+  count: number;
+  enabled: boolean;
+}
+
+export interface LoadedFileInfo {
+  name: string;
+  count: number;
+  sheets?: LoadedSheetInfo[];
+}
+
 export type SortConfig = { key: keyof TemplateRow, dir: 'asc' | 'desc' } | null;
 
 const TableHeaders21 = ({ sortConfig, onSort }: { sortConfig?: SortConfig, onSort?: (key: keyof TemplateRow) => void }) => {
@@ -557,8 +569,10 @@ export default function App() {
     [hisConverted, hisSearch, hisSort]
   );
 
-  const [bhxhFiles, setBhxhFiles] = useState<{ name: string; count: number }[]>([]);
-  const [hisFiles, setHisFiles] = useState<{ name: string; count: number }[]>([]);
+  const [bhxhFiles, setBhxhFiles] = useState<LoadedFileInfo[]>([]);
+  const [hisFiles, setHisFiles] = useState<LoadedFileInfo[]>([]);
+  const [appendBhxhOnUpload, setAppendBhxhOnUpload] = useState(false);
+  const [appendHisOnUpload, setAppendHisOnUpload] = useState(false);
 
   // Khôi phục dữ liệu Đối chiếu BH01 khi bấm F5 (cùng phiên trình duyệt)
   useEffect(() => {
@@ -570,8 +584,8 @@ export default function App() {
       hisConverted: TemplateRow[];
       bhxhMapping: ColumnMapping;
       hisMapping: ColumnMapping;
-      bhxhFiles: { name: string; count: number }[];
-      hisFiles: { name: string; count: number }[];
+      bhxhFiles: LoadedFileInfo[];
+      hisFiles: LoadedFileInfo[];
       results: ComparisonResult[];
       summary: AuditSummary | null;
       activeTab: 'upload' | 'mapping' | 'results';
@@ -635,110 +649,224 @@ export default function App() {
     filterType,
   ]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'BHXH' | 'HIS') => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  const isValidRawDataRow = (row: Record<string, any>, mapping: Partial<ColumnMapping>): boolean => {
+    const readField = (mappedCol: string | undefined, fallbacks: string[]): string => {
+      if (mappedCol && row[mappedCol] !== undefined && row[mappedCol] !== null && String(row[mappedCol]).trim() !== '') {
+        return String(row[mappedCol]).trim();
+      }
+      for (const fb of fallbacks) {
+        if (row[fb] !== undefined && row[fb] !== null && String(row[fb]).trim() !== '') {
+          return String(row[fb]).trim();
+        }
+      }
+      return '';
+    };
 
-    const newFilesInfo: { name: string; count: number }[] = [];
+    const hoTen = readField(mapping.HO_TEN, ['HO_TEN', 'HOTEN', 'Họ tên', 'TEN_BENH_NHAN']);
+    const maThe = readField(mapping.MA_THE_BHYT, ['MA_THE_BHYT', 'MA_THE', 'Mã thẻ']);
+    const maLk = readField(mapping.MA_LK, ['MA_LK', 'MALK', 'Mã LK']);
+    const ngayVao = readField(mapping.NGAY_VAO, ['NGAY_VAO', 'Ngày vào']);
+    const ngayRa = readField(mapping.NGAY_RA, ['NGAY_RA', 'Ngày ra']);
+
+    if (!hoTen && !maThe && !maLk && !ngayVao && !ngayRa) {
+      return false;
+    }
+    if (!maThe && !maLk && /^(tổng\s*cộng|tổng|cộng|total)\b/i.test(hoTen)) {
+      return false;
+    }
+    return true;
+  };
+
+  const isIgnoredAuditSheet = (sheetName: string, allSheetNames: string[]): boolean => {
+    const cur = sheetName.trim().toLowerCase();
+    const normAll = allSheetNames.map(s => s.trim().toLowerCase());
+    if (normAll.includes('mau_01bh') && cur === 'canh_bao_dieu_chinh') {
+      return true;
+    }
+    if (
+      normAll.includes('tổng hợp') &&
+      (cur === 'sai lệch' || cur === 'thiếu bhxh' || cur === 'thiếu his' || cur === 'trùng khớp')
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'BHXH' | 'HIS') => {
+    const inputEl = e.target;
+    const files = Array.from(inputEl.files || []);
+    inputEl.value = '';
+    if (files.length === 0) return;
+
+    const shouldAppend = type === 'BHXH' ? appendBhxhOnUpload : appendHisOnUpload;
+    const newFilesInfo: LoadedFileInfo[] = [];
     let combinedData: any[] = [];
-    
-    let currentBhxhMapping = { ...bhxhMapping };
-    let currentHisMapping = { ...hisMapping };
+
+    let currentBhxhMapping = shouldAppend ? { ...bhxhMapping } : { ...DEFAULT_MAPPING };
+    let currentHisMapping = shouldAppend ? { ...hisMapping } : { ...DEFAULT_MAPPING };
 
     setIsProcessing(true);
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const data = await new Promise<any[]>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          const result = evt.target?.result;
-          let jsonData: any[] = [];
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const parsed = await new Promise<{ rows: any[]; sheets: LoadedSheetInfo[] }>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            const result = evt.target?.result;
+            const fileRows: any[] = [];
+            const fileSheets: LoadedSheetInfo[] = [];
+
+            if (file.name.toLowerCase().endsWith('.xml')) {
+              const xmlRows = parseGiamDinhXml(result as string);
+              if (xmlRows.length > 0) {
+                const headers = Object.keys(xmlRows[0] as object);
+                const smartMapping = smartMapHeaders(headers);
+                if (type === 'BHXH') {
+                  currentBhxhMapping = { ...currentBhxhMapping, ...smartMapping };
+                } else {
+                  currentHisMapping = { ...currentHisMapping, ...smartMapping };
+                }
+                xmlRows.forEach(r => {
+                  fileRows.push({ ...r, __sourceFile: file.name, __sheetName: 'XML1' });
+                });
+                fileSheets.push({ name: 'XML1', count: xmlRows.length, enabled: true });
+              }
+            } else {
+              const wb = XLSX.read(result, { type: 'binary' });
+              for (const wsname of wb.SheetNames) {
+                if (isIgnoredAuditSheet(wsname, wb.SheetNames)) continue;
+                const ws = wb.Sheets[wsname];
+                if (!ws) continue;
+                // Mở rộng !ref nếu file Excel từ HIS bị giới hạn vùng <dimension ref="A1:T4999"/>
+                const cellRefRegex = /^[A-Za-z]{1,3}\d+$/;
+                let maxR = -1;
+                let maxC = -1;
+                let minR = Number.MAX_SAFE_INTEGER;
+                let minC = Number.MAX_SAFE_INTEGER;
+                if (ws['!ref']) {
+                  try {
+                    const cur = XLSX.utils.decode_range(ws['!ref']);
+                    minR = cur.s.r;
+                    minC = cur.s.c;
+                    maxR = cur.e.r;
+                    maxC = cur.e.c;
+                  } catch {
+                    // ignore
+                  }
+                }
+                for (const k of Object.keys(ws)) {
+                  if (k.startsWith('!') || !cellRefRegex.test(k)) continue;
+                  const addr = XLSX.utils.decode_cell(k);
+                  if (addr.r < minR) minR = addr.r;
+                  if (addr.c < minC) minC = addr.c;
+                  if (addr.r > maxR) maxR = addr.r;
+                  if (addr.c > maxC) maxC = addr.c;
+                }
+                if (maxR >= 0 && maxC >= 0) {
+                  ws['!ref'] = XLSX.utils.encode_range({
+                    s: { r: Math.min(minR, 0), c: Math.min(minC, 0) },
+                    e: { r: maxR, c: maxC },
+                  });
+                }
+                const sheetRows = XLSX.utils.sheet_to_json(ws, { defval: "" }) as Record<string, any>[];
+                if (sheetRows.length === 0) continue;
+
+                const headers = Object.keys(sheetRows[0] as object);
+                const smartMapping = smartMapHeaders(headers);
+                if (type === 'BHXH') {
+                  currentBhxhMapping = { ...currentBhxhMapping, ...smartMapping };
+                } else {
+                  currentHisMapping = { ...currentHisMapping, ...smartMapping };
+                }
+
+                const validRows = sheetRows.filter(r => isValidRawDataRow(r, smartMapping));
+                if (validRows.length === 0) continue;
+
+                validRows.forEach(r => {
+                  fileRows.push({ ...r, __sourceFile: file.name, __sheetName: wsname });
+                });
+                fileSheets.push({ name: wsname, count: validRows.length, enabled: true });
+              }
+            }
+
+            resolve({ rows: fileRows, sheets: fileSheets });
+          };
 
           if (file.name.toLowerCase().endsWith('.xml')) {
-            jsonData = parseGiamDinhXml(result as string);
+            reader.readAsText(file);
           } else {
-            const wb = XLSX.read(result, { type: 'binary' });
-            for (const wsname of wb.SheetNames) {
-              const ws = wb.Sheets[wsname];
-              if (!ws) continue;
-              // Mở rộng !ref nếu file Excel từ HIS bị giới hạn vùng <dimension ref="A1:T4999"/>
-              const cellRefRegex = /^[A-Za-z]{1,3}\d+$/;
-              let maxR = -1;
-              let maxC = -1;
-              let minR = Number.MAX_SAFE_INTEGER;
-              let minC = Number.MAX_SAFE_INTEGER;
-              if (ws['!ref']) {
-                try {
-                  const cur = XLSX.utils.decode_range(ws['!ref']);
-                  minR = cur.s.r;
-                  minC = cur.s.c;
-                  maxR = cur.e.r;
-                  maxC = cur.e.c;
-                } catch {
-                  // ignore
-                }
-              }
-              for (const k of Object.keys(ws)) {
-                if (k.startsWith('!') || !cellRefRegex.test(k)) continue;
-                const addr = XLSX.utils.decode_cell(k);
-                if (addr.r < minR) minR = addr.r;
-                if (addr.c < minC) minC = addr.c;
-                if (addr.r > maxR) maxR = addr.r;
-                if (addr.c > maxC) maxC = addr.c;
-              }
-              if (maxR >= 0 && maxC >= 0) {
-                ws['!ref'] = XLSX.utils.encode_range({
-                  s: { r: Math.min(minR, 0), c: Math.min(minC, 0) },
-                  e: { r: maxR, c: maxC },
-                });
-              }
-              const sheetRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-              for (let rIdx = 0; rIdx < sheetRows.length; rIdx++) {
-                jsonData.push(sheetRows[rIdx]);
-              }
-            }
+            reader.readAsBinaryString(file);
           }
-          
-          if (jsonData.length > 0) {
-            const headers = Object.keys(jsonData[0] as object);
-            const smartMapping = smartMapHeaders(headers);
-            if (type === 'BHXH') {
-              currentBhxhMapping = { ...currentBhxhMapping, ...smartMapping };
-            } else {
-              currentHisMapping = { ...currentHisMapping, ...smartMapping };
-            }
-          }
-          
-          resolve(jsonData);
-        };
+        });
 
-        if (file.name.toLowerCase().endsWith('.xml')) {
-          reader.readAsText(file);
-        } else {
-          reader.readAsBinaryString(file);
-        }
-      });
+        combinedData = [...combinedData, ...parsed.rows];
+        newFilesInfo.push({ name: file.name, count: parsed.rows.length, sheets: parsed.sheets });
+      }
 
-      combinedData = [...combinedData, ...data];
-      newFilesInfo.push({ name: file.name, count: data.length });
+      if (type === 'BHXH') {
+        setBhxhMapping(currentBhxhMapping);
+        const newRaw = shouldAppend ? [...bhxhData, ...combinedData] : combinedData;
+        const nextFiles = shouldAppend ? [...bhxhFiles, ...newFilesInfo] : newFilesInfo;
+        setBhxhData(newRaw);
+        setBhxhFiles(nextFiles);
+        setBhxhConverted(mapExcelToRow(newRaw, currentBhxhMapping, 'BHXH'));
+        setEditedBhxhRows(new Set());
+      } else {
+        setHisMapping(currentHisMapping);
+        const newRaw = shouldAppend ? [...hisData, ...combinedData] : combinedData;
+        const nextFiles = shouldAppend ? [...hisFiles, ...newFilesInfo] : newFilesInfo;
+        setHisData(newRaw);
+        setHisFiles(nextFiles);
+        setHisConverted(mapExcelToRow(newRaw, currentHisMapping, 'HIS'));
+        setEditedHisRows(new Set());
+      }
+      if (results.length > 0) {
+        setHasPendingEdits(true);
+      }
+    } finally {
+      setIsProcessing(false);
     }
+  };
+
+  const handleToggleSheet = (type: 'BHXH' | 'HIS', fileIndex: number, sheetName: string) => {
+    const sourceFiles = type === 'BHXH' ? bhxhFiles : hisFiles;
+    const rawData = type === 'BHXH' ? bhxhData : hisData;
+    const mapping = type === 'BHXH' ? bhxhMapping : hisMapping;
+
+    const updatedFiles = sourceFiles.map((f, idx) => {
+      if (idx !== fileIndex || !f.sheets) return f;
+      const updatedSheets = f.sheets.map(s =>
+        s.name === sheetName ? { ...s, enabled: !s.enabled } : s
+      );
+      const enabledCount = updatedSheets.reduce((sum, s) => sum + (s.enabled ? s.count : 0), 0);
+      return { ...f, count: enabledCount, sheets: updatedSheets };
+    });
+
+    const enabledSheetKeys = new Set<string>();
+    updatedFiles.forEach(f => {
+      (f.sheets || []).forEach(s => {
+        if (s.enabled) enabledSheetKeys.add(`${f.name}::${s.name}`);
+      });
+    });
+
+    const filteredRaw = rawData.filter(row => {
+      if (!row.__sheetName || !row.__sourceFile) return true;
+      return enabledSheetKeys.has(`${row.__sourceFile}::${row.__sheetName}`);
+    });
 
     if (type === 'BHXH') {
-      setBhxhMapping(currentBhxhMapping);
-      const newRaw = [...bhxhData, ...combinedData];
-      setBhxhData(newRaw);
-      setBhxhFiles(prev => [...prev, ...newFilesInfo]);
-      setBhxhConverted(mapExcelToRow(newRaw, currentBhxhMapping, 'BHXH'));
+      setBhxhFiles(updatedFiles);
+      setBhxhConverted(mapExcelToRow(filteredRaw, mapping, 'BHXH'));
+      setEditedBhxhRows(new Set());
     } else {
-      setHisMapping(currentHisMapping);
-      const newRaw = [...hisData, ...combinedData];
-      setHisData(newRaw);
-      setHisFiles(prev => [...prev, ...newFilesInfo]);
-      setHisConverted(mapExcelToRow(newRaw, currentHisMapping, 'HIS'));
+      setHisFiles(updatedFiles);
+      setHisConverted(mapExcelToRow(filteredRaw, mapping, 'HIS'));
+      setEditedHisRows(new Set());
     }
-    
-    setIsProcessing(false);
+    if (results.length > 0) {
+      setHasPendingEdits(true);
+    }
   };
 
   const applyMappingUpdate = (type: 'BHXH' | 'HIS') => {
@@ -852,28 +980,48 @@ export default function App() {
         const discrepancies: string[] = [];
 
         const compareNum = (a: number | null, b: number | null, label: string) => {
-          if (a !== null && b !== null && Math.abs(a - b) > 10) {
-            discrepancies.push(`${label} lệch: HIS(${a.toLocaleString()}) vs BHXH(${b.toLocaleString()})`);
+          if ((a !== null || b !== null) && Math.abs((a ?? 0) - (b ?? 0)) > 10) {
+            discrepancies.push(
+              `${label} lệch: HIS(${a !== null ? a.toLocaleString() : 'trống'}) vs BHXH(${b !== null ? b.toLocaleString() : 'trống'})`
+            );
           }
         };
 
-        const compareStr = (a: string | null | undefined, b: string | null | undefined, label: string) => {
-          if (a && b && a.trim() !== '' && b.trim() !== '') {
-            const aUpper = a.toString().trim().toUpperCase();
-            const bUpper = b.toString().trim().toUpperCase();
-            if (aUpper !== bUpper) {
-              discrepancies.push(`${label} lệch: HIS(${a}) vs BHXH(${b})`);
+        const compareStr = (
+          a: string | null | undefined,
+          b: string | null | undefined,
+          label: string,
+          requireBoth = false
+        ) => {
+          const aTrim = (a ?? '').toString().trim();
+          const bTrim = (b ?? '').toString().trim();
+          if (aTrim !== '' && bTrim !== '') {
+            if (aTrim.toUpperCase() !== bTrim.toUpperCase()) {
+              discrepancies.push(`${label} lệch: HIS(${aTrim}) vs BHXH(${bTrim})`);
             }
+          } else if (requireBoth && (aTrim !== '' || bTrim !== '')) {
+            discrepancies.push(`${label} lệch: HIS(${aTrim || 'trống'}) vs BHXH(${bTrim || 'trống'})`);
           }
         };
 
-        const compareDate = (a: string | null | undefined, b: string | null | undefined, label: string) => {
-          if (a && b && a.trim() !== '' && b.trim() !== '') {
-            if (a !== b) {
+        const compareDate = (
+          a: string | null | undefined,
+          b: string | null | undefined,
+          label: string,
+          requireBoth = false
+        ) => {
+          const aTrim = (a ?? '').toString().trim();
+          const bTrim = (b ?? '').toString().trim();
+          if (aTrim !== '' && bTrim !== '') {
+            if (aTrim !== bTrim) {
               discrepancies.push(
-                `${label} lệch thời gian: HIS(${formatDateForDisplay(a)}) vs BHXH(${formatDateForDisplay(b)})`
+                `${label} lệch thời gian: HIS(${formatDateForDisplay(aTrim)}) vs BHXH(${formatDateForDisplay(bTrim)})`
               );
             }
+          } else if (requireBoth && (aTrim !== '' || bTrim !== '')) {
+            discrepancies.push(
+              `${label} lệch thời gian: HIS(${aTrim ? formatDateForDisplay(aTrim) : 'trống'}) vs BHXH(${bTrim ? formatDateForDisplay(bTrim) : 'trống'})`
+            );
           }
         };
 
@@ -908,16 +1056,16 @@ export default function App() {
         };
 
         // Đối chiếu Hành chính
-        compareStr(hisRow.HO_TEN, bhxhRow.HO_TEN, 'Họ tên');
+        compareStr(hisRow.HO_TEN, bhxhRow.HO_TEN, 'Họ tên', true);
         compareDob(hisRow.NGAY_SINH, bhxhRow.NGAY_SINH);
         compareGender(hisRow.GIOI_TINH, bhxhRow.GIOI_TINH);
-        compareStr(hisRow.MA_THE_BHYT, bhxhRow.MA_THE_BHYT, 'Mã thẻ BHYT');
+        compareStr(hisRow.MA_THE_BHYT, bhxhRow.MA_THE_BHYT, 'Mã thẻ BHYT', true);
 
         // Đối chiếu Thời gian & Lâm sàng
-        compareStr(hisRow.MA_BENH_CHINH, bhxhRow.MA_BENH_CHINH, 'Mã bệnh chính');
-        compareDate(hisRow.NGAY_VAO, bhxhRow.NGAY_VAO, 'Ngày vào');
+        compareStr(hisRow.MA_BENH_CHINH, bhxhRow.MA_BENH_CHINH, 'Mã bệnh chính', true);
+        compareDate(hisRow.NGAY_VAO, bhxhRow.NGAY_VAO, 'Ngày vào', true);
         compareDate(hisRow.NGAY_VAO_NOI_TRU, bhxhRow.NGAY_VAO_NOI_TRU, 'Ngày vào nội trú');
-        compareDate(hisRow.NGAY_RA, bhxhRow.NGAY_RA, 'Ngày ra');
+        compareDate(hisRow.NGAY_RA, bhxhRow.NGAY_RA, 'Ngày ra', true);
         compareStr(hisRow.SO_NGAY_DTRI, bhxhRow.SO_NGAY_DTRI, 'Số ngày ĐTrị');
         compareStr(hisRow.MA_LOAI_KCB, bhxhRow.MA_LOAI_KCB, 'Loại KCB');
 
@@ -1474,23 +1622,77 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  {bhxhConverted.length > 0 && (
-                    <button onClick={() => clearData('BHXH')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider cursor-pointer">
-                      Xóa tất cả
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {bhxhConverted.length > 0 && (
+                      <>
+                        <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer select-none" title="Khi bỏ tích, lần nạp file mới sẽ thay thế file cũ tránh cộng dồn">
+                          <input
+                            type="checkbox"
+                            checked={appendBhxhOnUpload}
+                            onChange={e => setAppendBhxhOnUpload(e.target.checked)}
+                            className="accent-indigo-600"
+                          />
+                          Gộp thêm file
+                        </label>
+                        <button onClick={() => clearData('BHXH')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider cursor-pointer">
+                          Xóa tất cả
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <div className={cn("relative group", bhxhConverted.length > 0 ? "mb-3" : "mb-6")}>
+                <div className={cn("relative group", bhxhConverted.length > 0 ? "mb-2" : "mb-6")}>
                   <input type="file" multiple accept=".xlsx,.xls,.xml" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleFileUpload(e, 'BHXH')} />
                   <div className={cn(
                     "border-2 border-dashed border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50/50 rounded-2xl flex items-center justify-center text-center transition-all",
-                    bhxhConverted.length > 0 ? "p-3 gap-2 flex-row" : "p-8 flex-col"
+                    bhxhConverted.length > 0 ? "p-2.5 gap-2 flex-row" : "p-8 flex-col"
                   )}>
                     <FileUp className={cn("text-slate-400 group-hover:text-indigo-500 transition-transform", bhxhConverted.length > 0 ? "w-4 h-4" : "w-10 h-10 mb-3 group-hover:scale-110")} />
-                    <p className={cn("font-semibold", bhxhConverted.length > 0 ? "text-xs text-slate-600" : "text-sm")}>Thêm file Excel/XML BHXH (File Cổng)</p>
+                    <p className={cn("font-semibold", bhxhConverted.length > 0 ? "text-xs text-slate-600" : "text-sm")}>
+                      {bhxhConverted.length > 0 && !appendBhxhOnUpload
+                        ? 'Chọn file Excel/XML BHXH mới (thay thế file cũ)'
+                        : 'Thêm file Excel/XML BHXH (File Cổng)'}
+                    </p>
                   </div>
                 </div>
+
+                {bhxhFiles.length > 0 && (
+                  <div className="mb-2.5 space-y-1">
+                    {bhxhFiles.map((f, fIdx) => (
+                      <div key={`${f.name}-${fIdx}`} className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-50/70 border border-blue-200/80 text-[11px]">
+                        <span className="font-bold text-blue-900 truncate max-w-[200px]" title={f.name}>📄 {f.name}</span>
+                        <span className="font-extrabold text-blue-700">({f.count} HS)</span>
+                        {f.sheets && f.sheets.length > 1 ? (
+                          <div className="flex flex-wrap items-center gap-1.5 ml-1">
+                            {f.sheets.map(s => (
+                              <label
+                                key={s.name}
+                                className={cn(
+                                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10.5px] font-semibold cursor-pointer select-none transition",
+                                  s.enabled
+                                    ? "bg-white border-blue-300 text-blue-900 shadow-2xs"
+                                    : "bg-slate-100 border-slate-200 text-slate-400 line-through"
+                                )}
+                                title={`Bỏ tích nếu không muốn đối chiếu sheet "${s.name}"`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={s.enabled}
+                                  onChange={() => handleToggleSheet('BHXH', fIdx, s.name)}
+                                  className="accent-blue-600"
+                                />
+                                {s.name} ({s.count})
+                              </label>
+                            ))}
+                          </div>
+                        ) : f.sheets && f.sheets.length === 1 ? (
+                          <span className="text-[10.5px] text-slate-500">• Sheet: {f.sheets[0].name} ({f.sheets[0].count} HS)</span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {bhxhConverted.length > 0 && (
                   <div className="mt-1 flex-1 flex flex-col min-h-[360px]">
@@ -1589,23 +1791,77 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                  {hisConverted.length > 0 && (
-                    <button onClick={() => clearData('HIS')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider cursor-pointer">
-                      Xóa tất cả
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {hisConverted.length > 0 && (
+                      <>
+                        <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer select-none" title="Khi bỏ tích, lần nạp file mới sẽ thay thế file cũ tránh cộng dồn">
+                          <input
+                            type="checkbox"
+                            checked={appendHisOnUpload}
+                            onChange={e => setAppendHisOnUpload(e.target.checked)}
+                            className="accent-violet-600"
+                          />
+                          Gộp thêm file
+                        </label>
+                        <button onClick={() => clearData('HIS')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider cursor-pointer">
+                          Xóa tất cả
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                <div className={cn("relative group", hisConverted.length > 0 ? "mb-3" : "mb-6")}>
+                <div className={cn("relative group", hisConverted.length > 0 ? "mb-2" : "mb-6")}>
                   <input type="file" multiple accept=".xlsx,.xls,.xml" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleFileUpload(e, 'HIS')} />
                   <div className={cn(
                     "border-2 border-dashed border-slate-200 group-hover:border-violet-300 group-hover:bg-violet-50/50 rounded-2xl flex items-center justify-center text-center transition-all",
-                    hisConverted.length > 0 ? "p-3 gap-2 flex-row" : "p-8 flex-col"
+                    hisConverted.length > 0 ? "p-2.5 gap-2 flex-row" : "p-8 flex-col"
                   )}>
                     <FileUp className={cn("text-slate-400 group-hover:text-violet-500 transition-transform", hisConverted.length > 0 ? "w-4 h-4" : "w-10 h-10 mb-3 group-hover:scale-110")} />
-                    <p className={cn("font-semibold", hisConverted.length > 0 ? "text-xs text-slate-600" : "text-sm")}>Thêm file Excel hoặc XML HIS</p>
+                    <p className={cn("font-semibold", hisConverted.length > 0 ? "text-xs text-slate-600" : "text-sm")}>
+                      {hisConverted.length > 0 && !appendHisOnUpload
+                        ? 'Chọn file Excel hoặc XML HIS mới (thay thế file cũ)'
+                        : 'Thêm file Excel hoặc XML HIS'}
+                    </p>
                   </div>
                 </div>
+
+                {hisFiles.length > 0 && (
+                  <div className="mb-2.5 space-y-1">
+                    {hisFiles.map((f, fIdx) => (
+                      <div key={`${f.name}-${fIdx}`} className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-violet-50/70 border border-violet-200/80 text-[11px]">
+                        <span className="font-bold text-violet-900 truncate max-w-[200px]" title={f.name}>📄 {f.name}</span>
+                        <span className="font-extrabold text-violet-700">({f.count} HS)</span>
+                        {f.sheets && f.sheets.length > 1 ? (
+                          <div className="flex flex-wrap items-center gap-1.5 ml-1">
+                            {f.sheets.map(s => (
+                              <label
+                                key={s.name}
+                                className={cn(
+                                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10.5px] font-semibold cursor-pointer select-none transition",
+                                  s.enabled
+                                    ? "bg-white border-violet-300 text-violet-900 shadow-2xs"
+                                    : "bg-slate-100 border-slate-200 text-slate-400 line-through"
+                                )}
+                                title={`Bỏ tích nếu không muốn đối chiếu sheet "${s.name}"`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={s.enabled}
+                                  onChange={() => handleToggleSheet('HIS', fIdx, s.name)}
+                                  className="accent-violet-600"
+                                />
+                                {s.name} ({s.count})
+                              </label>
+                            ))}
+                          </div>
+                        ) : f.sheets && f.sheets.length === 1 ? (
+                          <span className="text-[10.5px] text-slate-500">• Sheet: {f.sheets[0].name} ({f.sheets[0].count} HS)</span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {hisConverted.length > 0 && (
                   <div className="mt-1 flex-1 flex flex-col min-h-[360px]">
