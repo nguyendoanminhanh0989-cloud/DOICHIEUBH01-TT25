@@ -29,7 +29,9 @@ import {
   LogOut,
   UserCheck,
   Lock,
-  KeyRound
+  KeyRound,
+  X,
+  Edit3
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from './lib/utils';
@@ -113,6 +115,107 @@ const formatDateForDisplay = (dateStr: string) => {
   }
 };
 
+const normalizeSearchText = (str?: string | null): string =>
+  String(str ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .trim();
+
+const matchesTemplateRowSearch = (row: TemplateRow, query: string): boolean => {
+  if (!query.trim()) return true;
+  const q = normalizeSearchText(query);
+  const candidates = [
+    row.HO_TEN,
+    row.MA_THE_BHYT,
+    row.MA_LK,
+    row.MA_BENH_CHINH,
+    row.NGAY_SINH,
+    row.NGAY_VAO,
+    row.NGAY_RA,
+    row.STT,
+    row.MA_CSKCB,
+  ];
+  return candidates.some(v => normalizeSearchText(v).includes(q));
+};
+
+const parseEditedNumber = (raw: string): number | null => {
+  const s = raw.trim();
+  if (!s) return null;
+  let clean = s.replace(/\s+/g, '');
+  if (clean.includes('.') && clean.includes(',')) {
+    const lastComma = clean.lastIndexOf(',');
+    const lastDot = clean.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      clean = clean.replace(/\./g, '').replace(',', '.');
+    } else {
+      clean = clean.replace(/,/g, '');
+    }
+  } else if (clean.includes(',')) {
+    const lastComma = clean.lastIndexOf(',');
+    if (clean.split(',').length > 2 || clean.length - lastComma === 4) {
+      clean = clean.replace(/,/g, '');
+    } else {
+      clean = clean.replace(',', '.');
+    }
+  } else if (clean.includes('.')) {
+    if (clean.split('.').length > 2 || clean.length - clean.lastIndexOf('.') === 4) {
+      clean = clean.replace(/\./g, '');
+    }
+  }
+  const num = parseFloat(clean);
+  return isNaN(num) ? null : num;
+};
+
+const NumericEditableCell = ({
+  value,
+  onChange,
+  className = '',
+}: {
+  value: number | null;
+  onChange: (val: number | null) => void;
+  className?: string;
+}) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  return (
+    <input
+      type="text"
+      value={
+        isFocused
+          ? draft
+          : value !== null && value !== undefined
+            ? value.toLocaleString('vi-VN')
+            : ''
+      }
+      placeholder="-"
+      onFocus={() => {
+        setIsFocused(true);
+        setDraft(value !== null && value !== undefined ? String(value) : '');
+      }}
+      onChange={e => {
+        const raw = e.target.value;
+        setDraft(raw);
+        if (raw.trim() === '') {
+          onChange(null);
+        } else {
+          const parsed = parseEditedNumber(raw);
+          if (parsed !== null) {
+            onChange(parsed);
+          }
+        }
+      }}
+      onBlur={() => setIsFocused(false)}
+      className={cn(
+        'w-full min-w-[82px] text-right bg-transparent focus:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded px-1 py-0.5 tabular-nums',
+        className
+      )}
+    />
+  );
+};
+
 export type SortConfig = { key: keyof TemplateRow, dir: 'asc' | 'desc' } | null;
 
 const TableHeaders21 = ({ sortConfig, onSort }: { sortConfig?: SortConfig, onSort?: (key: keyof TemplateRow) => void }) => {
@@ -159,31 +262,112 @@ const TableHeaders21 = ({ sortConfig, onSort }: { sortConfig?: SortConfig, onSor
   );
 };
 
-const TableRow21 = ({ row }: { row: TemplateRow }) => (
-  <>
-    <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.STT}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap font-mono text-slate-500">{row.MA_LK}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap font-bold min-w-[150px]">{row.HO_TEN}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.NGAY_SINH}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.GIOI_TINH}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.MA_THE_BHYT}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.MA_BENH_CHINH}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.NGAY_VAO}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.NGAY_VAO_NOI_TRU}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.NGAY_RA}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.SO_NGAY_DTRI}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.MA_LOAI_KCB}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_TONGCHI_BV !== null ? row.T_TONGCHI_BV.toLocaleString() : '-'}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap text-right font-bold text-indigo-600">{row.T_TONGCHI_BH !== null ? row.T_TONGCHI_BH.toLocaleString() : '-'}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap text-right font-bold text-emerald-600">{row.T_BHTT !== null ? row.T_BHTT.toLocaleString() : '-'}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_BNCCT !== null ? row.T_BNCCT.toLocaleString() : '-'}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_BNTT !== null ? row.T_BNTT.toLocaleString() : '-'}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_NGUONKHAC !== null ? row.T_NGUONKHAC.toLocaleString() : '-'}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.MA_CSKCB}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.NAM_QT}</td>
-    <td className="px-3 py-1.5 whitespace-nowrap">{row.THANG_QT}</td>
-  </>
-);
+const TableRow21 = ({
+  row,
+  onEdit,
+}: {
+  row: TemplateRow;
+  onEdit?: (field: keyof TemplateRow, value: string | number | null) => void;
+}) => {
+  if (!onEdit) {
+    return (
+      <>
+        <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.STT}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap font-mono text-slate-500">{row.MA_LK}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap font-bold min-w-[150px]">{row.HO_TEN}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.NGAY_SINH}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.GIOI_TINH}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.MA_THE_BHYT}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.MA_BENH_CHINH}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.NGAY_VAO}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.NGAY_VAO_NOI_TRU}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap font-mono">{row.NGAY_RA}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.SO_NGAY_DTRI}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.MA_LOAI_KCB}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_TONGCHI_BV !== null ? row.T_TONGCHI_BV.toLocaleString() : '-'}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap text-right font-bold text-indigo-600">{row.T_TONGCHI_BH !== null ? row.T_TONGCHI_BH.toLocaleString() : '-'}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap text-right font-bold text-emerald-600">{row.T_BHTT !== null ? row.T_BHTT.toLocaleString() : '-'}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_BNCCT !== null ? row.T_BNCCT.toLocaleString() : '-'}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_BNTT !== null ? row.T_BNTT.toLocaleString() : '-'}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap text-right">{row.T_NGUONKHAC !== null ? row.T_NGUONKHAC.toLocaleString() : '-'}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.MA_CSKCB}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.NAM_QT}</td>
+        <td className="px-3 py-1.5 whitespace-nowrap">{row.THANG_QT}</td>
+      </>
+    );
+  }
+
+  const strInputClass =
+    'w-full bg-transparent focus:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded px-1 py-0.5 text-[10.5px]';
+
+  return (
+    <>
+      <td className="px-1 py-0.5 whitespace-nowrap font-mono">
+        <input type="text" value={row.STT ?? ''} onChange={e => onEdit('STT', e.target.value)} className={cn(strInputClass, 'min-w-[44px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap font-mono text-slate-600">
+        <input type="text" value={row.MA_LK ?? ''} onChange={e => onEdit('MA_LK', e.target.value)} className={cn(strInputClass, 'min-w-[95px] font-mono text-slate-600')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.HO_TEN ?? ''} onChange={e => onEdit('HO_TEN', e.target.value)} className={cn(strInputClass, 'min-w-[155px] font-bold text-slate-900')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.NGAY_SINH ?? ''} onChange={e => onEdit('NGAY_SINH', e.target.value)} className={cn(strInputClass, 'min-w-[78px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.GIOI_TINH ?? ''} onChange={e => onEdit('GIOI_TINH', e.target.value)} className={cn(strInputClass, 'min-w-[44px] text-center')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.MA_THE_BHYT ?? ''} onChange={e => onEdit('MA_THE_BHYT', e.target.value)} className={cn(strInputClass, 'min-w-[130px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.MA_BENH_CHINH ?? ''} onChange={e => onEdit('MA_BENH_CHINH', e.target.value)} className={cn(strInputClass, 'min-w-[78px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.NGAY_VAO ?? ''} onChange={e => onEdit('NGAY_VAO', e.target.value)} className={cn(strInputClass, 'min-w-[105px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.NGAY_VAO_NOI_TRU ?? ''} onChange={e => onEdit('NGAY_VAO_NOI_TRU', e.target.value)} className={cn(strInputClass, 'min-w-[105px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.NGAY_RA ?? ''} onChange={e => onEdit('NGAY_RA', e.target.value)} className={cn(strInputClass, 'min-w-[105px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.SO_NGAY_DTRI ?? ''} onChange={e => onEdit('SO_NGAY_DTRI', e.target.value)} className={cn(strInputClass, 'min-w-[48px] text-center')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.MA_LOAI_KCB ?? ''} onChange={e => onEdit('MA_LOAI_KCB', e.target.value)} className={cn(strInputClass, 'min-w-[48px] text-center')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <NumericEditableCell value={row.T_TONGCHI_BV} onChange={v => onEdit('T_TONGCHI_BV', v)} className="text-[10.5px]" />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <NumericEditableCell value={row.T_TONGCHI_BH} onChange={v => onEdit('T_TONGCHI_BH', v)} className="text-[10.5px] font-bold text-indigo-600" />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <NumericEditableCell value={row.T_BHTT} onChange={v => onEdit('T_BHTT', v)} className="text-[10.5px] font-bold text-emerald-600" />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <NumericEditableCell value={row.T_BNCCT} onChange={v => onEdit('T_BNCCT', v)} className="text-[10.5px]" />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <NumericEditableCell value={row.T_BNTT} onChange={v => onEdit('T_BNTT', v)} className="text-[10.5px]" />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <NumericEditableCell value={row.T_NGUONKHAC} onChange={v => onEdit('T_NGUONKHAC', v)} className="text-[10.5px]" />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.MA_CSKCB ?? ''} onChange={e => onEdit('MA_CSKCB', e.target.value)} className={cn(strInputClass, 'min-w-[78px] font-mono')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.NAM_QT ?? ''} onChange={e => onEdit('NAM_QT', e.target.value)} className={cn(strInputClass, 'min-w-[48px] text-center')} />
+      </td>
+      <td className="px-1 py-0.5 whitespace-nowrap">
+        <input type="text" value={row.THANG_QT ?? ''} onChange={e => onEdit('THANG_QT', e.target.value)} className={cn(strInputClass, 'min-w-[48px] text-center')} />
+      </td>
+    </>
+  );
+};
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
@@ -241,6 +425,12 @@ export default function App() {
     setSummary(null);
     setActiveTab('upload');
     setFilterType('ALL');
+    setBhxhSearch('');
+    setHisSearch('');
+    setResultsSearch('');
+    setHasPendingEdits(false);
+    setEditedBhxhRows(new Set());
+    setEditedHisRows(new Set());
     removeSessionCache('doi_soat_state_v1').catch(() => {});
   };
 
@@ -286,6 +476,12 @@ export default function App() {
 
   const [bhxhSort, setBhxhSort] = useState<SortConfig>(null);
   const [hisSort, setHisSort] = useState<SortConfig>(null);
+  const [bhxhSearch, setBhxhSearch] = useState('');
+  const [hisSearch, setHisSearch] = useState('');
+  const [resultsSearch, setResultsSearch] = useState('');
+  const [hasPendingEdits, setHasPendingEdits] = useState(false);
+  const [editedBhxhRows, setEditedBhxhRows] = useState<Set<number>>(new Set());
+  const [editedHisRows, setEditedHisRows] = useState<Set<number>>(new Set());
 
   const handleSort = (key: keyof TemplateRow, currentSort: SortConfig, setSort: (s: SortConfig) => void) => {
     if (currentSort?.key === key) {
@@ -296,26 +492,70 @@ export default function App() {
     }
   };
 
-  const getSortedData = (data: TemplateRow[], sortConfig: SortConfig) => {
-    if (!sortConfig) return data;
-    return [...data].sort((a, b) => {
-      let aVal: any = a[sortConfig.key];
-      let bVal: any = b[sortConfig.key];
-      
-      if (aVal === null || aVal === undefined) aVal = '';
-      if (bVal === null || bVal === undefined) bVal = '';
-
-      if (typeof aVal === 'string' && !isNaN(Number(aVal)) && aVal !== '') aVal = Number(aVal);
-      if (typeof bVal === 'string' && !isNaN(Number(bVal)) && bVal !== '') bVal = Number(bVal);
-
-      if (aVal < bVal) return sortConfig.dir === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortConfig.dir === 'asc' ? 1 : -1;
-      return 0;
-    });
+  const handleEditConvertedRow = (
+    source: 'BHXH' | 'HIS',
+    origIdx: number,
+    field: keyof TemplateRow,
+    value: string | number | null
+  ) => {
+    if (source === 'BHXH') {
+      setBhxhConverted(prev =>
+        prev.map((row, idx) => (idx === origIdx ? { ...row, [field]: value } : row))
+      );
+      setEditedBhxhRows(prev => {
+        const next = new Set(prev);
+        next.add(origIdx);
+        return next;
+      });
+    } else {
+      setHisConverted(prev =>
+        prev.map((row, idx) => (idx === origIdx ? { ...row, [field]: value } : row))
+      );
+      setEditedHisRows(prev => {
+        const next = new Set(prev);
+        next.add(origIdx);
+        return next;
+      });
+    }
+    setHasPendingEdits(true);
   };
 
-  const displayBhxh = getSortedData(bhxhConverted, bhxhSort).slice(0, 500);
-  const displayHis = getSortedData(hisConverted, hisSort).slice(0, 500);
+  const buildDisplayMeta = (data: TemplateRow[], query: string, sortConfig: SortConfig) => {
+    const indexed = data.map((row, origIdx) => ({ row, origIdx }));
+    const filtered = query.trim()
+      ? indexed.filter(item => matchesTemplateRowSearch(item.row, query))
+      : indexed;
+    const sorted = !sortConfig
+      ? filtered
+      : [...filtered].sort((a, b) => {
+          let aVal: any = a.row[sortConfig.key];
+          let bVal: any = b.row[sortConfig.key];
+
+          if (aVal === null || aVal === undefined) aVal = '';
+          if (bVal === null || bVal === undefined) bVal = '';
+
+          if (typeof aVal === 'string' && !isNaN(Number(aVal)) && aVal !== '') aVal = Number(aVal);
+          if (typeof bVal === 'string' && !isNaN(Number(bVal)) && bVal !== '') bVal = Number(bVal);
+
+          if (aVal < bVal) return sortConfig.dir === 'asc' ? -1 : 1;
+          if (aVal > bVal) return sortConfig.dir === 'asc' ? 1 : -1;
+          return 0;
+        });
+
+    return {
+      items: sorted.slice(0, 300),
+      totalFiltered: sorted.length,
+    };
+  };
+
+  const bhxhDisplayMeta = useMemo(
+    () => buildDisplayMeta(bhxhConverted, bhxhSearch, bhxhSort),
+    [bhxhConverted, bhxhSearch, bhxhSort]
+  );
+  const hisDisplayMeta = useMemo(
+    () => buildDisplayMeta(hisConverted, hisSearch, hisSort),
+    [hisConverted, hisSearch, hisSort]
+  );
 
   const [bhxhFiles, setBhxhFiles] = useState<{ name: string; count: number }[]>([]);
   const [hisFiles, setHisFiles] = useState<{ name: string; count: number }[]>([]);
@@ -504,9 +744,13 @@ export default function App() {
   const applyMappingUpdate = (type: 'BHXH' | 'HIS') => {
     if (type === 'BHXH' && bhxhData.length > 0) {
       setBhxhConverted(mapExcelToRow(bhxhData, bhxhMapping, 'BHXH'));
+      setEditedBhxhRows(new Set());
+      setHasPendingEdits(true);
     }
     if (type === 'HIS' && hisData.length > 0) {
       setHisConverted(mapExcelToRow(hisData, hisMapping, 'HIS'));
+      setEditedHisRows(new Set());
+      setHasPendingEdits(true);
     }
   };
 
@@ -515,11 +759,16 @@ export default function App() {
       setBhxhData([]);
       setBhxhConverted([]);
       setBhxhFiles([]);
+      setBhxhSearch('');
+      setEditedBhxhRows(new Set());
     } else {
       setHisData([]);
       setHisConverted([]);
       setHisFiles([]);
+      setHisSearch('');
+      setEditedHisRows(new Set());
     }
+    setHasPendingEdits(false);
   };
 
   const runComparison = () => {
@@ -738,6 +987,7 @@ export default function App() {
         discrepancies: finalResults.filter(r => r.type === 'DISCREPANCY').length,
         warnings: finalResults.filter(r => r.type === 'WARNING').length
       });
+      setHasPendingEdits(false);
       setIsProcessing(false);
     }, 500);
   };
@@ -820,9 +1070,15 @@ export default function App() {
   };
 
   const filteredResults = useMemo(() => {
-    if (filterType === 'ALL') return results;
-    return results.filter(r => r.type === filterType);
-  }, [results, filterType]);
+    const byType = filterType === 'ALL' ? results : results.filter(r => r.type === filterType);
+    if (!resultsSearch.trim()) return byType;
+    const q = normalizeSearchText(resultsSearch);
+    return byType.filter(res => {
+      if (res.hisItem && matchesTemplateRowSearch(res.hisItem, resultsSearch)) return true;
+      if (res.bhxhItem && matchesTemplateRowSearch(res.bhxhItem, resultsSearch)) return true;
+      return normalizeSearchText(res.details.join(' ')).includes(q);
+    });
+  }, [results, filterType, resultsSearch]);
 
   const bh01StandardDataset = useMemo(() => {
     if (!showBh01StandardModal || results.length === 0) return null;
@@ -1142,13 +1398,13 @@ export default function App() {
           <ChungTuTt12Module />
         </main>
       ) : (
-        <main className="max-w-[1600px] mx-auto p-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <main className="max-w-full px-4 py-4 mx-auto">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveTab('upload')}
                 className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 cursor-pointer",
                   activeTab === 'upload' ? "bg-indigo-50 text-indigo-700 shadow-sm" : "hover:bg-slate-50 text-slate-500 bg-white"
                 )}
               >
@@ -1158,7 +1414,7 @@ export default function App() {
               <button
                 onClick={() => setActiveTab('mapping')}
                 className={cn(
-                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2",
+                  "px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-2 cursor-pointer",
                   activeTab === 'mapping' ? "bg-indigo-50 text-indigo-700 shadow-sm" : "hover:bg-slate-50 text-slate-500 bg-white"
                 )}
               >
@@ -1168,20 +1424,32 @@ export default function App() {
             </div>
             <button
               onClick={() => {
-                if (bhxhData.length > 0 && hisData.length > 0) runComparison();
+                if (bhxhConverted.length > 0 && hisConverted.length > 0) runComparison();
               }}
-              disabled={bhxhData.length === 0 || hisData.length === 0}
+              disabled={bhxhConverted.length === 0 || hisConverted.length === 0}
               className={cn(
-                "px-6 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-sm",
-                (bhxhData.length > 0 && hisData.length > 0) 
-                  ? "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200" 
-                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                "px-6 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer",
+                bhxhConverted.length === 0 || hisConverted.length === 0
+                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                  : hasPendingEdits && results.length > 0
+                    ? "bg-amber-600 text-white hover:bg-amber-700 shadow-amber-200 animate-pulse"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200"
               )}
             >
               <Play className="w-4 h-4" />
-              Chạy đối soát
+              {hasPendingEdits && results.length > 0 ? 'Chạy đối soát lại (có chỉnh sửa)' : 'Chạy đối soát'}
             </button>
           </div>
+          {hasPendingEdits && activeTab === 'upload' && (
+            <div className="mb-4 px-4 py-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs font-medium flex flex-wrap items-center justify-between gap-2 shadow-xs">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  Bạn đã chỉnh sửa dữ liệu trực tiếp trên bảng (<b>BHXH: {editedBhxhRows.size} dòng</b>, <b>HIS: {editedHisRows.size} dòng</b>). Bấm <b>&quot;{results.length > 0 ? 'Chạy đối soát lại (có chỉnh sửa)' : 'Chạy đối soát'}&quot;</b> ở góc trên phải để cập nhật kết quả và xuất File Chuẩn BH01 theo dữ liệu mới.
+                </span>
+              </div>
+            </div>
+          )}
           <AnimatePresence mode="wait">
             {activeTab === 'upload' && (
             <motion.div 
@@ -1189,114 +1457,234 @@ export default function App() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="grid grid-cols-1 md:grid-cols-2 gap-8"
+              className="grid grid-cols-1 xl:grid-cols-2 gap-4"
             >
               {/* BHXH Upload */}
-              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
-                <div className="flex items-center justify-between mb-6">
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-                      <FileSpreadsheet className="w-5 h-5" />
+                    <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                      <FileSpreadsheet className="w-4 h-4" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold">File BHXH (Từ Cổng/Excel thô)</h2>
+                      <h2 className="text-base font-bold">File BHXH (Từ Cổng/Excel thô)</h2>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 20 cột</p>
-                        <a href="/templates/Template_01BH_Mau_Chuan_BHXH.xlsx" download className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100 transition">Tải mẫu chuẩn 01BH</a>
+                        <p className="text-xs text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 20 cột</p>
+                        <a href="/templates/Template_01BH_Mau_Chuan_BHXH.xlsx" download className="text-[11px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-bold hover:bg-indigo-100 transition">Tải mẫu chuẩn 01BH</a>
                       </div>
                     </div>
                   </div>
-                  {bhxhData.length > 0 && (
-                    <button onClick={() => clearData('BHXH')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider">
+                  {bhxhConverted.length > 0 && (
+                    <button onClick={() => clearData('BHXH')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider cursor-pointer">
                       Xóa tất cả
                     </button>
                   )}
                 </div>
 
-                <div className="relative group mb-6">
+                <div className={cn("relative group", bhxhConverted.length > 0 ? "mb-3" : "mb-6")}>
                   <input type="file" multiple accept=".xlsx,.xls,.xml" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleFileUpload(e, 'BHXH')} />
-                  <div className="border-2 border-dashed border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50/50 rounded-2xl p-8 flex flex-col items-center justify-center text-center transition-all">
-                    <FileUp className="w-10 h-10 text-slate-400 mb-3 group-hover:text-indigo-500 group-hover:scale-110 transition-transform" />
-                    <p className="font-semibold text-sm">Thêm file Excel/XML BHXH (File Cổng)</p>
+                  <div className={cn(
+                    "border-2 border-dashed border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50/50 rounded-2xl flex items-center justify-center text-center transition-all",
+                    bhxhConverted.length > 0 ? "p-3 gap-2 flex-row" : "p-8 flex-col"
+                  )}>
+                    <FileUp className={cn("text-slate-400 group-hover:text-indigo-500 transition-transform", bhxhConverted.length > 0 ? "w-4 h-4" : "w-10 h-10 mb-3 group-hover:scale-110")} />
+                    <p className={cn("font-semibold", bhxhConverted.length > 0 ? "text-xs text-slate-600" : "text-sm")}>Thêm file Excel/XML BHXH (File Cổng)</p>
                   </div>
                 </div>
 
                 {bhxhConverted.length > 0 && (
-                  <div className="mt-4 flex-1 flex flex-col min-h-[300px]">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-4">
-                       <LayoutGrid className="w-3 h-3" /> Xem trước định dạng 20 cột (Tổng số: {bhxhConverted.length} hồ sơ)
-                    </h3>
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-auto max-h-[300px]">
+                  <div className="mt-1 flex-1 flex flex-col min-h-[360px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                          <LayoutGrid className="w-3.5 h-3.5 text-blue-600" />
+                          BHXH ({bhxhDisplayMeta.totalFiltered}/{bhxhConverted.length} HS)
+                        </h3>
+                        {editedBhxhRows.size > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                            Đã sửa {editedBhxhRows.size} dòng
+                          </span>
+                        )}
+                        <span className="text-[10.5px] text-slate-400 italic">Click ô để sửa trực tiếp</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={bhxhSearch}
+                            onChange={e => setBhxhSearch(e.target.value)}
+                            placeholder="Tìm họ tên, mã thẻ, MA_LK, mã bệnh..."
+                            className="pl-7 pr-6 py-1 rounded-lg border border-slate-300 bg-white text-xs w-56 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          {bhxhSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setBhxhSearch('')}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                              title="Xóa tìm kiếm"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {bhxhSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setHisSearch(bhxhSearch)}
+                            className="px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-bold whitespace-nowrap cursor-pointer"
+                            title="Áp dụng từ khóa này sang bảng HIS để so sánh và sửa 2 bên"
+                          >
+                            Tìm cả 2 bên
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-auto max-h-[500px]">
                       <table className="w-full text-left text-[10px] border-collapse min-w-max">
                         <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
                           <tr>
                             <TableHeaders21 sortConfig={bhxhSort} onSort={(k) => handleSort(k, bhxhSort, setBhxhSort)} />
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200">
-                          {displayBhxh.map((row, i) => (
-                            <tr key={i} className="hover:bg-slate-100">
-                              <TableRow21 row={row} />
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {bhxhDisplayMeta.items.map(({ row, origIdx }) => (
+                            <tr
+                              key={origIdx}
+                              className={cn(
+                                "hover:bg-blue-50/40",
+                                editedBhxhRows.has(origIdx) && "bg-amber-50/60"
+                              )}
+                            >
+                              <TableRow21
+                                row={row}
+                                onEdit={(field, val) => handleEditConvertedRow('BHXH', origIdx, field, val)}
+                              />
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                    {bhxhDisplayMeta.totalFiltered > 300 && (
+                      <div className="text-[10.5px] text-slate-500 mt-1 text-right">
+                        Đang hiển thị 300/{bhxhDisplayMeta.totalFiltered} dòng khớp. Hãy gõ từ khóa vào ô tìm kiếm để lọc đúng bệnh nhân cần sửa.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
               {/* HIS Upload */}
-              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
-                <div className="flex items-center justify-between mb-6">
+              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full overflow-hidden">
+                <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-violet-50 flex items-center justify-center text-violet-600">
-                      <FileSpreadsheet className="w-5 h-5" />
+                    <div className="w-9 h-9 rounded-full bg-violet-50 flex items-center justify-center text-violet-600 shrink-0">
+                      <FileSpreadsheet className="w-4 h-4" />
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold">File HIS (Bệnh viện)</h2>
+                      <h2 className="text-base font-bold">File HIS (Bệnh viện)</h2>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 20 cột</p>
-                        <a href="/templates/Template_01BH_Mau_Chuan_BHXH.xlsx" download className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-100 transition">Tải mẫu chuẩn 01BH</a>
+                        <p className="text-xs text-slate-500">Sẽ tự trích xuất vào mẫu chuẩn 20 cột</p>
+                        <a href="/templates/Template_01BH_Mau_Chuan_BHXH.xlsx" download className="text-[11px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded font-bold hover:bg-indigo-100 transition">Tải mẫu chuẩn 01BH</a>
                       </div>
                     </div>
                   </div>
-                  {hisData.length > 0 && (
-                    <button onClick={() => clearData('HIS')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider">
+                  {hisConverted.length > 0 && (
+                    <button onClick={() => clearData('HIS')} className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider cursor-pointer">
                       Xóa tất cả
                     </button>
                   )}
                 </div>
 
-                <div className="relative group mb-6">
+                <div className={cn("relative group", hisConverted.length > 0 ? "mb-3" : "mb-6")}>
                   <input type="file" multiple accept=".xlsx,.xls,.xml" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleFileUpload(e, 'HIS')} />
-                  <div className="border-2 border-dashed border-slate-200 group-hover:border-violet-300 group-hover:bg-violet-50/50 rounded-2xl p-8 flex flex-col items-center justify-center text-center transition-all">
-                    <FileUp className="w-10 h-10 text-slate-400 mb-3 group-hover:text-violet-500 group-hover:scale-110 transition-transform" />
-                    <p className="font-semibold text-sm">Thêm file Excel hoặc XML HIS</p>
+                  <div className={cn(
+                    "border-2 border-dashed border-slate-200 group-hover:border-violet-300 group-hover:bg-violet-50/50 rounded-2xl flex items-center justify-center text-center transition-all",
+                    hisConverted.length > 0 ? "p-3 gap-2 flex-row" : "p-8 flex-col"
+                  )}>
+                    <FileUp className={cn("text-slate-400 group-hover:text-violet-500 transition-transform", hisConverted.length > 0 ? "w-4 h-4" : "w-10 h-10 mb-3 group-hover:scale-110")} />
+                    <p className={cn("font-semibold", hisConverted.length > 0 ? "text-xs text-slate-600" : "text-sm")}>Thêm file Excel hoặc XML HIS</p>
                   </div>
                 </div>
 
                 {hisConverted.length > 0 && (
-                  <div className="mt-4 flex-1 flex flex-col min-h-[300px]">
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 mb-4">
-                       <LayoutGrid className="w-3 h-3" /> Xem trước định dạng 20 cột (Tổng số: {hisConverted.length} hồ sơ)
-                    </h3>
-                    <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-auto max-h-[300px]">
+                  <div className="mt-1 flex-1 flex flex-col min-h-[360px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                          <LayoutGrid className="w-3.5 h-3.5 text-violet-600" />
+                          HIS ({hisDisplayMeta.totalFiltered}/{hisConverted.length} HS)
+                        </h3>
+                        {editedHisRows.size > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
+                            Đã sửa {editedHisRows.size} dòng
+                          </span>
+                        )}
+                        <span className="text-[10.5px] text-slate-400 italic">Click ô để sửa trực tiếp</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="relative">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={hisSearch}
+                            onChange={e => setHisSearch(e.target.value)}
+                            placeholder="Tìm họ tên, mã thẻ, MA_LK, mã bệnh..."
+                            className="pl-7 pr-6 py-1 rounded-lg border border-slate-300 bg-white text-xs w-56 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                          />
+                          {hisSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setHisSearch('')}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                              title="Xóa tìm kiếm"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {hisSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setBhxhSearch(hisSearch)}
+                            className="px-2 py-1 rounded-lg bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-[11px] font-bold whitespace-nowrap cursor-pointer"
+                            title="Áp dụng từ khóa này sang bảng BHXH để so sánh và sửa 2 bên"
+                          >
+                            Tìm cả 2 bên
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl overflow-auto max-h-[500px]">
                       <table className="w-full text-left text-[10px] border-collapse min-w-max">
                         <thead className="bg-slate-100 sticky top-0 shadow-sm z-10">
                           <tr>
                             <TableHeaders21 sortConfig={hisSort} onSort={(k) => handleSort(k, hisSort, setHisSort)} />
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200">
-                          {displayHis.map((row, i) => (
-                            <tr key={i} className="hover:bg-slate-100">
-                              <TableRow21 row={row} />
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {hisDisplayMeta.items.map(({ row, origIdx }) => (
+                            <tr
+                              key={origIdx}
+                              className={cn(
+                                "hover:bg-violet-50/40",
+                                editedHisRows.has(origIdx) && "bg-amber-50/60"
+                              )}
+                            >
+                              <TableRow21
+                                row={row}
+                                onEdit={(field, val) => handleEditConvertedRow('HIS', origIdx, field, val)}
+                              />
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
+                    {hisDisplayMeta.totalFiltered > 300 && (
+                      <div className="text-[10.5px] text-slate-500 mt-1 text-right">
+                        Đang hiển thị 300/{hisDisplayMeta.totalFiltered} dòng khớp. Hãy gõ từ khóa vào ô tìm kiếm để lọc đúng bệnh nhân cần sửa.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1430,7 +1818,7 @@ export default function App() {
 
               {/* Toolbar */}
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1 scrollbar-hide">
                   {[
                     { label: 'Tất cả', type: 'ALL' },
                     { label: 'Trùng khớp', type: 'MATCH' },
@@ -1442,7 +1830,7 @@ export default function App() {
                       key={filter.type}
                       onClick={() => setFilterType(filter.type)}
                       className={cn(
-                        "px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all",
+                        "px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all cursor-pointer",
                         filterType === filter.type 
                           ? "bg-slate-900 text-white shadow-md shadow-slate-200" 
                           : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -1451,6 +1839,25 @@ export default function App() {
                       {filter.label}
                     </button>
                   ))}
+                  <div className="relative ml-1">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={resultsSearch}
+                      onChange={e => setResultsSearch(e.target.value)}
+                      placeholder="Tìm tên, mã thẻ, lỗi..."
+                      className="pl-7 pr-6 py-1.5 rounded-full border border-slate-300 bg-white text-xs w-52 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    {resultsSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setResultsSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-600 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -1490,22 +1897,40 @@ export default function App() {
                           <React.Fragment key={i}>
                             <tr className="hover:bg-slate-50/50 transition-colors bg-white">
                               <td className="px-3 py-4 sticky left-0 bg-white z-10 shadow-[1px_0_0_0_#f1f5f9]">
-                                <span className={cn(
-                                  "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap",
-                                  res.type === 'MATCH' && "bg-emerald-50 text-emerald-700",
-                                  res.type === 'MISSING_BHXH' && "bg-rose-50 text-rose-700",
-                                  res.type === 'MISSING_HIS' && "bg-amber-50 text-amber-700",
-                                  res.type === 'DISCREPANCY' && "bg-blue-50 text-blue-700",
-                                )}>
-                                  {res.type === 'MATCH' && <CheckCircle2 className="w-3 h-3" />}
-                                  {res.type === 'MISSING_BHXH' && <XCircle className="w-3 h-3" />}
-                                  {res.type === 'MISSING_HIS' && <AlertCircle className="w-3 h-3" />}
-                                  {res.type === 'MATCH' && 'KHỚP'}
-                                  {res.type === 'MISSING_BHXH' && 'THIẾU BHXH'}
-                                  {res.type === 'MISSING_HIS' && 'THIẾU HIS'}
-                                  {res.type === 'DISCREPANCY' && 'SAI LỆCH'}
-                                  {res.type === 'WARNING' && 'CẢNH BÁO'}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={cn(
+                                    "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap",
+                                    res.type === 'MATCH' && "bg-emerald-50 text-emerald-700",
+                                    res.type === 'MISSING_BHXH' && "bg-rose-50 text-rose-700",
+                                    res.type === 'MISSING_HIS' && "bg-amber-50 text-amber-700",
+                                    res.type === 'DISCREPANCY' && "bg-blue-50 text-blue-700",
+                                  )}>
+                                    {res.type === 'MATCH' && <CheckCircle2 className="w-3 h-3" />}
+                                    {res.type === 'MISSING_BHXH' && <XCircle className="w-3 h-3" />}
+                                    {res.type === 'MISSING_HIS' && <AlertCircle className="w-3 h-3" />}
+                                    {res.type === 'MATCH' && 'KHỚP'}
+                                    {res.type === 'MISSING_BHXH' && 'THIẾU BHXH'}
+                                    {res.type === 'MISSING_HIS' && 'THIẾU HIS'}
+                                    {res.type === 'DISCREPANCY' && 'SAI LỆCH'}
+                                    {res.type === 'WARNING' && 'CẢNH BÁO'}
+                                  </span>
+                                  {item && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const query = item.HO_TEN || item.MA_THE_BHYT || '';
+                                        setBhxhSearch(query);
+                                        setHisSearch(query);
+                                        setActiveTab('upload');
+                                      }}
+                                      className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold whitespace-nowrap cursor-pointer"
+                                      title="Chuyển về tab Nhập File Dữ Liệu và lọc đúng bệnh nhân này để chỉnh sửa"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      Sửa
+                                    </button>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-3 py-4 text-[11px] text-slate-500 italic max-w-sm leading-tight">
                                 {res.details.join(', ')}
