@@ -12,6 +12,7 @@ import {
   Xml3176ParsedDoc,
   Xml3176Row,
   parseXml3176,
+  mergeXml3176Docs,
   buildXml3176,
   buildInnerFileHosoXml,
   validateXml3176Doc,
@@ -297,12 +298,23 @@ export default function Xml3176Module() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files: File[] = Array.from(e.target.files || []);
+    if (files.length === 0) return;
     setIsLoading(true);
     try {
-      const text = await file.text();
-      const parsed = parseXml3176(text, file.name);
+      const docs: Xml3176ParsedDoc[] = [];
+      const failed: string[] = [];
+      for (const file of files) {
+        try {
+          const text = await file.text();
+          docs.push(parseXml3176(text, file.name));
+        } catch (err: any) {
+          failed.push(`${file.name}: ${err?.message || err}`);
+        }
+      }
+      if (docs.length === 0) throw new Error(failed.join('\n'));
+      const parsed = mergeXml3176Docs(docs, docs.length > 1 ? `${docs.length} file XML (${docs[0].fileName}, ...)` : docs[0].fileName);
+      if (failed.length > 0) alert(`Có ${failed.length} file đọc lỗi, đã bỏ qua:\n` + failed.join('\n'));
       setDoc(parsed);
       // Mặc định tích chọn tất cả hồ sơ khi vừa đọc file
       const allIndices = new Set<number>();
@@ -1370,6 +1382,7 @@ export default function Xml3176Module() {
               ref={fileInputRef}
               type="file"
               accept=".xml,text/xml,application/xml"
+              multiple
               onChange={handleFileUpload}
               className="hidden"
             />

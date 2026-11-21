@@ -1142,3 +1142,67 @@ export function buildXml3176(
 
   return xmlOut;
 }
+
+/**
+ * Gop nhieu file XML 3176 da parse thanh 1 bo du lieu (danh so lai hosoIndex, rowId; hop nhat cot).
+ */
+export function mergeXml3176Docs(docs: Xml3176ParsedDoc[], mergedName?: string): Xml3176ParsedDoc {
+  if (docs.length === 1) return docs[0];
+  const base = docs[0];
+  const tables = {} as Record<Xml3176TableId, Xml3176Row[]>;
+  const tableColumns = {} as Record<Xml3176TableId, string[]>;
+  for (const meta of XML3176_TABLES) {
+    tables[meta.id] = [];
+    tableColumns[meta.id] = [];
+  }
+  const hosoFiles: Xml3176FileHosoNode[][] = [];
+  const hosoSignStates: Record<number, Xml3176HosoSignState> = {};
+
+  for (const d of docs) {
+    const offset = hosoFiles.length;
+    for (const files of d.hosoFiles) {
+      hosoFiles.push(files.map(f => ({ ...f, hosoIndex: f.hosoIndex + offset })));
+    }
+    for (const [k, st] of Object.entries(d.hosoSignStates)) {
+      const ni = Number(k) + offset;
+      hosoSignStates[ni] = { ...st, hosoIndex: ni };
+    }
+    for (const meta of XML3176_TABLES) {
+      for (const r of d.tables[meta.id] || []) {
+        const ni = r.hosoIndex + offset;
+        tables[meta.id].push({
+          ...r,
+          hosoIndex: ni,
+          rowId: `${meta.id}-H${ni}-F${r.fileHosoIndex}-R${r.rowId.split('-R').pop()}`,
+        });
+      }
+      for (const c of d.tableColumns[meta.id] || []) {
+        if (!tableColumns[meta.id].includes(c)) tableColumns[meta.id].push(c);
+      }
+    }
+  }
+  for (const meta of XML3176_TABLES) {
+    if (tableColumns[meta.id].length === 0) tableColumns[meta.id] = [...meta.defaultFields];
+  }
+
+  const allSigned = hosoFiles.length > 0 && hosoFiles.every((_, i) => hosoSignStates[i]?.isSigned);
+  const signature: Xml3176SignatureInfo = {
+    ...base.signature,
+    isSigned: allSigned && docs.every(d => d.signature.isSigned) ? base.signature.isSigned : false,
+    signedHosoKey: undefined,
+  };
+
+  const merged: Xml3176ParsedDoc = {
+    ...base,
+    fileName: mergedName || `${docs.length} file XML gop`,
+    soLuongHoSo: hosoFiles.length,
+    signature,
+    hosoSignStates,
+    hosoFiles,
+    tables,
+    tableColumns,
+    errors: [],
+  };
+  merged.errors = validateXml3176Doc(merged);
+  return merged;
+}
