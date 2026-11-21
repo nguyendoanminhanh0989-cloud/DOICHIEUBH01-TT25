@@ -33,7 +33,14 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from './lib/utils';
-import { mapExcelToRow, generateKey, smartMapHeaders, parseGiamDinhXml } from './lib/data-utils';
+import {
+  mapExcelToRow,
+  generateKey,
+  smartMapHeaders,
+  parseGiamDinhXml,
+  normalizeNameForKey,
+  extractBirthYear,
+} from './lib/data-utils';
 import {
   buildStandardBh01Dataset,
   exportStandardBh01Workbook,
@@ -520,172 +527,203 @@ export default function App() {
     setActiveTab('results');
 
     setTimeout(() => {
-      const bhxhMap = new Map<string, TemplateRow[]>();
-      bhxhConverted.forEach(row => {
-        const key = generateKey(row);
-        const existing = bhxhMap.get(key) || [];
-        bhxhMap.set(key, [...existing, row]);
-      });
+      // Ghép cặp hồ sơ thông minh theo 5 cấp độ để xử lý cả file có MA_LK và file không có MA_LK (hoặc chỉ 1 bên có MA_LK)
+      // Cấp 1: Khớp theo MA_LK (nếu cả 2 bên đều có MA_LK)
+      // Cấp 2: Khớp theo khóa gộp chuẩn: Họ tên + Năm sinh + Ngày ra (12 số) + Tổng chi BV
+      // Cấp 3: Khớp theo khóa gộp theo ngày: Họ tên + Năm sinh + Ngày ra (8 số YYYYMMDD) + Tổng chi BV
+      // Cấp 4: Khớp ca khám khi lệch Tổng chi: Họ tên + Năm sinh + Ngày vào (8 số) + Ngày ra (8 số)
+      // Cấp 5: Khớp ca khám theo Mã thẻ BHYT + Ngày ra (8 số) khi lệch Họ tên / Năm sinh
+      const pairedBhxhForHis = new Map<number, number>();
+      const usedBhxhIndices = new Set<number>();
 
-      const hisMap = new Map<string, TemplateRow[]>();
-      hisConverted.forEach(row => {
-        const key = generateKey(row);
-        const existing = hisMap.get(key) || [];
-        hisMap.set(key, [...existing, row]);
-      });
+      const buildRowKeyByTier = (row: TemplateRow, tier: 1 | 2 | 3 | 4 | 5): string | null => {
+        const maLk = (row.MA_LK || '').trim().toUpperCase();
+        const hoTen = normalizeNameForKey(row.HO_TEN);
+        const namSinh = extractBirthYear(row.NGAY_SINH);
+        const ngayRaFull = (row.NGAY_RA || row.NGAY_VAO || '').replace(/\D/g, '');
+        const ngayRaDay = ngayRaFull.substring(0, 8);
+        const ngayVaoDay = (row.NGAY_VAO || '').replace(/\D/g, '').substring(0, 8);
+        const tongChi =
+          row.T_TONGCHI_BV !== null && row.T_TONGCHI_BV !== undefined
+            ? Math.round(row.T_TONGCHI_BV)
+            : 0;
+        const maThe = (row.MA_THE_BHYT || '').trim().toUpperCase();
+
+        switch (tier) {
+          case 1:
+            return maLk ? `T1:${maLk}` : null;
+          case 2:
+            return hoTen ? `T2:${hoTen}|${namSinh}|${ngayRaFull}|${tongChi}` : null;
+          case 3:
+            return hoTen ? `T3:${hoTen}|${namSinh}|${ngayRaDay}|${tongChi}` : null;
+          case 4:
+            return hoTen && (ngayRaDay || ngayVaoDay)
+              ? `T4:${hoTen}|${namSinh}|${ngayVaoDay}|${ngayRaDay}`
+              : null;
+          case 5:
+            return maThe && (ngayRaDay || ngayVaoDay)
+              ? `T5:${maThe}|${ngayVaoDay}|${ngayRaDay}`
+              : null;
+        }
+      };
+
+      const runPass = (tier: 1 | 2 | 3 | 4 | 5) => {
+        const bhxhBuckets = new Map<string, number[]>();
+        bhxhConverted.forEach((bRow, bIdx) => {
+          if (usedBhxhIndices.has(bIdx)) return;
+          const k = buildRowKeyByTier(bRow, tier);
+          if (!k) return;
+          const arr = bhxhBuckets.get(k);
+          if (arr) arr.push(bIdx);
+          else bhxhBuckets.set(k, [bIdx]);
+        });
+
+        hisConverted.forEach((hRow, hIdx) => {
+          if (pairedBhxhForHis.has(hIdx)) return;
+          const k = buildRowKeyByTier(hRow, tier);
+          if (!k) return;
+          const bucket = bhxhBuckets.get(k);
+          if (bucket && bucket.length > 0) {
+            const matchedBIdx = bucket.shift()!;
+            pairedBhxhForHis.set(hIdx, matchedBIdx);
+            usedBhxhIndices.add(matchedBIdx);
+          }
+        });
+      };
+
+      runPass(1);
+      runPass(2);
+      runPass(3);
+      runPass(4);
+      runPass(5);
 
       const finalResults: ComparisonResult[] = [];
-      const usedBhxhKeys = new Set<string>();
 
-      hisMap.forEach((rows, key) => {
-        const bhxhMatches = bhxhMap.get(key);
+      const comparePair = (hisRow: TemplateRow, bhxhRow: TemplateRow): ComparisonResult => {
+        const discrepancies: string[] = [];
 
-        if (!bhxhMatches) {
-          rows.forEach(row => {
-            finalResults.push({
-              match: false,
-              type: 'MISSING_BHXH',
-              details: [`Không tìm thấy trong file BHXH`],
-              hisItem: row
-            });
+        const compareNum = (a: number | null, b: number | null, label: string) => {
+          if (a !== null && b !== null && Math.abs(a - b) > 10) {
+            discrepancies.push(`${label} lệch: HIS(${a.toLocaleString()}) vs BHXH(${b.toLocaleString()})`);
+          }
+        };
+
+        const compareStr = (a: string | null | undefined, b: string | null | undefined, label: string) => {
+          if (a && b && a.trim() !== '' && b.trim() !== '') {
+            const aUpper = a.toString().trim().toUpperCase();
+            const bUpper = b.toString().trim().toUpperCase();
+            if (aUpper !== bUpper) {
+              discrepancies.push(`${label} lệch: HIS(${a}) vs BHXH(${b})`);
+            }
+          }
+        };
+
+        const compareDate = (a: string | null | undefined, b: string | null | undefined, label: string) => {
+          if (a && b && a.trim() !== '' && b.trim() !== '') {
+            if (a !== b) {
+              discrepancies.push(
+                `${label} lệch thời gian: HIS(${formatDateForDisplay(a)}) vs BHXH(${formatDateForDisplay(b)})`
+              );
+            }
+          }
+        };
+
+        const compareGender = (a: string | null | undefined, b: string | null | undefined) => {
+          if (!a || !b || a.trim() === '' || b.trim() === '') return;
+
+          const normalize = (val: string) => {
+            const v = val.toString().trim().toUpperCase();
+            if (v === '1' || v === 'NAM') return 'NAM';
+            if (v === '2' || v === 'NỮ' || v === 'NU') return 'NỮ';
+            return v;
+          };
+
+          if (normalize(a) !== normalize(b)) {
+            discrepancies.push(`Giới tính lệch: HIS(${a}) vs BHXH(${b})`);
+          }
+        };
+
+        const compareDob = (a: string | null | undefined, b: string | null | undefined) => {
+          if (a && b && a.trim() !== '' && b.trim() !== '') {
+            let aVal = a.toString().trim().toUpperCase();
+            let bVal = b.toString().trim().toUpperCase();
+
+            // Xử lý logic yyyy0000 = yyyy0101 (nếu chỉ có năm sinh)
+            if (aVal.length === 8 && aVal.endsWith('0000')) aVal = aVal.substring(0, 4) + '0101';
+            if (bVal.length === 8 && bVal.endsWith('0000')) bVal = bVal.substring(0, 4) + '0101';
+
+            if (aVal !== bVal) {
+              discrepancies.push(`Ngày sinh lệch: HIS(${a}) vs BHXH(${b})`);
+            }
+          }
+        };
+
+        // Đối chiếu Hành chính
+        compareStr(hisRow.HO_TEN, bhxhRow.HO_TEN, 'Họ tên');
+        compareDob(hisRow.NGAY_SINH, bhxhRow.NGAY_SINH);
+        compareGender(hisRow.GIOI_TINH, bhxhRow.GIOI_TINH);
+        compareStr(hisRow.MA_THE_BHYT, bhxhRow.MA_THE_BHYT, 'Mã thẻ BHYT');
+
+        // Đối chiếu Thời gian & Lâm sàng
+        compareStr(hisRow.MA_BENH_CHINH, bhxhRow.MA_BENH_CHINH, 'Mã bệnh chính');
+        compareDate(hisRow.NGAY_VAO, bhxhRow.NGAY_VAO, 'Ngày vào');
+        compareDate(hisRow.NGAY_VAO_NOI_TRU, bhxhRow.NGAY_VAO_NOI_TRU, 'Ngày vào nội trú');
+        compareDate(hisRow.NGAY_RA, bhxhRow.NGAY_RA, 'Ngày ra');
+        compareStr(hisRow.SO_NGAY_DTRI, bhxhRow.SO_NGAY_DTRI, 'Số ngày ĐTrị');
+        compareStr(hisRow.MA_LOAI_KCB, bhxhRow.MA_LOAI_KCB, 'Loại KCB');
+
+        // Đối chiếu Tài chính
+        compareNum(hisRow.T_TONGCHI_BV, bhxhRow.T_TONGCHI_BV, 'T_TONGCHI_BV');
+        compareNum(hisRow.T_TONGCHI_BH, bhxhRow.T_TONGCHI_BH, 'T_TONGCHI_BH');
+        compareNum(hisRow.T_BHTT, bhxhRow.T_BHTT, 'T_BHTT');
+        compareNum(hisRow.T_BNCCT, bhxhRow.T_BNCCT, 'T_BNCCT');
+        compareNum(hisRow.T_BNTT, bhxhRow.T_BNTT, 'T_BNTT');
+        compareNum(hisRow.T_NGUONKHAC, bhxhRow.T_NGUONKHAC, 'T_NGUONKHAC');
+
+        // Đối chiếu Khác
+        compareStr(hisRow.MA_CSKCB, bhxhRow.MA_CSKCB, 'Mã CSKCB');
+        compareStr(hisRow.NAM_QT, bhxhRow.NAM_QT, 'Năm QT');
+        compareStr(hisRow.THANG_QT, bhxhRow.THANG_QT, 'Tháng QT');
+
+        if (discrepancies.length > 0) {
+          return {
+            match: false,
+            type: 'DISCREPANCY',
+            details: discrepancies,
+            hisItem: hisRow,
+            bhxhItem: bhxhRow,
+          };
+        }
+        return {
+          match: true,
+          type: 'MATCH',
+          details: ['Khớp dữ liệu'],
+          hisItem: hisRow,
+          bhxhItem: bhxhRow,
+        };
+      };
+
+      hisConverted.forEach((hisRow, hIdx) => {
+        const bIdx = pairedBhxhForHis.get(hIdx);
+        if (bIdx === undefined) {
+          finalResults.push({
+            match: false,
+            type: 'MISSING_BHXH',
+            details: ['Không tìm thấy trong file BHXH'],
+            hisItem: hisRow,
           });
         } else {
-          usedBhxhKeys.add(key);
-          
-          rows.forEach((hisRow, index) => {
-            const bhxhRow = bhxhMatches[index];
-            if (!bhxhRow) {
-              finalResults.push({
-                match: false,
-                type: 'MISSING_BHXH',
-                details: [`Dòng thứ ${index + 1} của lượt KCB này không tìm thấy trong BHXH`],
-                hisItem: hisRow
-              });
-            } else {
-              const discrepancies: string[] = [];
-              
-              const compareNum = (a: number | null, b: number | null, label: string) => {
-                if (a !== null && b !== null && Math.abs(a - b) > 10) {
-                  discrepancies.push(`${label} lệch: HIS(${a.toLocaleString()}) vs BHXH(${b.toLocaleString()})`);
-                }
-              };
-
-              const compareStr = (a: string | null | undefined, b: string | null | undefined, label: string) => {
-                if (a && b && a.trim() !== '' && b.trim() !== '') {
-                  const aUpper = a.toString().trim().toUpperCase();
-                  const bUpper = b.toString().trim().toUpperCase();
-                  if (aUpper !== bUpper) {
-                    discrepancies.push(`${label} lệch: HIS(${a}) vs BHXH(${b})`);
-                  }
-                }
-              };
-
-              const compareDate = (a: string | null | undefined, b: string | null | undefined, label: string) => {
-                if (a && b && a.trim() !== '' && b.trim() !== '') {
-                  if (a !== b) {
-                    discrepancies.push(`${label} lệch thời gian: HIS(${formatDateForDisplay(a)}) vs BHXH(${formatDateForDisplay(b)})`);
-                  }
-                }
-              };
-
-              const compareGender = (a: string | null | undefined, b: string | null | undefined) => {
-                if (!a || !b || a.trim() === '' || b.trim() === '') return;
-                
-                const normalize = (val: string) => {
-                  const v = val.toString().trim().toUpperCase();
-                  if (v === '1' || v === 'NAM') return 'NAM';
-                  if (v === '2' || v === 'NỮ' || v === 'NU') return 'NỮ';
-                  return v;
-                };
-
-                if (normalize(a) !== normalize(b)) {
-                  discrepancies.push(`Giới tính lệch: HIS(${a}) vs BHXH(${b})`);
-                }
-              };
-
-              const compareDob = (a: string | null | undefined, b: string | null | undefined) => {
-                if (a && b && a.trim() !== '' && b.trim() !== '') {
-                  let aVal = a.toString().trim().toUpperCase();
-                  let bVal = b.toString().trim().toUpperCase();
-                  
-                  // Xử lý logic yyyy0000 = yyyy0101 (nếu chỉ có năm sinh)
-                  if (aVal.length === 8 && aVal.endsWith('0000')) aVal = aVal.substring(0, 4) + '0101';
-                  if (bVal.length === 8 && bVal.endsWith('0000')) bVal = bVal.substring(0, 4) + '0101';
-
-                  if (aVal !== bVal) {
-                    discrepancies.push(`Ngày sinh lệch: HIS(${a}) vs BHXH(${b})`);
-                  }
-                }
-              };
-
-              // Đối chiếu Hành chính
-              compareStr(hisRow.HO_TEN, bhxhRow.HO_TEN, 'Họ tên');
-              compareDob(hisRow.NGAY_SINH, bhxhRow.NGAY_SINH);
-              compareGender(hisRow.GIOI_TINH, bhxhRow.GIOI_TINH);
-              
-              // Đối chiếu Thời gian & Lâm sàng
-              compareStr(hisRow.MA_BENH_CHINH, bhxhRow.MA_BENH_CHINH, 'Mã bệnh chính');
-              compareDate(hisRow.NGAY_VAO, bhxhRow.NGAY_VAO, 'Ngày vào');
-              compareDate(hisRow.NGAY_VAO_NOI_TRU, bhxhRow.NGAY_VAO_NOI_TRU, 'Ngày vào nội trú');
-              compareDate(hisRow.NGAY_RA, bhxhRow.NGAY_RA, 'Ngày ra');
-              compareStr(hisRow.SO_NGAY_DTRI, bhxhRow.SO_NGAY_DTRI, 'Số ngày ĐTrị');
-              compareStr(hisRow.MA_LOAI_KCB, bhxhRow.MA_LOAI_KCB, 'Loại KCB');
-
-              // Đối chiếu Tài chính
-              compareNum(hisRow.T_TONGCHI_BV, bhxhRow.T_TONGCHI_BV, 'T_TONGCHI_BV');
-              compareNum(hisRow.T_TONGCHI_BH, bhxhRow.T_TONGCHI_BH, 'T_TONGCHI_BH');
-              compareNum(hisRow.T_BHTT, bhxhRow.T_BHTT, 'T_BHTT');
-              compareNum(hisRow.T_BNCCT, bhxhRow.T_BNCCT, 'T_BNCCT');
-              compareNum(hisRow.T_BNTT, bhxhRow.T_BNTT, 'T_BNTT');
-              compareNum(hisRow.T_NGUONKHAC, bhxhRow.T_NGUONKHAC, 'T_NGUONKHAC');
-
-              // Đối chiếu Khác
-              compareStr(hisRow.MA_CSKCB, bhxhRow.MA_CSKCB, 'Mã CSKCB');
-              compareStr(hisRow.NAM_QT, bhxhRow.NAM_QT, 'Năm QT');
-              compareStr(hisRow.THANG_QT, bhxhRow.THANG_QT, 'Tháng QT');
-
-              if (discrepancies.length > 0) {
-                finalResults.push({
-                  match: false,
-                  type: 'DISCREPANCY',
-                  details: discrepancies,
-                  hisItem: hisRow,
-                  bhxhItem: bhxhRow
-                });
-              } else {
-                finalResults.push({
-                  match: true,
-                  type: 'MATCH',
-                  details: ['Khớp dữ liệu'],
-                  hisItem: hisRow,
-                  bhxhItem: bhxhRow
-                });
-              }
-            }
-          });
-
-          if (bhxhMatches.length > rows.length) {
-            bhxhMatches.slice(rows.length).forEach(row => {
-              finalResults.push({
-                match: false,
-                type: 'MISSING_HIS',
-                details: [`Dữ liệu BHXH thừa so với HIS`],
-                bhxhItem: row
-              });
-            });
-          }
+          finalResults.push(comparePair(hisRow, bhxhConverted[bIdx]));
         }
       });
 
-      bhxhMap.forEach((rows, key) => {
-        if (!usedBhxhKeys.has(key)) {
-          rows.forEach(row => {
-            finalResults.push({
-              match: false,
-              type: 'MISSING_HIS',
-              details: [`Không tìm thấy trong file HIS`],
-              bhxhItem: row
-            });
+      bhxhConverted.forEach((bhxhRow, bIdx) => {
+        if (!usedBhxhIndices.has(bIdx)) {
+          finalResults.push({
+            match: false,
+            type: 'MISSING_HIS',
+            details: ['Không tìm thấy trong file HIS'],
+            bhxhItem: bhxhRow,
           });
         }
       });

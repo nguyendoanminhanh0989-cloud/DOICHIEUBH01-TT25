@@ -202,6 +202,10 @@ export const getNumericValue = (item: any, column: string): number | null => {
 };
 
 export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH' | 'HIS'): TemplateRow[] => {
+  // Kiểm tra nếu file XML1 có tất cả các dòng đều mang STT = 1 thì đánh lại STT theo thứ tự dòng
+  const rawSttList = data.map(item => normalizeValue(item[mapping.STT]));
+  const allSttAreOne = data.length > 1 && rawSttList.every(s => s === '1' || s === '');
+
   return data.map((item, index) => {
     let t_tongchi_bv = getNumericValue(item, mapping.T_TONGCHI_BV);
     let t_bhtt = getNumericValue(item, mapping.T_BHTT);
@@ -210,14 +214,10 @@ export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH
     let original_t_tongchi_bh = getNumericValue(item, mapping.T_TONGCHI_BH);
     
     let t_tongchi_bh: number | null = null;
-    if (source === 'BHXH') {
-      t_tongchi_bh = (t_bhtt || 0) + (t_bncct || 0);
+    if (original_t_tongchi_bh !== null) {
+      t_tongchi_bh = original_t_tongchi_bh;
     } else {
-      if (original_t_tongchi_bh !== null) {
-        t_tongchi_bh = original_t_tongchi_bh;
-      } else {
-        t_tongchi_bh = (t_bhtt || 0) + (t_bncct || 0);
-      }
+      t_tongchi_bh = (t_bhtt || 0) + (t_bncct || 0);
     }
 
     const maThe = normalizeValue(item[mapping.MA_THE_BHYT]);
@@ -225,9 +225,10 @@ export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH
     const ngayVao = parseDateStr(item[mapping.NGAY_VAO]);
     
     let maLk = normalizeValue(item[mapping.MA_LK]);
+    const rawStt = normalizeValue(item[mapping.STT]);
 
     return {
-      STT: normalizeValue(item[mapping.STT] || index + 1),
+      STT: allSttAreOne || !rawStt ? String(index + 1) : rawStt,
       MA_LK: maLk,
       HO_TEN: normalizeValue(item[mapping.HO_TEN]),
       NGAY_SINH: ngaySinh,
@@ -254,11 +255,33 @@ export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH
   });
 };
 
+/** Chuẩn hóa tên bệnh nhân để ghép key đối chiếu không phân biệt hoa/thường hay khoảng trắng thừa */
+export const normalizeNameForKey = (name?: string | null): string =>
+  String(name ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+
+/** Trích năm sinh (4 chữ số đầu) từ NGAY_SINH */
+export const extractBirthYear = (ngaySinh?: string | null): string =>
+  String(ngaySinh ?? '')
+    .replace(/\D/g, '')
+    .substring(0, 4);
+
+/**
+ * Tạo khóa đối chiếu chính cho 1 dòng hồ sơ:
+ * - Nếu có MA_LK: trả về MA_LK
+ * - Nếu không có MA_LK: gộp Họ tên + Năm sinh + Ngày ra + Tổng chi BV theo đúng quy tắc phân biệt các ca KCB
+ */
 export const generateKey = (row: TemplateRow): string => {
   if (row.MA_LK && row.MA_LK.trim() !== '') {
-    return row.MA_LK.trim();
+    return `LK:${row.MA_LK.trim().toUpperCase()}`;
   }
-  return `NO_LK_${row.source}_${row.STT}`;
+  const hoTen = normalizeNameForKey(row.HO_TEN);
+  const namSinh = extractBirthYear(row.NGAY_SINH);
+  const ngayRa = (row.NGAY_RA || row.NGAY_VAO || '').trim();
+  const tongChi = row.T_TONGCHI_BV !== null && row.T_TONGCHI_BV !== undefined ? Math.round(row.T_TONGCHI_BV) : 0;
+  return `COMP:${hoTen}|${namSinh}|${ngayRa}|${tongChi}`;
 };
 
 export const smartMapHeaders = (headers: string[]): Partial<ColumnMapping> => {
