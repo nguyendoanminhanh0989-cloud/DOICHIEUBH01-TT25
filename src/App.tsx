@@ -34,6 +34,10 @@ import {
 import { format } from 'date-fns';
 import { cn } from './lib/utils';
 import { mapExcelToRow, generateKey, smartMapHeaders, parseGiamDinhXml } from './lib/data-utils';
+import {
+  buildStandardBh01Dataset,
+  exportStandardBh01Workbook,
+} from './lib/bh01StandardExport';
 import { 
   TemplateRow, 
   ColumnMapping, 
@@ -186,6 +190,8 @@ export default function App() {
   );
   const [bhxhData, setBhxhData] = useState<any[]>([]);
   const [hisData, setHisData] = useState<any[]>([]);
+  const [showBh01StandardModal, setShowBh01StandardModal] = useState(false);
+  const [includeMissingHisInBh01, setIncludeMissingHisInBh01] = useState(false);
 
   useEffect(() => {
     setSessionSync('app_main_tab', mainTab);
@@ -779,6 +785,34 @@ export default function App() {
     if (filterType === 'ALL') return results;
     return results.filter(r => r.type === filterType);
   }, [results, filterType]);
+
+  const bh01StandardDataset = useMemo(() => {
+    if (!showBh01StandardModal || results.length === 0) return null;
+    return buildStandardBh01Dataset(results, includeMissingHisInBh01);
+  }, [showBh01StandardModal, results, includeMissingHisInBh01]);
+
+  const handlePushStandardBh01ToTt12 = async () => {
+    if (!bh01StandardDataset || bh01StandardDataset.rows.length === 0) return;
+    try {
+      const existing = await getSessionCache<Record<string, Record<string, string>[]>>('tt12_rows_by_table_v1');
+      const nextRows = bh01StandardDataset.rows.map(row => {
+        const strRow: Record<string, string> = {};
+        Object.entries(row).forEach(([k, v]) => {
+          strRow[k] = String(v ?? '');
+        });
+        return strRow;
+      });
+      await setSessionCache('tt12_rows_by_table_v1', {
+        ...(existing || {}),
+        MAU_01BH: nextRows,
+      });
+      setSessionSync('tt12_selected_table_v1', 'MAU_01BH');
+      setShowBh01StandardModal(false);
+      setMainTab('TT12_BH01_BH02');
+    } catch (err: any) {
+      alert('Không thể chuyển dữ liệu sang Chứng từ TT12: ' + (err?.message || err));
+    }
+  };
 
   if (!currentUser) {
     return (
@@ -1381,13 +1415,23 @@ export default function App() {
                   ))}
                 </div>
 
-                <button 
-                  onClick={exportExcel}
-                  className="flex items-center gap-2 px-6 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700"
-                >
-                  <Download className="w-4 h-4" />
-                  Xuất File 21 Cột
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setShowBh01StandardModal(true)}
+                    className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all hover:bg-indigo-700 cursor-pointer"
+                    title="Gộp đủ dữ liệu HIS, tự động sửa cột sai lệch theo BHXH, cảnh báo thiếu để xuất file chuẩn 20 cột đẩy cổng"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Xuất File Chuẩn BH01
+                  </button>
+                  <button 
+                    onClick={exportExcel}
+                    className="flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-200 transition-all hover:bg-emerald-700 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    Xuất File 21 Cột
+                  </button>
+                </div>
               </div>
 
               {/* Data Table */}
@@ -1502,6 +1546,224 @@ export default function App() {
           </span>
         </div>
       </footer>
+
+      {/* Modal Xuất File Chuẩn BH01 (Lấy BHXH làm gốc khi sai lệch, giữ đủ hồ sơ HIS & cảnh báo thiếu) */}
+      {showBh01StandardModal && bh01StandardDataset && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 bg-indigo-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    XUẤT FILE CHUẨN BH01 (MẪU 01/BH - 20 CỘT ĐẨY CỔNG)
+                  </h3>
+                  <p className="text-xs text-slate-600 font-medium">
+                    Nguyên tắc: Giữ đủ số lượng hồ sơ bên HIS • Nếu lệch cột giữa HIS và BHXH → lấy bên BHXH làm gốc, bỏ giá trị sai bên HIS
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowBh01StandardModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-white cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {/* Thống kê tổng quan */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-[11px] font-bold text-slate-500">Tổng hồ sơ xuất chuẩn</div>
+                  <div className="text-xl font-black text-slate-900 mt-0.5">
+                    {bh01StandardDataset.stats.totalOutputRows.toLocaleString('vi-VN')}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
+                  <div className="text-[11px] font-bold text-emerald-700">Khớp 2 bên</div>
+                  <div className="text-xl font-black text-emerald-800 mt-0.5">
+                    {bh01StandardDataset.stats.matchCount.toLocaleString('vi-VN')}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
+                  <div className="text-[11px] font-bold text-blue-700">Đã sửa theo BHXH</div>
+                  <div className="text-xl font-black text-blue-800 mt-0.5">
+                    {bh01StandardDataset.stats.adjustedCount.toLocaleString('vi-VN')}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                  <div className="text-[11px] font-bold text-amber-700">Thiếu BHXH (lấy HIS)</div>
+                  <div className="text-xl font-black text-amber-800 mt-0.5">
+                    {bh01StandardDataset.stats.missingBhxhCount.toLocaleString('vi-VN')}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200">
+                  <div className="text-[11px] font-bold text-rose-700">Thiếu cột / Thiếu HIS</div>
+                  <div className="text-xl font-black text-rose-800 mt-0.5">
+                    {bh01StandardDataset.stats.incompleteRowCount} / {bh01StandardDataset.stats.missingHisCount}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cảnh báo rõ ràng để người dùng kiểm tra & bổ sung */}
+              {(bh01StandardDataset.stats.missingBhxhCount > 0 ||
+                bh01StandardDataset.stats.missingHisCount > 0 ||
+                bh01StandardDataset.stats.incompleteRowCount > 0) && (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-1.5">
+                  <div className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    CẢNH BÁO KIỂM TRA &amp; BỔ SUNG DỮ LIỆU:
+                  </div>
+                  {bh01StandardDataset.stats.missingBhxhCount > 0 && (
+                    <div>
+                      • Có <b>{bh01StandardDataset.stats.missingBhxhCount}</b> hồ sơ có ở HIS nhưng <b>thiếu trên file BHXH</b> → Hệ thống vẫn giữ đầy đủ từ HIS để không thiếu số lượng đẩy cổng.
+                    </div>
+                  )}
+                  {bh01StandardDataset.stats.missingHisCount > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        • Có <b>{bh01StandardDataset.stats.missingHisCount}</b> hồ sơ có trên file BHXH nhưng <b>thiếu bên HIS</b> (cần kiểm tra lại HIS để bổ sung nếu cần).
+                      </span>
+                      <label className="inline-flex items-center gap-1.5 font-bold text-indigo-800 cursor-pointer bg-white px-2.5 py-1 rounded-lg border border-amber-300">
+                        <input
+                          type="checkbox"
+                          checked={includeMissingHisInBh01}
+                          onChange={e => setIncludeMissingHisInBh01(e.target.checked)}
+                          className="accent-indigo-600"
+                        />
+                        Gộp thêm {bh01StandardDataset.stats.missingHisCount} hồ sơ này vào file chuẩn
+                      </label>
+                    </div>
+                  )}
+                  {bh01StandardDataset.stats.incompleteRowCount > 0 && (
+                    <div className="text-rose-800 font-semibold">
+                      • Có <b>{bh01StandardDataset.stats.incompleteRowCount}</b> hồ sơ đang <b>thiếu thông tin cột bắt buộc</b> (xem cột &quot;Cảnh báo thiếu cột&quot; bên dưới để bổ sung trước khi đẩy cổng).
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Bảng chi tiết các hồ sơ đã sửa theo BHXH hoặc có cảnh báo */}
+              {(() => {
+                const attentionItems = [
+                  ...bh01StandardDataset.logs.filter(
+                    l => l.status !== 'MATCH' || l.missingRequiredFields.length > 0
+                  ),
+                  ...bh01StandardDataset.missingHisLogs.filter(
+                    m => !bh01StandardDataset.logs.some(l => l === m)
+                  ),
+                ];
+
+                if (attentionItems.length === 0) {
+                  return (
+                    <div className="p-6 rounded-xl bg-emerald-50 border border-emerald-200 text-center text-sm font-bold text-emerald-800">
+                      ✅ Toàn bộ {bh01StandardDataset.stats.totalOutputRows} hồ sơ đều khớp hoàn toàn và đầy đủ thông tin bắt buộc!
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 text-xs font-bold text-slate-700 flex items-center justify-between">
+                      <span>
+                        Danh sách hồ sơ đã điều chỉnh theo BHXH / có cảnh báo ({attentionItems.length} dòng)
+                      </span>
+                      <span className="text-[11px] font-normal text-slate-500">
+                        (Hiển thị tối đa 150 dòng đầu; toàn bộ nhật ký nằm ở Sheet 2 &quot;Canh_Bao_Dieu_Chinh&quot; khi tải Excel)
+                      </span>
+                    </div>
+                    <div className="max-h-72 overflow-auto">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[11px] text-slate-600">
+                          <tr>
+                            <th className="px-2.5 py-2 w-12">STT</th>
+                            <th className="px-2.5 py-2">Họ và tên</th>
+                            <th className="px-2.5 py-2">Mã thẻ BHYT</th>
+                            <th className="px-2.5 py-2">Xử lý</th>
+                            <th className="px-2.5 py-2">Chi tiết điều chỉnh theo BHXH / Lưu ý</th>
+                            <th className="px-2.5 py-2">Cảnh báo thiếu cột</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {attentionItems.slice(0, 150).map((item, i) => (
+                            <tr key={i} className="hover:bg-slate-50">
+                              <td className="px-2.5 py-1.5 font-mono text-slate-500">{item.stt}</td>
+                              <td className="px-2.5 py-1.5 font-semibold text-slate-800">{item.hoTen || '—'}</td>
+                              <td className="px-2.5 py-1.5 font-mono text-slate-700">{item.maTheBhyt || '—'}</td>
+                              <td className="px-2.5 py-1.5 whitespace-nowrap">
+                                {item.status === 'ADJUSTED_FROM_BHXH' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                                    Sửa theo BHXH
+                                  </span>
+                                )}
+                                {item.status === 'MISSING_BHXH_KEEP_HIS' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                                    Thiếu BHXH (lấy HIS)
+                                  </span>
+                                )}
+                                {item.status === 'MISSING_HIS_ONLY' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                                    Thiếu bên HIS
+                                  </span>
+                                )}
+                                {item.status === 'MATCH' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                    Khớp
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-2.5 py-1.5 text-[11px] text-slate-700">
+                                {item.adjustedFields.length > 0 ? item.adjustedFields.join(' | ') : '—'}
+                              </td>
+                              <td className="px-2.5 py-1.5 text-[11px] font-semibold text-rose-700">
+                                {item.missingRequiredFields.length > 0
+                                  ? `Thiếu: ${item.missingRequiredFields.join(', ')}`
+                                  : 'Đủ'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowBh01StandardModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-xs font-bold text-slate-700 cursor-pointer"
+              >
+                Đóng
+              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePushStandardBh01ToTt12}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+                  title="Nạp thẳng dữ liệu chuẩn 20 cột sang tab CHỨNG TỪ TT12 (Mẫu 01/BH) để ký số và xuất XML"
+                >
+                  <FileCode2 className="w-4 h-4" />
+                  Đẩy thẳng sang Chứng từ TT12 (Mẫu 01/BH)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => exportStandardBh01Workbook(bh01StandardDataset)}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  Tải Excel Chuẩn BH01 (20 cột)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Quản trị người dùng (Admin) & Đổi mật khẩu (User) */}
       <UserManagementModal
