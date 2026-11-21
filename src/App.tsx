@@ -382,6 +382,186 @@ const TableRow21 = ({
   );
 };
 
+const TablePaginationBar = ({
+  currentPage,
+  totalItems,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  accent = 'blue',
+  compact = false,
+}: {
+  currentPage: number;
+  totalItems: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  accent?: 'blue' | 'violet' | 'indigo';
+  compact?: boolean;
+}) => {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const [jumpValue, setJumpValue] = useState(String(safePage));
+
+  useEffect(() => {
+    setJumpValue(String(safePage));
+  }, [safePage]);
+
+  if (totalItems <= 0) return null;
+
+  const startItem = (safePage - 1) * pageSize + 1;
+  const endItem = Math.min(totalItems, safePage * pageSize);
+
+  const commitJump = () => {
+    const parsed = parseInt(jumpValue, 10);
+    if (!isNaN(parsed)) {
+      const target = Math.min(Math.max(1, parsed), totalPages);
+      setJumpValue(String(target));
+      if (target !== safePage) {
+        onPageChange(target);
+      }
+    } else {
+      setJumpValue(String(safePage));
+    }
+  };
+
+  const pageNumbers: (number | '...')[] = [];
+  if (totalPages <= 5) {
+    for (let p = 1; p <= totalPages; p++) pageNumbers.push(p);
+  } else {
+    pageNumbers.push(1);
+    const windowStart = Math.max(2, safePage - 1);
+    const windowEnd = Math.min(totalPages - 1, safePage + 1);
+    if (windowStart > 2) pageNumbers.push('...');
+    for (let p = windowStart; p <= windowEnd; p++) pageNumbers.push(p);
+    if (windowEnd < totalPages - 1) pageNumbers.push('...');
+    pageNumbers.push(totalPages);
+  }
+
+  const activeBtnClass =
+    accent === 'violet'
+      ? 'bg-violet-600 text-white border-violet-600'
+      : accent === 'indigo'
+        ? 'bg-indigo-600 text-white border-indigo-600'
+        : 'bg-blue-600 text-white border-blue-600';
+
+  const navBtnBase =
+    'px-2 py-0.5 rounded-md border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition';
+
+  return (
+    <div
+      className={cn(
+        'px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-[11px]',
+        compact ? 'mt-2' : ''
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2 text-slate-600">
+        <span>
+          Hiển thị <strong className="text-slate-800">{startItem}–{endItem}</strong> /{' '}
+          <strong className="text-slate-800">{totalItems}</strong> HS
+        </span>
+        <select
+          value={pageSize}
+          onChange={e => {
+            onPageSizeChange(Number(e.target.value));
+            onPageChange(1);
+          }}
+          className="px-1.5 py-0.5 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 focus:outline-none cursor-pointer"
+          aria-label="Số dòng mỗi trang"
+        >
+          {[50, 100, 200, 300, 500].map(size => (
+            <option key={size} value={size}>
+              {size} / trang
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1">
+        <button
+          type="button"
+          onClick={() => onPageChange(1)}
+          disabled={safePage <= 1}
+          className={navBtnBase}
+          title="Trang đầu"
+        >
+          «
+        </button>
+        <button
+          type="button"
+          onClick={() => onPageChange(safePage - 1)}
+          disabled={safePage <= 1}
+          className={navBtnBase}
+          title="Trang trước"
+        >
+          ‹
+        </button>
+
+        {pageNumbers.map((p, idx) =>
+          p === '...' ? (
+            <span key={`ellipsis-${idx}`} className="px-1 text-slate-400 select-none">
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onPageChange(p)}
+              className={cn(
+                'min-w-[24px] px-1.5 py-0.5 rounded-md border font-bold cursor-pointer transition',
+                p === safePage
+                  ? activeBtnClass
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+              )}
+            >
+              {p}
+            </button>
+          )
+        )}
+
+        <button
+          type="button"
+          onClick={() => onPageChange(safePage + 1)}
+          disabled={safePage >= totalPages}
+          className={navBtnBase}
+          title="Trang sau"
+        >
+          ›
+        </button>
+        <button
+          type="button"
+          onClick={() => onPageChange(totalPages)}
+          disabled={safePage >= totalPages}
+          className={navBtnBase}
+          title="Trang cuối"
+        >
+          »
+        </button>
+
+        <form
+          onSubmit={e => {
+            e.preventDefault();
+            commitJump();
+          }}
+          className="inline-flex items-center gap-1 ml-1 text-slate-600"
+        >
+          <span>Trang</span>
+          <input
+            type="number"
+            min={1}
+            max={totalPages}
+            value={jumpValue}
+            onChange={e => setJumpValue(e.target.value)}
+            onBlur={commitJump}
+            className="w-12 px-1.5 py-0.5 text-center rounded border border-slate-300 bg-white text-[11px] font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <span>/ {totalPages}</span>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
     return getCurrentSession()?.user || null;
@@ -441,6 +621,9 @@ export default function App() {
     setBhxhSearch('');
     setHisSearch('');
     setResultsSearch('');
+    setBhxhPage(1);
+    setHisPage(1);
+    setResultsPage(1);
     setHasPendingEdits(false);
     setEditedBhxhRows(new Set());
     setEditedHisRows(new Set());
@@ -492,9 +675,27 @@ export default function App() {
   const [bhxhSearch, setBhxhSearch] = useState('');
   const [hisSearch, setHisSearch] = useState('');
   const [resultsSearch, setResultsSearch] = useState('');
+  const [bhxhPage, setBhxhPage] = useState(1);
+  const [bhxhPageSize, setBhxhPageSize] = useState(100);
+  const [hisPage, setHisPage] = useState(1);
+  const [hisPageSize, setHisPageSize] = useState(100);
+  const [resultsPage, setResultsPage] = useState(1);
+  const [resultsPageSize, setResultsPageSize] = useState(100);
   const [hasPendingEdits, setHasPendingEdits] = useState(false);
   const [editedBhxhRows, setEditedBhxhRows] = useState<Set<number>>(new Set());
   const [editedHisRows, setEditedHisRows] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    setBhxhPage(1);
+  }, [bhxhSearch, bhxhSort, bhxhConverted.length]);
+
+  useEffect(() => {
+    setHisPage(1);
+  }, [hisSearch, hisSort, hisConverted.length]);
+
+  useEffect(() => {
+    setResultsPage(1);
+  }, [filterType, resultsSearch, results]);
 
   const handleSort = (key: keyof TemplateRow, currentSort: SortConfig, setSort: (s: SortConfig) => void) => {
     if (currentSort?.key === key) {
@@ -533,7 +734,13 @@ export default function App() {
     setHasPendingEdits(true);
   };
 
-  const buildDisplayMeta = (data: TemplateRow[], query: string, sortConfig: SortConfig) => {
+  const buildDisplayMeta = (
+    data: TemplateRow[],
+    query: string,
+    sortConfig: SortConfig,
+    page: number,
+    pageSize: number
+  ) => {
     const indexed = data.map((row, origIdx) => ({ row, origIdx }));
     const filtered = query.trim()
       ? indexed.filter(item => matchesTemplateRowSearch(item.row, query))
@@ -555,19 +762,26 @@ export default function App() {
           return 0;
         });
 
+    const totalFiltered = sorted.length;
+    const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+    const safePage = Math.min(Math.max(1, page), totalPages);
+    const start = (safePage - 1) * pageSize;
+
     return {
-      items: sorted.slice(0, 300),
-      totalFiltered: sorted.length,
+      items: sorted.slice(start, start + pageSize),
+      totalFiltered,
+      safePage,
+      totalPages,
     };
   };
 
   const bhxhDisplayMeta = useMemo(
-    () => buildDisplayMeta(bhxhConverted, bhxhSearch, bhxhSort),
-    [bhxhConverted, bhxhSearch, bhxhSort]
+    () => buildDisplayMeta(bhxhConverted, bhxhSearch, bhxhSort, bhxhPage, bhxhPageSize),
+    [bhxhConverted, bhxhSearch, bhxhSort, bhxhPage, bhxhPageSize]
   );
   const hisDisplayMeta = useMemo(
-    () => buildDisplayMeta(hisConverted, hisSearch, hisSort),
-    [hisConverted, hisSearch, hisSort]
+    () => buildDisplayMeta(hisConverted, hisSearch, hisSort, hisPage, hisPageSize),
+    [hisConverted, hisSearch, hisSort, hisPage, hisPageSize]
   );
 
   const [bhxhFiles, setBhxhFiles] = useState<LoadedFileInfo[]>([]);
@@ -932,12 +1146,14 @@ export default function App() {
       setBhxhConverted([]);
       setBhxhFiles([]);
       setBhxhSearch('');
+      setBhxhPage(1);
       setEditedBhxhRows(new Set());
     } else {
       setHisData([]);
       setHisConverted([]);
       setHisFiles([]);
       setHisSearch('');
+      setHisPage(1);
       setEditedHisRows(new Set());
     }
     setHasPendingEdits(false);
@@ -1271,6 +1487,20 @@ export default function App() {
       return normalizeSearchText(res.details.join(' ')).includes(q);
     });
   }, [results, filterType, resultsSearch]);
+
+  const resultsDisplayMeta = useMemo(() => {
+    const totalFiltered = filteredResults.length;
+    const totalPages = Math.max(1, Math.ceil(totalFiltered / resultsPageSize));
+    const safePage = Math.min(Math.max(1, resultsPage), totalPages);
+    const start = (safePage - 1) * resultsPageSize;
+    return {
+      items: filteredResults.slice(start, start + resultsPageSize),
+      totalFiltered,
+      safePage,
+      totalPages,
+      start,
+    };
+  }, [filteredResults, resultsPage, resultsPageSize]);
 
   const bh01StandardDataset = useMemo(() => {
     if (!showBh01StandardModal || results.length === 0) return null;
@@ -1819,11 +2049,15 @@ export default function App() {
                         </tbody>
                       </table>
                     </div>
-                    {bhxhDisplayMeta.totalFiltered > 300 && (
-                      <div className="text-[10.5px] text-slate-500 mt-1 text-right">
-                        Đang hiển thị 300/{bhxhDisplayMeta.totalFiltered} dòng khớp. Hãy gõ từ khóa vào ô tìm kiếm để lọc đúng bệnh nhân cần sửa.
-                      </div>
-                    )}
+                    <TablePaginationBar
+                      currentPage={bhxhDisplayMeta.safePage}
+                      totalItems={bhxhDisplayMeta.totalFiltered}
+                      pageSize={bhxhPageSize}
+                      onPageChange={setBhxhPage}
+                      onPageSizeChange={setBhxhPageSize}
+                      accent="blue"
+                      compact
+                    />
                   </div>
                 )}
               </div>
@@ -1996,11 +2230,15 @@ export default function App() {
                         </tbody>
                       </table>
                     </div>
-                    {hisDisplayMeta.totalFiltered > 300 && (
-                      <div className="text-[10.5px] text-slate-500 mt-1 text-right">
-                        Đang hiển thị 300/{hisDisplayMeta.totalFiltered} dòng khớp. Hãy gõ từ khóa vào ô tìm kiếm để lọc đúng bệnh nhân cần sửa.
-                      </div>
-                    )}
+                    <TablePaginationBar
+                      currentPage={hisDisplayMeta.safePage}
+                      totalItems={hisDisplayMeta.totalFiltered}
+                      pageSize={hisPageSize}
+                      onPageChange={setHisPage}
+                      onPageSizeChange={setHisPageSize}
+                      accent="violet"
+                      compact
+                    />
                   </div>
                 )}
               </div>
@@ -2207,10 +2445,10 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {filteredResults.slice(0, 100).map((res, i) => {
+                      {resultsDisplayMeta.items.map((res, i) => {
                         const item = res.hisItem || res.bhxhItem;
                         return (
-                          <React.Fragment key={i}>
+                          <React.Fragment key={resultsDisplayMeta.start + i}>
                             <tr className="hover:bg-slate-50/50 transition-colors bg-white">
                               <td className="px-3 py-4 sticky left-0 bg-white z-10 shadow-[1px_0_0_0_#f1f5f9]">
                                 <div className="flex items-center gap-1.5">
@@ -2272,11 +2510,16 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
-                {filteredResults.length > 100 && (
-                  <div className="p-6 bg-slate-50 text-center text-sm text-slate-500 font-medium">
-                    Đang hiển thị 100 trên tổng số {filteredResults.length} dòng. Xuất Excel để xem toàn bộ.
-                  </div>
-                )}
+                <div className="p-3 border-t border-slate-100 bg-slate-50/70">
+                  <TablePaginationBar
+                    currentPage={resultsDisplayMeta.safePage}
+                    totalItems={resultsDisplayMeta.totalFiltered}
+                    pageSize={resultsPageSize}
+                    onPageChange={setResultsPage}
+                    onPageSizeChange={setResultsPageSize}
+                    accent="indigo"
+                  />
+                </div>
               </div>
             </motion.div>
           )}
