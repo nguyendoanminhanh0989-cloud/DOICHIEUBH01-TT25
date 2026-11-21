@@ -202,9 +202,11 @@ export const getNumericValue = (item: any, column: string): number | null => {
 };
 
 export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH' | 'HIS'): TemplateRow[] => {
-  // Kiểm tra nếu file XML1 có tất cả các dòng đều mang STT = 1 thì đánh lại STT theo thứ tự dòng
+  // Đánh lại STT liên tục 1..N nếu cột STT bị trống hoặc bị trùng lặp / khởi động lại từ 1 khi gộp nhiều file
   const rawSttList = data.map(item => normalizeValue(item[mapping.STT]));
-  const allSttAreOne = data.length > 1 && rawSttList.every(s => s === '1' || s === '');
+  const needsSequentialStt =
+    data.length > 1 &&
+    (rawSttList.some(s => !s) || new Set(rawSttList).size < data.length);
 
   return data.map((item, index) => {
     let t_tongchi_bv = getNumericValue(item, mapping.T_TONGCHI_BV);
@@ -228,7 +230,7 @@ export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH
     const rawStt = normalizeValue(item[mapping.STT]);
 
     return {
-      STT: allSttAreOne || !rawStt ? String(index + 1) : rawStt,
+      STT: needsSequentialStt || !rawStt ? String(index + 1) : rawStt,
       MA_LK: maLk,
       HO_TEN: normalizeValue(item[mapping.HO_TEN]),
       NGAY_SINH: ngaySinh,
@@ -253,6 +255,15 @@ export const mapExcelToRow = (data: any[], mapping: ColumnMapping, source: 'BHXH
       originalData: item
     };
   });
+};
+
+/** Đảm bảo STT luôn liên tục 1..N khi gộp nhiều file hoặc khôi phục từ cache */
+export const ensureSequentialStt = (rows: TemplateRow[]): TemplateRow[] => {
+  if (rows.length <= 1) return rows;
+  const sttList = rows.map(r => String(r.STT ?? '').trim());
+  const needsFix = sttList.some(s => !s) || new Set(sttList).size < rows.length;
+  if (!needsFix) return rows;
+  return rows.map((r, idx) => ({ ...r, STT: String(idx + 1) }));
 };
 
 /** Chuẩn hóa tên bệnh nhân để ghép key đối chiếu không phân biệt hoa/thường hay khoảng trắng thừa */

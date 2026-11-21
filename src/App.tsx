@@ -37,6 +37,7 @@ import { format } from 'date-fns';
 import { cn } from './lib/utils';
 import {
   mapExcelToRow,
+  ensureSequentialStt,
   generateKey,
   smartMapHeaders,
   parseGiamDinhXml,
@@ -596,8 +597,8 @@ export default function App() {
         if (cached) {
           if (Array.isArray(cached.bhxhData)) setBhxhData(cached.bhxhData);
           if (Array.isArray(cached.hisData)) setHisData(cached.hisData);
-          if (Array.isArray(cached.bhxhConverted)) setBhxhConverted(cached.bhxhConverted);
-          if (Array.isArray(cached.hisConverted)) setHisConverted(cached.hisConverted);
+          if (Array.isArray(cached.bhxhConverted)) setBhxhConverted(ensureSequentialStt(cached.bhxhConverted));
+          if (Array.isArray(cached.hisConverted)) setHisConverted(ensureSequentialStt(cached.hisConverted));
           if (cached.bhxhMapping) setBhxhMapping(cached.bhxhMapping);
           if (cached.hisMapping) setHisMapping(cached.hisMapping);
           if (Array.isArray(cached.bhxhFiles)) setBhxhFiles(cached.bhxhFiles);
@@ -861,6 +862,49 @@ export default function App() {
       setEditedBhxhRows(new Set());
     } else {
       setHisFiles(updatedFiles);
+      setHisConverted(mapExcelToRow(filteredRaw, mapping, 'HIS'));
+      setEditedHisRows(new Set());
+    }
+    if (results.length > 0) {
+      setHasPendingEdits(true);
+    }
+  };
+
+  const handleRemoveFile = (type: 'BHXH' | 'HIS', fileIdx: number) => {
+    const sourceFiles = type === 'BHXH' ? bhxhFiles : hisFiles;
+    const targetFile = sourceFiles[fileIdx];
+    if (!targetFile) return;
+
+    const remainingFiles = sourceFiles.filter((_, idx) => idx !== fileIdx);
+    if (remainingFiles.length === 0) {
+      clearData(type);
+      return;
+    }
+
+    const rawData = type === 'BHXH' ? bhxhData : hisData;
+    const mapping = type === 'BHXH' ? bhxhMapping : hisMapping;
+
+    const remainingRaw = rawData.filter(row => row.__sourceFile !== targetFile.name);
+    const enabledSheetKeys = new Set<string>();
+    remainingFiles.forEach(f => {
+      (f.sheets || []).forEach(s => {
+        if (s.enabled) enabledSheetKeys.add(`${f.name}::${s.name}`);
+      });
+    });
+
+    const filteredRaw = remainingRaw.filter(row => {
+      if (!row.__sheetName || !row.__sourceFile) return true;
+      return enabledSheetKeys.has(`${row.__sourceFile}::${row.__sheetName}`);
+    });
+
+    if (type === 'BHXH') {
+      setBhxhFiles(remainingFiles);
+      setBhxhData(remainingRaw);
+      setBhxhConverted(mapExcelToRow(filteredRaw, mapping, 'BHXH'));
+      setEditedBhxhRows(new Set());
+    } else {
+      setHisFiles(remainingFiles);
+      setHisData(remainingRaw);
       setHisConverted(mapExcelToRow(filteredRaw, mapping, 'HIS'));
       setEditedHisRows(new Set());
     }
@@ -1689,6 +1733,14 @@ export default function App() {
                         ) : f.sheets && f.sheets.length === 1 ? (
                           <span className="text-[10.5px] text-slate-500">• Sheet: {f.sheets[0].name} ({f.sheets[0].count} HS)</span>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile('BHXH', fIdx)}
+                          className="ml-auto p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          title="Xóa riêng file này"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1858,6 +1910,14 @@ export default function App() {
                         ) : f.sheets && f.sheets.length === 1 ? (
                           <span className="text-[10.5px] text-slate-500">• Sheet: {f.sheets[0].name} ({f.sheets[0].count} HS)</span>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFile('HIS', fIdx)}
+                          className="ml-auto p-0.5 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                          title="Xóa riêng file này"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ))}
                   </div>
