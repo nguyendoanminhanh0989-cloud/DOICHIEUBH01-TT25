@@ -666,6 +666,36 @@ while ($listener.IsListening) {
             }
         }
 
+        if ($request.Url.AbsolutePath -eq "/bhxh-forward" -and $request.HttpMethod -eq "POST") {
+            $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+            $fwBody = $reader.ReadToEnd()
+            $reader.Close()
+            $fw = ConvertFrom-Json $fwBody
+            $fwPath = [string]$fw.path
+            if ($fwPath -notmatch '^/api/') { throw "Duong dan chuyen tiep khong hop le." }
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Add-Type -AssemblyName System.Net.Http
+            $fwClient = New-Object System.Net.Http.HttpClient
+            $fwClient.Timeout = [TimeSpan]::FromSeconds(120)
+            $fwReq = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, ("https://egw.baohiemxahoi.gov.vn" + $fwPath))
+            if ($fw.headers) {
+                foreach ($hp in $fw.headers.PSObject.Properties) {
+                    $fwReq.Headers.TryAddWithoutValidation($hp.Name, [string]$hp.Value) | Out-Null
+                }
+            }
+            $fwReq.Content = New-Object System.Net.Http.StringContent([string]$fw.body, [System.Text.Encoding]::UTF8, "application/x-www-form-urlencoded")
+            $fwResp = $fwClient.SendAsync($fwReq).GetAwaiter().GetResult()
+            $fwText = $fwResp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            $fwOut = @{ status = "success"; httpStatus = [int]$fwResp.StatusCode; body = $fwText }
+            $fwJson = ConvertTo-Json $fwOut -Depth 3
+            $fwBuf = [System.Text.Encoding]::UTF8.GetBytes($fwJson)
+            $response.ContentType = "application/json; charset=utf-8"
+            $response.ContentLength64 = $fwBuf.Length
+            $response.OutputStream.Write($fwBuf, 0, $fwBuf.Length)
+            $response.Close()
+            Write-Host " [OK] Da chuyen tiep yeu cau toi Cong BHXH: $fwPath (HTTP $([int]$fwResp.StatusCode))" -ForegroundColor Green
+            continue
+        }
         if ($request.Url.AbsolutePath -eq "/sign-hash" -and $request.HttpMethod -eq "POST") {
             $reader = New-Object System.IO.StreamReader($request.InputStream, $request.ContentEncoding)
             $body = $reader.ReadToEnd()

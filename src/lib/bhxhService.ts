@@ -185,21 +185,30 @@ export async function bhxhSubmitGiamDinh3176(
   formData.append('maCSKCB', maCskcb);
   formData.append('fileHSBase64', fileHSBase64);
 
-  const res = await fetchBhxh('/api/qd130/guiHoSoXmlQD3176', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      accessToken: tokens.access_token,
-      tokenId: tokens.id_token,
-      passwordHash,
-    },
-    body: formData.toString(),
-  });
+  const submitPath = '/api/qd130/guiHoSoXmlQD3176';
+  const customHeaders: Record<string, string> = {
+    accessToken: tokens.access_token,
+    tokenId: tokens.id_token,
+    passwordHash,
+  };
+  const bodyStr = formData.toString();
 
-  if (!res.ok) {
-    throw new Error(`HTTP Error ${res.status}`);
+  let data: any;
+  try {
+    // Header tuy chinh (accessToken/tokenId/passwordHash) khien trinh duyet gui preflight CORS -> Cong BHXH thuong chan.
+    const res = await fetchBhxh(submitPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...customHeaders },
+      body: bodyStr,
+    });
+    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+    data = await res.json();
+  } catch (directErr: any) {
+    const isNetErr = directErr instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(directErr?.message || '');
+    if (!isNetErr) throw directErr;
+    // Du phong: chuyen tiep qua cong cu cuc bo Chay_Ky_So_USB_Token (chay tren may nguoi dung, khong bi CORS)
+    data = await forwardViaLocalTool(submitPath, customHeaders, bodyStr);
   }
-  const data = await res.json();
   const maKetQua = String(data.maKetQua ?? data.MaKetQua ?? '');
   const thongDiep = data.thongDiep ?? data.ThongDiep ?? '';
   return {
@@ -211,4 +220,38 @@ export async function bhxhSubmitGiamDinh3176(
         ? thongDiep || 'Gửi thành công'
         : `Cổng từ chối (Mã ${maKetQua})${thongDiep ? ': ' + thongDiep : ''}`,
   };
+}
+
+/**
+ * Chuyen tiep 1 yeu cau POST toi Cong BHXH thong qua cong cu cuc bo Chay_Ky_So_USB_Token (127.0.0.1:18088).
+ * Dung khi trinh duyet bi chan CORS do header tuy chinh (accessToken, tokenId, passwordHash).
+ */
+async function forwardViaLocalTool(path: string, headers: Record<string, string>, body: string): Promise<any> {
+  const NOT_RUNNING =
+    'Trinh duyet bi chan CORS khi gui API 3176 (header accessToken/tokenId). Hay tai & chay lai cong cu moi "Chay_Ky_So_USB_Token.bat" (menu Ky so > Kich hoat) roi bam Ky & Gui lai.';
+  let res: Response;
+  try {
+    res = await fetch('http://127.0.0.1:18088/bhxh-forward', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ path, headers, body }),
+    });
+  } catch {
+    throw new Error(NOT_RUNNING);
+  }
+  if (res.status === 404) {
+    throw new Error('Cong cu Chay_Ky_So_USB_Token.bat dang chay la ban cu (chua ho tro chuyen tiep Cong BHXH). Hay dong cua so cu, tai ban moi va chay lai.');
+  }
+  const out: any = await res.json().catch(() => ({}));
+  if (out?.status !== 'success') {
+    throw new Error(out?.message || 'Cong cu cuc bo khong ket noi duoc Cong BHXH.');
+  }
+  if (out.httpStatus && out.httpStatus >= 400) {
+    throw new Error(`HTTP Error ${out.httpStatus}${out.body ? ': ' + String(out.body).slice(0, 200) : ''}`);
+  }
+  try {
+    return JSON.parse(out.body);
+  } catch {
+    throw new Error(`Cong BHXH tra ve du lieu khong hop le: ${String(out.body).slice(0, 200)}`);
+  }
 }
