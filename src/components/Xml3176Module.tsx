@@ -217,10 +217,16 @@ function getCompactXml3176ColumnWidth(col: string): number {
   }
 }
 
+function normalizeCachedXml3176Doc(raw: any): Xml3176ParsedDoc | null {
+  if (raw?.tables?.XML1) return raw as Xml3176ParsedDoc;
+  if (raw?.nextDoc?.tables?.XML1) return raw.nextDoc as Xml3176ParsedDoc;
+  return null;
+}
+
 export default function Xml3176Module() {
   // Lưu cache dữ liệu XML 3176 trong phiên trình duyệt (giữ qua F5, tắt trình duyệt tự xóa)
   const [doc, setDoc] = useState<Xml3176ParsedDoc | null>(() =>
-    getSessionSync<Xml3176ParsedDoc | null>('xml3176_doc_v1', null)
+    normalizeCachedXml3176Doc(getSessionSync<any>('xml3176_doc_v1', null))
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
     getSessionSync<ActiveTab>('xml3176_active_tab_v1', 'XML1')
@@ -241,15 +247,16 @@ export default function Xml3176Module() {
 
   React.useEffect(() => {
     let mounted = true;
-    getSessionCache<Xml3176ParsedDoc>('xml3176_doc_v1')
+    getSessionCache<any>('xml3176_doc_v1')
       .then(cachedDoc => {
         if (!mounted) return;
-        if (cachedDoc && cachedDoc.tables) {
-          setDoc(cachedDoc);
+        const resolved = normalizeCachedXml3176Doc(cachedDoc);
+        if (resolved) {
+          setDoc(resolved);
           setSelectedHosoIndices(prev => {
             if (prev.size > 0) return prev;
             const all = new Set<number>();
-            for (let i = 0; i < (cachedDoc.hosoFiles?.length || 0); i++) all.add(i);
+            for (let i = 0; i < (resolved.hosoFiles?.length || 0); i++) all.add(i);
             return all;
           });
         }
@@ -478,7 +485,7 @@ export default function Xml3176Module() {
           signature: { ...doc.signature, isSigned: false },
         };
         if (affectedHosoSet.size > 0) {
-          nextDoc = recalculateXml3176HosoCosts(nextDoc, Array.from(affectedHosoSet));
+          nextDoc = recalculateXml3176HosoCosts(nextDoc, Array.from(affectedHosoSet)).nextDoc;
         } else {
           nextDoc.errors = validateXml3176Doc(nextDoc);
         }
@@ -2197,9 +2204,9 @@ export default function Xml3176Module() {
                         type="button"
                         onClick={() => {
                           if (!doc) return;
-                          const targetIndices = Array.from(selectedHosoIndices);
-                          const updatedDoc = recalculateXml3176HosoCosts(doc, targetIndices);
-                          setDoc(updatedDoc);
+                          const targetIndices = Array.from(selectedHosoIndices) as number[];
+                          const { nextDoc } = recalculateXml3176HosoCosts(doc, targetIndices);
+                          setDoc(nextDoc);
                         }}
                         className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
                         title="Tính toán lại Thành tiền từng thuốc/DVKT (Bảng 2, Bảng 3) và đồng bộ Tổng tiền (T_THUOC, T_VTYT, T_TONGCHI_BV, T_TONGCHI_BH, T_BHTT, T_BNCCT, T_BNTT) lên Bảng 1 cho các hồ sơ đang chọn"
@@ -2221,10 +2228,10 @@ export default function Xml3176Module() {
                       selectedHosoFilter !== 'ALL'
                         ? [Number(selectedHosoFilter)]
                         : selectedHosoIndices.size > 0
-                        ? Array.from(selectedHosoIndices)
+                        ? (Array.from(selectedHosoIndices) as number[])
                         : undefined;
-                    const updatedDoc = recalculateXml3176HosoCosts(doc, targetIndices);
-                    setDoc(updatedDoc);
+                    const { nextDoc } = recalculateXml3176HosoCosts(doc, targetIndices);
+                    setDoc(nextDoc);
                   }}
                   className="ml-2 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
                   title="Sau khi sửa Đơn giá / Số lượng / Tỷ lệ ở Bảng 2 hoặc Bảng 3, bấm nút này để tính lại Thành tiền dòng và đồng bộ Tổng chi phí lên Bảng 1 (XML1)"
