@@ -34,6 +34,23 @@ export interface SmartCAConfig {
 }
 
 const SIGNATURE_IMAGE_STORAGE_KEY = 'bhxh_tt12_signature_image_v1';
+const SIGNATURE_SLOTS_STORAGE_KEY = 'bhxh_tt12_signature_slots_v1';
+const ACTIVE_SIG_SLOT_STORAGE_KEY = 'bhxh_tt12_active_sig_slot_v1';
+
+export interface SignatureSlot {
+  id: number;            // 0..3
+  label: string;         // Ghi chú tên loại chữ ký
+  signerText: string;    // Tên người ký dạng text chèn dưới ảnh chữ ký
+  imageDataUrl: string;  // DataURL PNG đã lưu
+  bgRemoved?: boolean;   // Đã xóa nền thành PNG trong suốt
+}
+
+export const DEFAULT_SIGNATURE_SLOTS: SignatureSlot[] = [
+  { id: 0, label: 'Người lập biểu', signerText: '', imageDataUrl: '', bgRemoved: false },
+  { id: 1, label: 'Trưởng phòng KHTH', signerText: '', imageDataUrl: '', bgRemoved: false },
+  { id: 2, label: 'Kế toán trưởng', signerText: '', imageDataUrl: '', bgRemoved: false },
+  { id: 3, label: 'Thủ trưởng đơn vị', signerText: '', imageDataUrl: '', bgRemoved: false },
+];
 
 export const getSavedSignatureImage = (): string => {
   try {
@@ -55,6 +72,69 @@ export const saveSignatureImage = (dataUrlOrBase64: string): void => {
   } catch (e) {
     console.warn('Không thể lưu ảnh chữ ký:', e);
   }
+};
+
+export const getSavedSignatureSlots = (): SignatureSlot[] => {
+  try {
+    const raw =
+      localStorage.getItem(SIGNATURE_SLOTS_STORAGE_KEY) ||
+      sessionStorage.getItem(SIGNATURE_SLOTS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return DEFAULT_SIGNATURE_SLOTS.map((def, idx) => {
+          const found = parsed[idx];
+          if (!found || typeof found !== 'object') return { ...def };
+          return {
+            id: idx,
+            label: typeof found.label === 'string' ? found.label : def.label,
+            signerText: typeof found.signerText === 'string' ? found.signerText : '',
+            imageDataUrl: typeof found.imageDataUrl === 'string' ? found.imageDataUrl : '',
+            bgRemoved: Boolean(found.bgRemoved),
+          };
+        });
+      }
+    }
+    const legacy = getSavedSignatureImage();
+    const initial = DEFAULT_SIGNATURE_SLOTS.map(s => ({ ...s }));
+    if (legacy) {
+      initial[0].imageDataUrl = legacy;
+    }
+    return initial;
+  } catch {
+    return DEFAULT_SIGNATURE_SLOTS.map(s => ({ ...s }));
+  }
+};
+
+export const saveSignatureSlots = (slots: SignatureSlot[]): void => {
+  try {
+    const serialized = JSON.stringify(slots);
+    localStorage.setItem(SIGNATURE_SLOTS_STORAGE_KEY, serialized);
+    sessionStorage.setItem(SIGNATURE_SLOTS_STORAGE_KEY, serialized);
+  } catch (e) {
+    console.warn('Không thể lưu danh sách 4 ảnh chữ ký vào trình duyệt:', e);
+  }
+};
+
+export const getActiveSignatureSlotIndex = (): number => {
+  try {
+    const val = Number(
+      localStorage.getItem(ACTIVE_SIG_SLOT_STORAGE_KEY) ||
+        sessionStorage.getItem(ACTIVE_SIG_SLOT_STORAGE_KEY) ||
+        '0'
+    );
+    return Number.isInteger(val) && val >= 0 && val < 4 ? val : 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const saveActiveSignatureSlotIndex = (idx: number): void => {
+  try {
+    const safeIdx = Math.max(0, Math.min(3, Math.floor(idx)));
+    localStorage.setItem(ACTIVE_SIG_SLOT_STORAGE_KEY, String(safeIdx));
+    sessionStorage.setItem(ACTIVE_SIG_SLOT_STORAGE_KEY, String(safeIdx));
+  } catch {}
 };
 
 export const VNPT_SMARTCA_DEFAULTS = {

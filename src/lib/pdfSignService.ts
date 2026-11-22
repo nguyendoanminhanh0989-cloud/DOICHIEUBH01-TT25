@@ -146,11 +146,12 @@ export function extractCertDisplayInfo(subjectDN: string): {
 }
 
 /**
- * Tách nền trắng/xám của ảnh chữ ký tay thành trong suốt (RGBA)
- * Giữ nguyên 100% thuật toán MakeBackgroundTransparent trong MainView.xaml.cs (dòng 1479-1519)
+ * Tách nền trắng/xám của ảnh chữ ký tay thành trong suốt (RGBA) và tự động cắt viền trống.
+ * Hỗ trợ chỉnh ngưỡng xóa nền (threshold mặc định 190, bảo toàn nét mực xanh/đỏ của con dấu & chữ ký).
  */
 export async function makeSignatureBackgroundTransparent(
-  imageSourceUrlOrBase64: string
+  imageSourceUrlOrBase64: string,
+  threshold = 190
 ): Promise<HTMLCanvasElement> {
   const img = await loadImageElement(imageSourceUrlOrBase64);
   const canvas = document.createElement('canvas');
@@ -163,6 +164,10 @@ export async function makeSignatureBackgroundTransparent(
   const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imgData.data;
 
+  const safeThreshold = Math.max(120, Math.min(245, Math.round(threshold)));
+  const fadeStart = Math.max(60, safeThreshold - 75);
+  const fadeSpan = Math.max(1, safeThreshold - fadeStart);
+
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i];
     const g = data[i + 1];
@@ -170,14 +175,17 @@ export async function makeSignatureBackgroundTransparent(
     const a = data[i + 3];
     if (a === 0) continue;
 
-    // Tính độ sáng (Luminance) của điểm ảnh
+    // Tính độ sáng (Luminance) và độ bão hòa màu để bảo toàn nét mực xanh/đỏ (con dấu) khi xóa nền xám
     const luminance = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-    if (luminance > 180) {
-      // Nền trắng / xám nhạt -> trong suốt hoàn toàn
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    const saturation = maxC - minC;
+
+    if (luminance > safeThreshold && saturation < 45) {
       data[i + 3] = 0;
-    } else if (luminance > 100) {
-      // Vùng viền chuyển tiếp -> làm mờ dần (chống răng cưa)
-      data[i + 3] = Math.round(((180 - luminance) * 255) / 80);
+    } else if (luminance > fadeStart && saturation < 45) {
+      const nextAlpha = Math.round(((safeThreshold - luminance) * 255) / fadeSpan);
+      data[i + 3] = Math.min(a, Math.max(0, nextAlpha));
     }
   }
 
@@ -219,6 +227,50 @@ export async function makeSignatureBackgroundTransparent(
   }
 
   return canvas;
+}
+
+/**
+ * Xóa nền ảnh (JPG/JPEG/PNG/BMP) và xuất ra DataURL PNG trong suốt, tối ưu kích thước để lưu bền vững 4 ảnh.
+ */
+export async function removeImageBackgroundToPng(
+  imageSourceUrlOrBase64: string,
+  threshold = 190
+): Promise<string> {
+  const transparentCanvas = await makeSignatureBackgroundTransparent(imageSourceUrlOrBase64, threshold);
+  const maxW = 900;
+  const maxH = 500;
+  if (transparentCanvas.width <= maxW && transparentCanvas.height <= maxH) {
+    return transparentCanvas.toDataURL('image/png');
+  }
+  const ratio = Math.min(maxW / transparentCanvas.width, maxH / transparentCanvas.height);
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = Math.max(1, Math.round(transparentCanvas.width * ratio));
+  outCanvas.height = Math.max(1, Math.round(transparentCanvas.height * ratio));
+  const outCtx = outCanvas.getContext('2d');
+  if (!outCtx) return transparentCanvas.toDataURL('image/png');
+  outCtx.drawImage(transparentCanvas, 0, 0, outCanvas.width, outCanvas.height);
+  return outCanvas.toDataURL('image/png');
+}
+
+/**
+ * Tối ưu kích thước ảnh chữ ký giữ nguyên nền và chuẩn hóa sang PNG.
+ */
+export async function normalizeSignatureImageToPng(
+  imageSourceUrlOrBase64: string
+): Promise<string> {
+  const img = await loadImageElement(imageSourceUrlOrBase64);
+  const srcW = img.naturalWidth || img.width || 400;
+  const srcH = img.naturalHeight || img.height || 200;
+  const maxW = 900;
+  const maxH = 500;
+  const ratio = Math.min(1, maxW / srcW, maxH / srcH);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(srcW * ratio));
+  canvas.height = Math.max(1, Math.round(srcH * ratio));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return imageSourceUrlOrBase64;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
 }
 
 function loadImageElement(src: string): Promise<HTMLImageElement> {
@@ -263,6 +315,8 @@ export async function createCompositeSignatureStamp(options: {
   orgName: string;
   signDate?: Date;
   signatureImageBase64?: string;
+  signerDisplayText?: string;
+  removeBackground?: boolean;
 }): Promise<{
   dataUrl: string;
   width: number;
@@ -281,31 +335,69 @@ export async function createCompositeSignatureStamp(options: {
   // Nền trong suốt hoàn toàn
   ctx.clearRect(0, 0, width, height);
 
+  const customSignerText = (options.signerDisplayText || '').trim();
+  const hasLeftVisual = Boolean(
+    (options.signatureImageBase64 && options.signatureImageBase64.trim()) || customSignerText
+  );
   let hasSignatureImage = false;
   let textStartX = 24;
+  let leftCenterX = Math.round(width * 0.25);
+  let leftRightEdge = Math.round(width * 0.44);
+  const nameFooterH = customSignerText ? 58 : 0;
 
   // 1. Vẽ ảnh chữ ký tay / con dấu nằm ở bên trái (không bị chữ CKS đè lên)
   if (options.signatureImageBase64 && options.signatureImageBase64.trim()) {
     try {
-      const transparentSigCanvas = await makeSignatureBackgroundTransparent(
-        options.signatureImageBase64.trim()
-      );
-      const maxImgW = Math.round(width * 0.5);
-      const maxImgH = height - 16;
-      const ratio = Math.min(
-        maxImgW / transparentSigCanvas.width,
-        maxImgH / transparentSigCanvas.height
-      );
-      const newW = Math.round(transparentSigCanvas.width * ratio);
-      const newH = Math.round(transparentSigCanvas.height * ratio);
+      const sigSource: HTMLCanvasElement | HTMLImageElement =
+        options.removeBackground === false
+          ? await loadImageElement(options.signatureImageBase64.trim())
+          : await makeSignatureBackgroundTransparent(options.signatureImageBase64.trim());
+      const srcW = sigSource instanceof HTMLImageElement ? sigSource.naturalWidth || sigSource.width : sigSource.width;
+      const srcH = sigSource instanceof HTMLImageElement ? sigSource.naturalHeight || sigSource.height : sigSource.height;
+      const maxImgW = Math.round(width * 0.49);
+      const maxImgH = Math.max(80, height - 16 - nameFooterH);
+      const ratio = Math.min(maxImgW / srcW, maxImgH / srcH);
+      const newW = Math.round(srcW * ratio);
+      const newH = Math.round(srcH * ratio);
       const posX = Math.max(12, Math.round((maxImgW - newW) / 2) + 8);
-      const posY = Math.round((height - newH) / 2);
-      ctx.drawImage(transparentSigCanvas, posX, posY, newW, newH);
+      const availableImgAreaH = height - nameFooterH;
+      const posY = Math.max(8, Math.round((availableImgAreaH - newH) / 2));
+      ctx.drawImage(sigSource, posX, posY, newW, newH);
       hasSignatureImage = true;
-      textStartX = Math.max(posX + newW + 20, Math.round(width * 0.44));
+      leftCenterX = Math.round(posX + newW / 2);
+      leftRightEdge = posX + newW;
+      textStartX = Math.max(leftRightEdge + 20, Math.round(width * 0.44));
     } catch (e) {
       console.warn('Bỏ qua ảnh chữ ký lỗi:', e);
     }
+  }
+
+  // 1b. Chèn tên người ký dạng text (insert vào ảnh) nằm ngay dưới ảnh chữ ký ở cột bên trái
+  if (customSignerText) {
+    const leftColMaxW = Math.round(width * 0.48);
+    let nameFontSize = 30;
+    while (nameFontSize > 16) {
+      ctx.font = `bold ${nameFontSize}px "Times New Roman", Georgia, Arial, sans-serif`;
+      if (ctx.measureText(customSignerText).width <= leftColMaxW - 12) {
+        break;
+      }
+      nameFontSize -= 2;
+    }
+    ctx.font = `bold ${nameFontSize}px "Times New Roman", Georgia, Arial, sans-serif`;
+    ctx.fillStyle = '#111827';
+    ctx.textAlign = 'center';
+    const measuredW = ctx.measureText(customSignerText).width;
+    const clampedCenterX = Math.max(
+      Math.ceil(measuredW / 2) + 12,
+      Math.min(leftCenterX, leftColMaxW - Math.ceil(measuredW / 2))
+    );
+    const nameY = hasSignatureImage ? height - 16 : Math.round(height / 2 + nameFontSize * 0.35);
+    ctx.fillText(customSignerText, clampedCenterX, nameY);
+    ctx.textAlign = 'left';
+
+    const textRightEdge = Math.round(clampedCenterX + measuredW / 2);
+    leftRightEdge = Math.max(hasSignatureImage ? leftRightEdge : 0, textRightEdge);
+    textStartX = Math.max(leftRightEdge + 20, Math.round(width * 0.44));
   }
 
   // 2. Vẽ chữ đỏ thông tin CKS nhỏ gọn nằm bên cạnh phải ảnh chữ ký (không che lấp ảnh chữ ký)
@@ -320,10 +412,10 @@ export async function createCompositeSignatureStamp(options: {
 
   const rightMargin = 14;
   const maxTextW = Math.max(320, width - textStartX - rightMargin);
-  const maxTextH = hasSignatureImage ? Math.round(height * 0.64) : height - 48;
+  const maxTextH = hasLeftVisual ? Math.round(height * 0.64) : height - 48;
 
-  let fontSize = hasSignatureImage ? 20 : 26;
-  const minFontSize = hasSignatureImage ? 13 : 15;
+  let fontSize = hasLeftVisual ? 20 : 26;
+  const minFontSize = hasLeftVisual ? 13 : 15;
   let wrappedLines: string[] = [];
   let lineHeight = Math.round(fontSize * 1.26);
 
@@ -342,6 +434,7 @@ export async function createCompositeSignatureStamp(options: {
 
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.fillStyle = 'rgb(210, 0, 0)';
+  ctx.textAlign = 'left';
   for (const line of wrappedLines) {
     ctx.fillText(line, textStartX, startY);
     startY += lineHeight;
@@ -841,6 +934,8 @@ export async function signPdfDocument(options: {
   box: PdfRelativeBox;
   method: 'SMARTCA' | 'USB_TOKEN';
   signatureImageBase64?: string;
+  signerDisplayText?: string;
+  removeBackground?: boolean;
   onProgress?: (msg: string) => void;
 }): Promise<{
   signedPdfBytes: Uint8Array;
@@ -848,7 +943,16 @@ export async function signPdfDocument(options: {
   orgName: string;
   serialNumber: string;
 }> {
-  const { pdfBytes, pageNumber, box, method, signatureImageBase64, onProgress } = options;
+  const {
+    pdfBytes,
+    pageNumber,
+    box,
+    method,
+    signatureImageBase64,
+    signerDisplayText,
+    removeBackground,
+    onProgress,
+  } = options;
 
   let rawCertBase64 = '';
   let caCertBase64 = '';
@@ -900,6 +1004,8 @@ export async function signPdfDocument(options: {
     orgName,
     signDate: now,
     signatureImageBase64,
+    signerDisplayText,
+    removeBackground,
   });
 
   const compressedRgb = await compressZlibFlate(stamp.rgbBytes);

@@ -41,13 +41,18 @@ import {
   signPdfDocument,
   createCompositeSignatureStamp,
   extractCertDisplayInfo,
+  removeImageBackgroundToPng,
+  normalizeSignatureImageToPng,
   PdfRelativeBox,
   PdfPageInfo,
 } from '../lib/pdfSignService';
 import {
   getSmartCAConfig,
-  getSavedSignatureImage,
-  saveSignatureImage,
+  SignatureSlot,
+  getSavedSignatureSlots,
+  saveSignatureSlots,
+  getActiveSignatureSlotIndex,
+  saveActiveSignatureSlotIndex,
   DEFAULT_VNPT_SUBJECT,
 } from '../lib/vnptSmartCaService';
 import ConfigModal from './ConfigModal';
@@ -359,10 +364,29 @@ export default function ChungTuTt12Module() {
   const [pdfStatusType, setPdfStatusType] = useState<'info' | 'success' | 'error' | 'loading'>('info');
   const [isPdfBusy, setIsPdfBusy] = useState(false);
 
-  // Ảnh chữ ký tay (DataURL / Base64)
-  const [signatureImageB64, setSignatureImageB64] = useState<string>(() => getSavedSignatureImage());
+  // Danh sách 4 ô lưu trữ ảnh chữ ký tay + ghi chú + tên người ký dưới ảnh
+  const [sigSlots, setSigSlots] = useState<SignatureSlot[]>(() => getSavedSignatureSlots());
+  const [activeSlotIdx, setActiveSlotIdx] = useState<number>(() => getActiveSignatureSlotIndex());
+  const [autoRemoveBgOnUpload, setAutoRemoveBgOnUpload] = useState<boolean>(true);
+  const [bgThreshold, setBgThreshold] = useState<number>(195);
+  const [isRemovingBg, setIsRemovingBg] = useState<boolean>(false);
   const [stampPreviewUrl, setStampPreviewUrl] = useState<string>('');
   const [lastCertDisplay, setLastCertDisplay] = useState<{ signerName: string; orgName: string } | null>(null);
+
+  const activeSlot = sigSlots[activeSlotIdx] || sigSlots[0];
+
+  const updateActiveSlot = (patch: Partial<SignatureSlot>) => {
+    setSigSlots(prev => {
+      const next = prev.map((s, idx) => (idx === activeSlotIdx ? { ...s, ...patch } : s));
+      saveSignatureSlots(next);
+      return next;
+    });
+  };
+
+  const handleSelectSigSlot = (idx: number) => {
+    setActiveSlotIdx(idx);
+    saveActiveSignatureSlotIndex(idx);
+  };
 
   // Tọa độ tương đối của khung chữ ký trên trang PDF (0..1)
   const [sigBox, setSigBox] = useState<PdfRelativeBox>(() =>
@@ -487,7 +511,7 @@ export default function ChungTuTt12Module() {
     }
   };
 
-  // Tự động tạo bản xem trước con dấu chữ ký (ảnh chữ ký tay bên trái + thông tin CKS nhỏ gọn bên phải)
+  // Tự động tạo bản xem trước con dấu chữ ký (ảnh chữ ký tay bên trái + tên người ký dưới ảnh + thông tin CKS bên phải)
   useEffect(() => {
     let cancelled = false;
     const cfg = getSmartCAConfig();
@@ -497,7 +521,9 @@ export default function ChungTuTt12Module() {
     createCompositeSignatureStamp({
       signerName,
       orgName,
-      signatureImageBase64: signatureImageB64,
+      signatureImageBase64: activeSlot?.imageDataUrl || '',
+      signerDisplayText: activeSlot?.signerText || '',
+      removeBackground: activeSlot?.bgRemoved ? false : true,
     })
       .then(res => {
         if (!cancelled) setStampPreviewUrl(res.dataUrl);
@@ -507,7 +533,13 @@ export default function ChungTuTt12Module() {
     return () => {
       cancelled = true;
     };
-  }, [signatureImageB64, showConfigModal, lastCertDisplay]);
+  }, [
+    activeSlot?.imageDataUrl,
+    activeSlot?.signerText,
+    activeSlot?.bgRemoved,
+    showConfigModal,
+    lastCertDisplay,
+  ]);
 
   // Render trang PDF lên Canvas mỗi khi pdfBytes hoặc pdfPageNumber thay đổi
   useEffect(() => {
@@ -1051,21 +1083,69 @@ export default function ChungTuTt12Module() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Vui lòng chọn ảnh chữ ký có dung lượng nhỏ hơn 2MB!');
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Vui lòng chọn ảnh chữ ký có dung lượng nhỏ hơn 5MB!');
       return;
     }
+    const isJpgOrBmp = /\.(jpe?g|bmp)$/i.test(file.name) || file.type === 'image/jpeg' || file.type === 'image/bmp';
     const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = String(ev.target?.result || '');
-      setSignatureImageB64(dataUrl);
-      saveSignatureImage(dataUrl);
-      setPdfStatusMsg(
-        '✅ Đã tải ảnh chữ ký tay và tự động tách nền trắng thành trong suốt! Bạn có thể xem trước ngay trong khung chữ ký.'
-      );
-      setPdfStatusType('success');
+    reader.onload = async ev => {
+      const rawDataUrl = String(ev.target?.result || '');
+      if (!rawDataUrl) return;
+      setIsRemovingBg(true);
+      try {
+        if (autoRemoveBgOnUpload || isJpgOrBmp) {
+          const pngUrl = await removeImageBackgroundToPng(rawDataUrl, bgThreshold);
+          updateActiveSlot({ imageDataUrl: pngUrl, bgRemoved: true });
+          setPdfStatusMsg(
+            isJpgOrBmp
+              ? `✅ Đã chuyển ảnh "${file.name}" (JPG/BMP) sang PNG xóa nền trong suốt và lưu vào Ô chữ ký #${activeSlotIdx + 1} (${activeSlot?.label || ''})!`
+              : `✅ Đã xóa nền & lưu ảnh chữ ký vào Ô #${activeSlotIdx + 1} (${activeSlot?.label || ''})!`
+          );
+        } else {
+          const pngUrl = await normalizeSignatureImageToPng(rawDataUrl);
+          updateActiveSlot({ imageDataUrl: pngUrl, bgRemoved: false });
+          setPdfStatusMsg(`✅ Đã lưu ảnh chữ ký (giữ nền gốc) vào Ô #${activeSlotIdx + 1} (${activeSlot?.label || ''}).`);
+        }
+        setPdfStatusType('success');
+      } catch (err: any) {
+        setPdfStatusMsg(`❌ Không xử lý được ảnh chữ ký: ${err?.message || err}`);
+        setPdfStatusType('error');
+      } finally {
+        setIsRemovingBg(false);
+      }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleRemoveBgActiveSlot = async () => {
+    if (!activeSlot?.imageDataUrl) return;
+    setIsRemovingBg(true);
+    try {
+      const pngUrl = await removeImageBackgroundToPng(activeSlot.imageDataUrl, bgThreshold);
+      updateActiveSlot({ imageDataUrl: pngUrl, bgRemoved: true });
+      setPdfStatusMsg(`✨ Đã xóa nền trắng/xám và chuyển Ô #${activeSlotIdx + 1} sang PNG trong suốt!`);
+      setPdfStatusType('success');
+    } catch (err: any) {
+      setPdfStatusMsg(`❌ Lỗi khi xóa nền ảnh: ${err?.message || err}`);
+      setPdfStatusType('error');
+    } finally {
+      setIsRemovingBg(false);
+    }
+  };
+
+  const handleDownloadActiveSlotPng = () => {
+    if (!activeSlot?.imageDataUrl) return;
+    const slug = (activeSlot.label || `chu_ky_${activeSlotIdx + 1}`)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase();
+    const a = document.createElement('a');
+    a.href = activeSlot.imageDataUrl;
+    a.download = `chu_ky_${activeSlotIdx + 1}_${slug || 'png'}.png`;
+    a.click();
   };
 
   const handleScaleSliderChange = (newScale: number) => {
@@ -1152,7 +1232,9 @@ export default function ChungTuTt12Module() {
         pageNumber: pdfPageNumber,
         box: sigBox,
         method,
-        signatureImageBase64: signatureImageB64,
+        signatureImageBase64: activeSlot?.imageDataUrl || '',
+        signerDisplayText: activeSlot?.signerText || '',
+        removeBackground: activeSlot?.bgRemoved ? false : true,
         onProgress: msg => setPdfStatusMsg(msg),
       });
 
@@ -2035,104 +2117,242 @@ export default function ChungTuTt12Module() {
               </div>
             </div>
 
-            {/* Khung Import Ảnh Chữ Ký Tay & Chỉnh kích thước / Vị trí nhanh cho Mẫu 02/BH */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
-              {/* Cột trái: Import Ảnh chữ ký tay */}
-              <div className="lg:col-span-6 flex flex-wrap sm:flex-nowrap items-center gap-2.5">
-                <div className="bg-white border border-dashed border-rose-300 rounded-xl p-1 h-12 w-36 shrink-0 flex items-center justify-center overflow-hidden shadow-2xs">
-                  {stampPreviewUrl ? (
-                    <img
-                      src={stampPreviewUrl}
-                      alt="Xem trước chữ ký"
-                      className="max-h-full max-w-full object-contain"
-                    />
-                  ) : (
-                    <span className="text-[10px] text-slate-400 italic">Xem trước chữ ký</span>
-                  )}
+            {/* Khung Import 4 Ảnh Chữ Ký Tay + Ghi chú + Tên người ký + Xóa nền JPG -> PNG & Chỉnh kích thước */}
+            <div className="bg-slate-50 px-3 py-2 rounded-xl border border-slate-200 space-y-2">
+              {/* Thanh chọn nhanh 4 ô chữ ký đã lưu */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-200">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1 mr-1">
+                    <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                    Kho 4 chữ ký:
+                  </span>
+                  {sigSlots.map((slot, idx) => {
+                    const isActive = idx === activeSlotIdx;
+                    const hasImg = Boolean(slot.imageDataUrl);
+                    return (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        onClick={() => handleSelectSigSlot(idx)}
+                        className={cn(
+                          'px-2 py-1 rounded-lg border text-[11px] font-bold flex items-center gap-1.5 transition cursor-pointer',
+                          isActive
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-indigo-50'
+                        )}
+                        title={
+                          hasImg
+                            ? `Ô #${idx + 1}: ${slot.label}${slot.signerText ? ` — ${slot.signerText}` : ''}`
+                            : `Ô #${idx + 1}: ${slot.label} (chưa có ảnh)`
+                        }
+                      >
+                        <span
+                          className={cn(
+                            'w-2 h-2 rounded-full shrink-0',
+                            hasImg ? 'bg-emerald-400' : isActive ? 'bg-indigo-200' : 'bg-slate-300'
+                          )}
+                        />
+                        {hasImg && (
+                          <img
+                            src={slot.imageDataUrl}
+                            alt={slot.label}
+                            className="h-4 w-7 object-contain rounded-xs bg-white/90 px-0.5"
+                          />
+                        )}
+                        <span className="max-w-[125px] truncate">
+                          #{idx + 1}. {slot.label || `Chữ ký ${idx + 1}`}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <div className="space-y-1">
-                  <div className="text-[11px] font-extrabold text-slate-800 flex items-center gap-1.5">
-                    <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
-                    Ảnh chữ ký tay / Con dấu (Tự động xóa nền trắng):
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <label className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 transition">
-                      <Upload className="w-3 h-3" />
-                      {signatureImageB64 ? 'Đổi ảnh chữ ký tay' : 'Import Ảnh chữ ký tay (.png, .jpg)'}
-                      <input
-                        type="file"
-                        accept=".png,.jpg,.jpeg,.bmp"
-                        className="hidden"
-                        onChange={handleUploadSignatureImage}
-                      />
-                    </label>
-                    {signatureImageB64 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSignatureImageB64('');
-                          saveSignatureImage('');
-                        }}
-                        className="px-2 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-[11px] font-bold transition cursor-pointer"
-                      >
-                        ✕ Xóa ảnh chữ ký
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowConfigModal(true)}
-                      className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold transition cursor-pointer"
-                    >
-                      ⚙ Cấu hình CKS
-                    </button>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(true)}
+                  className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold transition cursor-pointer"
+                >
+                  ⚙ Cấu hình CKS
+                </button>
               </div>
 
-              {/* Cột phải: Thanh trượt kích thước & Vị trí gợi ý Mẫu 02/BH */}
-              <div className="lg:col-span-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-t lg:border-t-0 lg:border-l border-slate-200 pt-2 lg:pt-0 lg:pl-3">
-                <div className="space-y-0.5">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 gap-2">
-                    <span>Kích thước khung chữ ký:</span>
-                    <span className="text-indigo-700 font-extrabold">{sigScalePercent}%</span>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                {/* Cột trái: Xem trước + Ghi chú + Tên người ký dưới ảnh + Import & Xóa nền PNG */}
+                <div className="lg:col-span-7 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                  <div
+                    className="border border-dashed border-rose-300 rounded-xl p-1 h-16 w-44 shrink-0 flex items-center justify-center overflow-hidden shadow-2xs"
+                    style={{
+                      backgroundImage:
+                        'linear-gradient(45deg, #f1f5f9 25%, transparent 25%), linear-gradient(-45deg, #f1f5f9 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f1f5f9 75%), linear-gradient(-45deg, transparent 75%, #f1f5f9 75%)',
+                      backgroundSize: '12px 12px',
+                      backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0px',
+                      backgroundColor: '#ffffff',
+                    }}
+                    title="Xem trước mẫu chữ ký sẽ đóng lên PDF"
+                  >
+                    {stampPreviewUrl ? (
+                      <img
+                        src={stampPreviewUrl}
+                        alt="Xem trước chữ ký"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-[10px] text-slate-400 italic">Xem trước chữ ký</span>
+                    )}
                   </div>
-                  <input
-                    type="range"
-                    min={50}
-                    max={200}
-                    value={sigScalePercent}
-                    onChange={e => handleScaleSliderChange(Number(e.target.value))}
-                    className="w-40 accent-indigo-600 cursor-pointer"
-                  />
+
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      <label className="flex items-center gap-1 text-[10.5px] font-bold text-slate-600">
+                        <span className="shrink-0">Ghi chú:</span>
+                        <input
+                          type="text"
+                          value={activeSlot?.label || ''}
+                          onChange={e => updateActiveSlot({ label: e.target.value })}
+                          placeholder={`Tên loại chữ ký #${activeSlotIdx + 1}`}
+                          className="w-full px-2 py-0.5 rounded-md border border-slate-300 bg-white text-[11px] font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                      </label>
+                      <label className="flex items-center gap-1 text-[10.5px] font-bold text-slate-600">
+                        <span className="shrink-0">Tên dưới ảnh:</span>
+                        <input
+                          type="text"
+                          value={activeSlot?.signerText || ''}
+                          onChange={e => updateActiveSlot({ signerText: e.target.value })}
+                          placeholder="VD: NGUYỄN THỊ LIÊN"
+                          className="w-full px-2 py-0.5 rounded-md border border-slate-300 bg-white text-[11px] font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          title="Chèn tên người ký dạng text ngay phía dưới ảnh chữ ký"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <label className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold cursor-pointer inline-flex items-center gap-1 transition">
+                        <Upload className="w-3 h-3" />
+                        {activeSlot?.imageDataUrl ? `Đổi ảnh #${activeSlotIdx + 1}` : `Import ảnh #${activeSlotIdx + 1} (.jpg, .png)`}
+                        <input
+                          type="file"
+                          accept=".png,.jpg,.jpeg,.bmp,.webp"
+                          className="hidden"
+                          onChange={handleUploadSignatureImage}
+                        />
+                      </label>
+
+                      <label
+                        className="inline-flex items-center gap-1 text-[10.5px] font-semibold text-slate-700 cursor-pointer select-none px-1.5 py-0.5 rounded bg-white border border-slate-200"
+                        title="Ảnh JPG/JPEG/BMP khi import sẽ tự động xóa nền trắng/xám thành PNG trong suốt"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={autoRemoveBgOnUpload}
+                          onChange={e => setAutoRemoveBgOnUpload(e.target.checked)}
+                          className="accent-indigo-600"
+                        />
+                        Tự xóa nền → PNG
+                      </label>
+
+                      {activeSlot?.imageDataUrl && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={isRemovingBg}
+                            onClick={handleRemoveBgActiveSlot}
+                            className="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                            title="Xóa nền trắng/xám hiện tại và xuất thành ảnh PNG trong suốt"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            Xóa nền → PNG
+                          </button>
+
+                          <div
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-bold text-slate-600"
+                            title="Kéo để chỉnh độ mạnh khi bấm Xóa nền → PNG"
+                          >
+                            <span>Ngưỡng: {bgThreshold}</span>
+                            <input
+                              type="range"
+                              min={140}
+                              max={235}
+                              value={bgThreshold}
+                              onChange={e => setBgThreshold(Number(e.target.value))}
+                              className="w-16 accent-teal-600 cursor-pointer"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleDownloadActiveSlotPng}
+                            className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
+                            title="Tải ảnh chữ ký PNG đã xóa nền về máy"
+                          >
+                            <Download className="w-3 h-3" />
+                            Tải PNG
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => updateActiveSlot({ imageDataUrl: '', bgRemoved: false })}
+                            className="px-2 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-[11px] font-bold transition cursor-pointer"
+                          >
+                            ✕ Xóa ảnh
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <div className="text-[11px] font-bold text-slate-600">
-                    Đặt nhanh vị trí ký trên Mẫu 02/BH:
+                {/* Cột phải: Thanh trượt kích thước & 4 vị trí gợi ý Mẫu 02/BH */}
+                <div className="lg:col-span-5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t lg:border-t-0 lg:border-l border-slate-200 pt-2 lg:pt-0 lg:pl-3">
+                  <div className="space-y-0.5 shrink-0">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 gap-2">
+                      <span>Kích thước khung:</span>
+                      <span className="text-indigo-700 font-extrabold">{sigScalePercent}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50}
+                      max={200}
+                      value={sigScalePercent}
+                      onChange={e => handleScaleSliderChange(Number(e.target.value))}
+                      className="w-32 accent-indigo-600 cursor-pointer"
+                    />
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setSigBox(prev => ({ ...prev, relX: 0.08, relY: 0.62 }))}
-                      className="px-2 py-1 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 text-[11px] font-bold transition cursor-pointer"
-                    >
-                      1. Người lập biểu
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSigBox(prev => ({ ...prev, relX: 0.37, relY: 0.62 }))}
-                      className="px-2 py-1 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 text-[11px] font-bold transition cursor-pointer"
-                    >
-                      2. Kế toán trưởng
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSigBox(prev => ({ ...prev, relX: 0.65, relY: 0.62 }))}
-                      className="px-2 py-1 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 text-[11px] font-bold transition cursor-pointer"
-                    >
-                      3. Thủ trưởng đơn vị
-                    </button>
+
+                  <div className="space-y-1">
+                    <div className="text-[10.5px] font-bold text-slate-600">
+                      Đặt nhanh vị trí trên Mẫu 02/BH:
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSigBox(prev => ({ ...prev, relX: 0.04, relY: 0.62 }))}
+                        className="px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 text-[10.5px] font-bold transition cursor-pointer"
+                      >
+                        1. Lập biểu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSigBox(prev => ({ ...prev, relX: 0.28, relY: 0.62 }))}
+                        className="px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 text-[10.5px] font-bold transition cursor-pointer"
+                      >
+                        2. KHTH
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSigBox(prev => ({ ...prev, relX: 0.51, relY: 0.62 }))}
+                        className="px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 text-[10.5px] font-bold transition cursor-pointer"
+                      >
+                        3. Kế toán
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSigBox(prev => ({ ...prev, relX: 0.73, relY: 0.62 }))}
+                        className="px-2 py-0.5 rounded-lg bg-white hover:bg-indigo-50 text-slate-700 border border-slate-300 text-[10.5px] font-bold transition cursor-pointer"
+                      >
+                        4. Thủ trưởng
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
