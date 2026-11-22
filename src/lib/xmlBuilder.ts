@@ -782,7 +782,7 @@ export async function prepareXmlForSigning(
     objectElement = `<Object Id="${objId}"><SignatureProperties xmlns=""><SignatureProperty Target="#${sigId}" Id="${sigPropId}"><SigningTime>${signingTime}</SigningTime></SignatureProperty></SignatureProperties></Object>`;
   } else {
     // Fallback an toàn nếu môi trường không có DOMParser
-    const hoSoMatch = xmlString.match(/<(?:THONGTINHOSO|DS_CHITIET|DANHSACH_[A-Z0-9_]+)\s+[^>]*Id="([^"]+)"/i);
+    const hoSoMatch = xmlString.match(/<(?:THONGTINHOSO|TT_HOSO|DS_CHITIET|DANHSACH_[A-Z0-9_]+)\s+[^>]*Id="([^"]+)"/i);
     targetId = hoSoMatch ? hoSoMatch[1] : '';
     const sigSuffix = targetId || `Id-${genId()}`;
     sigId = `CHUKYDONVI-${sigSuffix}`;
@@ -837,7 +837,7 @@ export function embedSignatureInXml(
 
   const cleanCert = (certBase64 || '').replace(/-----[^\n]+-----/g, '').replace(/\s+/g, '');
   const subject = subjectDN || 'CN=CSKCB';
-  const hoSoMatch = xmlString.match(/<(?:THONGTINHOSO|DS_CHITIET|DANHSACH_[A-Z0-9_]+)\s+[^>]*Id="([^"]+)"/i);
+  const hoSoMatch = xmlString.match(/<(?:THONGTINHOSO|TT_HOSO|DS_CHITIET|DANHSACH_[A-Z0-9_]+)\s+[^>]*Id="([^"]+)"/i);
   const hoSoId = hoSoMatch ? hoSoMatch[1] : '';
   const isEnveloped = !hoSoId;
 

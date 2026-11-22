@@ -223,6 +223,80 @@ export async function bhxhSubmitGiamDinh3176(
 }
 
 /**
+ * Gửi Hồ sơ điều chỉnh / thu hồi ĐNTT Mẫu số 09/BH lên Cổng BHXH (Mục IX Quyết định 326/QĐ-BHXH)
+ * - Endpoint: /api/HSDCTT12/GuiHoSoDieuChinh09BH
+ * - Header: accessToken, tokenId, passwordHash (MD5)
+ * - Body: username, loaiHs=73, maCskcb, maTinh, kyQT, fileHsBase64
+ */
+export async function bhxhSubmitMau09BH(
+  org: Organization,
+  tokens: { access_token: string; id_token: string },
+  signedXml: string,
+  kyQT?: string
+): Promise<{ maKetQua: string; maGD: string; thoiGianTiepNhan: string; message: string }> {
+  const rawPassword = org.bhxh_account.password || '';
+  const isMd5 = /^[a-f0-9]{32}$/i.test(rawPassword);
+  const passwordHash = (isMd5 ? rawPassword : md5(rawPassword)).trim();
+
+  const maCskcb = org.ma_cskcb.trim();
+  const maTinh = maCskcb.substring(0, 2);
+
+  const cleanXml = signedXml.replace(/^\uFEFF/, '');
+  const bytes = new TextEncoder().encode(cleanXml);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  const fileHsBase64 = btoa(bin);
+
+  const formData = new URLSearchParams();
+  formData.append('username', org.bhxh_account.username.trim());
+  formData.append('loaiHs', '73');
+  formData.append('maTinh', maTinh);
+  formData.append('maCskcb', maCskcb);
+  formData.append('maCSKCB', maCskcb);
+  if (kyQT) formData.append('kyQT', kyQT.trim());
+  formData.append('fileHsBase64', fileHsBase64);
+
+  const submitPath = '/api/HSDCTT12/GuiHoSoDieuChinh09BH';
+  const customHeaders: Record<string, string> = {
+    accessToken: tokens.access_token,
+    tokenId: tokens.id_token,
+    passwordHash,
+  };
+  const bodyStr = formData.toString();
+
+  let data: any;
+  try {
+    const res = await fetchBhxh(submitPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...customHeaders },
+      body: bodyStr,
+    });
+    if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+    data = await res.json();
+  } catch (directErr: any) {
+    const isNetErr =
+      directErr instanceof TypeError ||
+      /Failed to fetch|NetworkError|Load failed/i.test(directErr?.message || '');
+    if (!isNetErr) throw directErr;
+    data = await forwardViaLocalTool(submitPath, customHeaders, bodyStr);
+  }
+
+  const maKetQua = String(data.maKetQua ?? data.MaKetQua ?? '');
+  const thongDiep = data.thongDiep ?? data.ThongDiep ?? '';
+  return {
+    maKetQua,
+    maGD: data.maGiaoDich ?? data.MaGiaoDich ?? data.maGD ?? '',
+    thoiGianTiepNhan: data.thoiGianTiepNhan ?? data.ThoiGianTiepNhan ?? '',
+    message:
+      maKetQua === '200'
+        ? thongDiep || 'Gửi Mẫu 09/BH thành công'
+        : `Cổng từ chối (Mã ${maKetQua})${thongDiep ? ': ' + thongDiep : ''}`,
+  };
+}
+
+/**
  * Chuyen tiep 1 yeu cau POST toi Cong BHXH thong qua cong cu cuc bo Chay_Ky_So_USB_Token (127.0.0.1:18088).
  * Dung khi trinh duyet bi chan CORS do header tuy chinh (accessToken, tokenId, passwordHash).
  */

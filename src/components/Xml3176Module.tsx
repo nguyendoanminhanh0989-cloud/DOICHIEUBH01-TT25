@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import {
   Upload, Download, ShieldCheck, FileCode2, AlertTriangle, CheckCircle2,
   Search, Edit3, Plus, Trash2, Eye, Settings, RefreshCw, FileSpreadsheet,
-  KeyRound, Usb, Smartphone, Check, X, Filter, Layers, CheckSquare, Square
+  KeyRound, Usb, Smartphone, Check, X, Filter, Layers, CheckSquare, Square, Printer
 } from 'lucide-react';
 import {
   XML3176_TABLES,
@@ -35,12 +35,24 @@ import {
   LocalSignerStatus,
 } from '../lib/localTokenSignerService';
 import { prepareXmlForSigning } from '../lib/xmlBuilder';
-import { bhxhGetToken, bhxhSubmitGiamDinh3176 } from '../lib/bhxhService';
+import { bhxhGetToken, bhxhSubmitGiamDinh3176, bhxhSubmitMau09BH } from '../lib/bhxhService';
 import { getOrgConfig } from '../lib/signAndSubmitService';
 import ConfigModal from './ConfigModal';
+import Mau09BhModal from './Mau09BhModal';
+import {
+  Mau09BhRecord,
+  createMau09DraftFromHoso,
+  buildMau09BhXml,
+  exportMau09BhToExcel,
+  printMau09BhPdfWindow,
+  formatDisplayDateTime12,
+  compileMau09Adjustments,
+  isXml1FieldAdjusted,
+  isCostFieldAdjusted,
+} from '../lib/mau09BhService';
 import { getSessionCache, getSessionSync, removeSessionCache, setSessionCache, setSessionSync } from '../lib/sessionCache';
 
-type ActiveTab = 'ERRORS' | Xml3176TableId;
+type ActiveTab = 'ERRORS' | 'MAU09BH' | Xml3176TableId;
 
 /** Tính độ rộng cột tối ưu cho từng trường XML 3176 (Bảng 1-15) để giảm khoảng trống dư thừa và kéo ngang ít nhất */
 function getCompactXml3176ColumnWidth(col: string): number {
@@ -310,6 +322,304 @@ export default function Xml3176Module() {
     { label: string; ok: boolean; maGD?: string; time?: string; message: string }[]
   >([]);
 
+  // ============================================================================
+  // STATE QUẢN LÝ HỒ SƠ ĐIỀU CHỈNH / THU HỒI ĐNTT MẪU SỐ 09/BH (TT12/2026/TT-BTC)
+  // ============================================================================
+  const [mau09Records, setMau09Records] = useState<Mau09BhRecord[]>(() =>
+    getSessionSync<Mau09BhRecord[]>('xml3176_mau09_records_v1', [])
+  );
+  const [selectedMau09Ids, setSelectedMau09Ids] = useState<Set<string>>(() => {
+    const initial = getSessionSync<Mau09BhRecord[]>('xml3176_mau09_records_v1', []);
+    return new Set(Array.isArray(initial) ? initial.map(r => r.id) : []);
+  });
+  const [mau09ModalDrafts, setMau09ModalDrafts] = useState<Mau09BhRecord[] | null>(null);
+  const [isSigningMau09, setIsSigningMau09] = useState<boolean>(false);
+  const [mau09StatusMsg, setMau09StatusMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [previewMau09XmlRec, setPreviewMau09XmlRec] = useState<Mau09BhRecord | null>(null);
+
+  React.useEffect(() => {
+    setSessionSync('xml3176_mau09_records_v1', mau09Records);
+  }, [mau09Records]);
+
+  // Mở cửa sổ Tạo / Điều chỉnh Mẫu 09/BH từ danh sách hồ sơ bệnh nhân đã chọn ở Bảng 1
+  const openCreateMau09Modal = (targetIndices?: number[], defaultTrangThai = '1') => {
+    if (!doc) return;
+    const indices =
+      targetIndices && targetIndices.length > 0
+        ? targetIndices
+        : Array.from(selectedHosoIndices).sort((a, b) => a - b);
+    if (indices.length === 0) {
+      alert('Vui lòng tích chọn ít nhất 1 hồ sơ ở Bảng 1 để lập Hồ sơ điều chỉnh / thu hồi Mẫu 09/BH!');
+      return;
+    }
+    const org = getOrgConfig();
+    const drafts: Mau09BhRecord[] = indices.map(hIdx => {
+      const existing = mau09Records.find(r => r.hosoIndex === hIdx);
+      if (existing) {
+        const cloned: Mau09BhRecord = JSON.parse(JSON.stringify(existing));
+        if (targetIndices === undefined && defaultTrangThai === '2') {
+          cloned.ttXml1.TRANGTHAI = '2';
+        }
+        return cloned;
+      }
+      return createMau09DraftFromHoso(doc, hIdx, {
+        maCskcb: doc.maCskcb || org.ma_cskcb || '48225',
+        trangThai: defaultTrangThai,
+      });
+    });
+    setMau09ModalDrafts(drafts);
+  };
+
+  // Lưu các hồ sơ Mẫu 09/BH từ cửa sổ Tạo Mẫu 09/BH và chuyển sang Bảng Hồ sơ 09/BH
+  const handleSaveMau09ModalRecords = (
+    savedDrafts: Mau09BhRecord[],
+    syncTo3176Doc: boolean
+  ) => {
+    setMau09Records(prev => {
+      const mapById = new Map<string, Mau09BhRecord>();
+      prev.forEach(r => mapById.set(r.id, r));
+      savedDrafts.forEach(d => {
+        const existingByHoso = Array.from(mapById.values()).find(
+          x => x.hosoIndex === d.hosoIndex && x.id !== d.id
+        );
+        if (existingByHoso) {
+          mapById.delete(existingByHoso.id);
+        }
+        mapById.set(d.id, d);
+      });
+      return Array.from(mapById.values());
+    });
+
+    setSelectedMau09Ids(prev => {
+      const next = new Set(prev);
+      savedDrafts.forEach(d => next.add(d.id));
+      return next;
+    });
+
+    // Nếu người dùng tích chọn Đồng bộ cập nhật thông tin đã sửa vào dữ liệu XML 3176 đang mở
+    if (syncTo3176Doc && doc) {
+      const nextTables = { ...doc.tables };
+      const nextHosoSignStates = { ...doc.hosoSignStates };
+      let anyChanged = false;
+
+      for (const rec of savedDrafts) {
+        // 1. Đồng bộ các trường XML1 đã sửa
+        const modifiedXml1 = rec.xml1FieldsDraft.filter(isXml1FieldAdjusted);
+        if (modifiedXml1.length > 0) {
+          anyChanged = true;
+          nextTables.XML1 = nextTables.XML1.map(r => {
+            if (r.hosoIndex !== rec.hosoIndex) return r;
+            const nextFields = { ...r.fields };
+            modifiedXml1.forEach(mf => {
+              nextFields[mf.field] = mf.ttDieuChinh;
+            });
+            return {
+              ...r,
+              maLk: nextFields.MA_LK || r.maLk,
+              hoTen: nextFields.HO_TEN || r.hoTen,
+              fields: nextFields,
+            };
+          });
+        }
+
+        // 2. Đồng bộ các trường chi phí XML2..XML15 đã sửa
+        for (const cRow of rec.costRowsDraft) {
+          const modFields = cRow.fieldDrafts.filter(isCostFieldAdjusted);
+          if (modFields.length > 0) {
+            anyChanged = true;
+            nextTables[cRow.tableId] = (nextTables[cRow.tableId] || []).map(r => {
+              if (r.rowId !== cRow.sourceRowId) return r;
+              const nextFields = { ...r.fields };
+              modFields.forEach(mf => {
+                nextFields[mf.field] = mf.ttDieuChinh;
+              });
+              return {
+                ...r,
+                fields: nextFields,
+              };
+            });
+          }
+        }
+
+        if (anyChanged) {
+          nextHosoSignStates[rec.hosoIndex] = {
+            ...(nextHosoSignStates[rec.hosoIndex] || { hosoIndex: rec.hosoIndex }),
+            isSigned: false,
+            isModified: true,
+          };
+        }
+      }
+
+      if (anyChanged) {
+        const nextDoc: Xml3176ParsedDoc = {
+          ...doc,
+          tables: nextTables,
+          hosoSignStates: nextHosoSignStates,
+          signature: { ...doc.signature, isSigned: false },
+        };
+        nextDoc.errors = validateXml3176Doc(nextDoc);
+        setDoc(nextDoc);
+      }
+    }
+
+    setMau09ModalDrafts(null);
+    setActiveTab('MAU09BH');
+    setMau09StatusMsg({
+      ok: true,
+      text: `✅ Đã lưu ${savedDrafts.length} Hồ sơ điều chỉnh Mẫu 09/BH vào bảng! Bạn có thể kiểm tra, Ký số (VNPT SmartCA / USB Token), Xuất XML/Excel/PDF hoặc Gửi trực tiếp lên Cổng BHXH (Loại HS 73).`,
+    });
+  };
+
+  const handleDownloadMau09XmlFile = (rec: Mau09BhRecord) => {
+    const xml = rec.isSigned && rec.signedXml ? rec.signedXml : buildMau09BhXml(rec);
+    const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeLk = (rec.ttXml1.MA_LK || 'HOSO').replace(/[^a-zA-Z0-9_-]/g, '_');
+    a.download = `MAU_09BH_${safeLk}${rec.isSigned ? '_signed' : ''}.xml`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+
+  // Ký số (VNPT SmartCA / USB Token) và tùy chọn Gửi trực tiếp Hồ sơ Mẫu 09/BH lên Cổng BHXH (Loại hồ sơ = 73)
+  const handleSignAndSubmitMau09Records = async (
+    submitToGateway: boolean,
+    singleRecId?: string
+  ) => {
+    const targetList = singleRecId
+      ? mau09Records.filter(r => r.id === singleRecId)
+      : mau09Records.filter(r => selectedMau09Ids.has(r.id));
+
+    if (targetList.length === 0) {
+      setMau09StatusMsg({
+        ok: false,
+        text: 'Vui lòng tích chọn ít nhất 1 hồ sơ Mẫu 09/BH trong bảng để thực hiện!',
+      });
+      return;
+    }
+
+    setIsSigningMau09(true);
+    setMau09StatusMsg(null);
+
+    try {
+      let gwTokens: { access_token: string; id_token: string } | null = null;
+      const gwOrg = getOrgConfig();
+
+      if (submitToGateway) {
+        if (!gwOrg.ma_cskcb || !gwOrg.bhxh_account?.username || !gwOrg.bhxh_account?.password) {
+          throw new Error(
+            'Chưa cấu hình tài khoản liên thông Cổng BHXH (Mã CSKCB, Username, Password). Vui lòng bấm nút "Cấu hình CKS" -> tab "Tài khoản Cổng BHXH" để thiết lập!'
+          );
+        }
+        setMau09StatusMsg({
+          ok: true,
+          text: `🌐 Đang đăng nhập Cổng tiếp nhận BHXH (${gwOrg.bhxh_account.username})...`,
+        });
+        gwTokens = await bhxhGetToken(gwOrg);
+        if (!gwTokens) {
+          throw new Error('Không lấy được phiên làm việc (Token) từ Cổng BHXH.');
+        }
+      }
+
+      const updatedMap = new Map<string, Mau09BhRecord>();
+      let signedCount = 0;
+      let submittedCount = 0;
+
+      for (let i = 0; i < targetList.length; i++) {
+        const rec = targetList[i];
+        const label = `${i + 1}/${targetList.length} (${rec.ttXml1.HO_TEN || rec.ttXml1.MA_LK})`;
+        const unsignedXml = buildMau09BhXml(rec);
+
+        let signedXml = '';
+        let subjectStr = '';
+
+        if (signMethod === 'USB_TOKEN') {
+          setMau09StatusMsg({
+            ok: true,
+            text: `[${label}] 🔐 Đang ký số Mẫu 09/BH bằng USB Token...`,
+          });
+          const tokenRes = await signXmlWithUsbToken(
+            unsignedXml,
+            msg => setMau09StatusMsg({ ok: true, text: `[${label}] ${msg}` }),
+            undefined,
+            selectedTokenSerial || undefined
+          );
+          signedXml = tokenRes.signedXml;
+          subjectStr = tokenRes.subject || 'USB Token';
+        } else {
+          const cfg = getSmartCAConfig();
+          if (!cfg.clientId || !cfg.clientSecret || !cfg.userId) {
+            throw new Error(
+              'Chưa cấu hình tài khoản VNPT SmartCA. Vui lòng bấm "Cấu hình CKS" để nhập thông tin hoặc chuyển sang ký bằng USB Token!'
+            );
+          }
+          setMau09StatusMsg({
+            ok: true,
+            text: `[${label}] 🔐 Đang lấy Chứng thư số VNPT SmartCA...`,
+          });
+          const certInfo = await getSmartCaCertificate(cfg);
+          subjectStr = certInfo.subject;
+          const effectiveCfg: SmartCAConfig = {
+            ...getSmartCAConfig(),
+            serialNumber: certInfo.serialNumber || cfg.serialNumber,
+            signMode: signMethod === 'SMARTCA_APP' ? 'APP' : 'TOTP',
+          };
+          const { hashToSign, buildSignedXml } = await prepareXmlForSigning(unsignedXml, certInfo);
+          const sigB64 = await signSmartCAHash(effectiveCfg, hashToSign, msg =>
+            setMau09StatusMsg({ ok: true, text: `[${label}] ${msg}` })
+          );
+          signedXml = buildSignedXml(sigB64);
+        }
+
+        signedCount++;
+        const nextRec: Mau09BhRecord = {
+          ...rec,
+          isSigned: true,
+          signedXml,
+          signerSubject: subjectStr,
+          signingTime: new Date().toLocaleString('vi-VN'),
+        };
+
+        if (submitToGateway && gwTokens) {
+          setMau09StatusMsg({
+            ok: true,
+            text: `[${label}] 🚀 Đang gửi Mẫu 09/BH (loaiHs=73) lên Cổng BHXH...`,
+          });
+          const gwRes = await bhxhSubmitMau09BH(
+            gwOrg,
+            gwTokens,
+            signedXml,
+            rec.ttXml1.KY_QT
+          );
+          const isOk = gwRes.maKetQua === '200';
+          if (isOk) submittedCount++;
+          nextRec.submitStatus = isOk ? 'SUBMITTED' : 'ERROR';
+          nextRec.maGiaoDich = gwRes.maGD;
+          nextRec.submitTime = gwRes.thoiGianTiepNhan;
+          nextRec.submitMessage = gwRes.message;
+        }
+
+        updatedMap.set(nextRec.id, nextRec);
+      }
+
+      setMau09Records(prev => prev.map(r => updatedMap.get(r.id) || r));
+      setMau09StatusMsg({
+        ok: true,
+        text: submitToGateway
+          ? `🎉 Hoàn tất! Đã ký số ${signedCount} hồ sơ Mẫu 09/BH và gửi thành công ${submittedCount}/${targetList.length} hồ sơ lên Cổng BHXH (Loại HS 73).`
+          : `🎉 Đã ký số thành công ${signedCount} hồ sơ Mẫu 09/BH vào thẻ <CHUKYDONVI> (ký thẳng vào <TT_HOSO Id="...">)!`,
+      });
+    } catch (err: any) {
+      setMau09StatusMsg({
+        ok: false,
+        text: `❌ Lỗi: ${err?.message || err}`,
+      });
+    } finally {
+      setIsSigningMau09(false);
+    }
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -466,7 +776,7 @@ export default function Xml3176Module() {
 
   // Dữ liệu của Bảng đang chọn sau khi lọc
   const currentTableRows = useMemo(() => {
-    if (!doc || activeTab === 'ERRORS') return [];
+    if (!doc || activeTab === 'ERRORS' || activeTab === 'MAU09BH') return [];
     const rawRows = doc.tables[activeTab] || [];
     const q = searchTerm.trim().toLowerCase();
     return rawRows.filter(row => {
@@ -1367,7 +1677,7 @@ export default function Xml3176Module() {
   );
 
   const activeColumns = useMemo(() => {
-    if (activeTab === 'ERRORS') return [];
+    if (activeTab === 'ERRORS' || activeTab === 'MAU09BH') return [];
     if (doc && doc.tableColumns[activeTab] && doc.tableColumns[activeTab].length > 0) {
       return doc.tableColumns[activeTab];
     }
@@ -1472,6 +1782,16 @@ export default function Xml3176Module() {
             >
               <Settings className="w-3 h-3" />
               Cấu hình CKS
+            </button>
+
+            <button
+              onClick={() => openCreateMau09Modal(undefined, '1')}
+              disabled={!doc || selectedHosoIndices.size === 0}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-transparent bg-[#004a8f] hover:bg-blue-800 disabled:opacity-50 text-white text-[11px] font-extrabold shadow-2xs transition-colors cursor-pointer"
+              title="Lập Bảng kê chi tiết điều chỉnh / thu hồi ĐNTT (Mẫu số 09/BH - TT12/2026/TT-BTC) cho các hồ sơ đã chọn"
+            >
+              <Edit3 className="w-3 h-3" />
+              Tạo Hồ sơ 09/BH ({selectedHosoIndices.size} HS)
             </button>
 
             <button
@@ -1731,6 +2051,36 @@ export default function Xml3176Module() {
               )}
             </button>
 
+            {/* Tab Hồ sơ điều chỉnh Mẫu 09/BH */}
+            <button
+              onClick={() => {
+                setActiveTab('MAU09BH');
+                setCurrentPage(1);
+              }}
+              title="Bảng kê chi tiết điều chỉnh / thu hồi đề nghị thanh toán (Mẫu số 09/BH - TT12/2026/TT-BTC)"
+              className={`px-3 py-2 text-xs font-extrabold rounded-t-lg border-t border-x transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'MAU09BH'
+                  ? 'bg-white text-[#004a8f] border-slate-300 -mb-px pb-2.5 shadow-sm ring-1 ring-blue-200'
+                  : mau09Records.length > 0
+                  ? 'bg-amber-50 text-[#004a8f] border-amber-300 hover:bg-white'
+                  : 'bg-slate-200/70 text-slate-700 border-transparent hover:bg-slate-200'
+              }`}
+            >
+              <Edit3 className="w-3.5 h-3.5 text-[#004a8f]" />
+              <span>Hồ sơ 09/BH (Điều chỉnh)</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  activeTab === 'MAU09BH'
+                    ? 'bg-[#004a8f] text-white'
+                    : mau09Records.length > 0
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-slate-300 text-slate-700'
+                }`}
+              >
+                {mau09Records.length}
+              </span>
+            </button>
+
             {/* Các tab Bảng 1 -> Bảng 15 */}
             {XML3176_TABLES.map(t => {
               const count = doc.tables[t.id].length;
@@ -1773,11 +2123,13 @@ export default function Xml3176Module() {
               <span className="text-xs font-bold text-slate-700">
                 {activeTab === 'ERRORS'
                   ? `Danh sách kiểm tra logic & cảnh báo (${filteredErrors.length} mục)`
+                  : activeTab === 'MAU09BH'
+                  ? `Bảng kê chi tiết điều chỉnh / thu hồi ĐNTT — Mẫu số 09/BH (${mau09Records.length} hồ sơ)`
                   : `${activeTableMeta?.fullTitle} (${currentTableRows.length} dòng)`}
               </span>
 
               {activeTab === 'XML1' && (
-                <div className="flex items-center gap-1.5 ml-2">
+                <div className="flex flex-wrap items-center gap-1.5 ml-2">
                   <button
                     onClick={() => {
                       const all = new Set<number>();
@@ -1794,6 +2146,30 @@ export default function Xml3176Module() {
                   >
                     Bỏ chọn hết
                   </button>
+
+                  {selectedHosoIndices.size > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => openCreateMau09Modal(undefined, '1')}
+                        className="px-3 py-1 rounded-lg bg-[#004a8f] hover:bg-blue-800 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
+                        title="Mở bảng Tạo Mẫu 09/BH để điều chỉnh thông tin hành chính (XML1) hoặc điều chỉnh/hủy chi phí (XML2..15) cho các hồ sơ đã chọn"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        Tạo Hồ sơ BH09 — Điều chỉnh ({selectedHosoIndices.size} HS)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => openCreateMau09Modal(undefined, '2')}
+                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
+                        title="Mở bảng Tạo Mẫu 09/BH với trạng thái Thu hồi đề nghị thanh toán cho các hồ sơ đã chọn"
+                      >
+                        <AlertTriangle className="w-3 h-3" />
+                        Thu hồi ĐNTT BH09 ({selectedHosoIndices.size} HS)
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1842,7 +2218,7 @@ export default function Xml3176Module() {
                 )}
               </div>
 
-              {activeTab !== 'ERRORS' && (
+              {activeTab !== 'ERRORS' && activeTab !== 'MAU09BH' && (
                 <>
                   {Object.keys(customColWidths).some(k => k.startsWith(`${activeTab}:`)) && (
                     <button
@@ -1874,8 +2250,425 @@ export default function Xml3176Module() {
             </div>
           </div>
 
-          {/* NỘI DUNG BẢNG LỖI HOẶC BẢNG 1..15 */}
-          {activeTab === 'ERRORS' ? (
+          {/* NỘI DUNG BẢNG LỖI, BẢNG HỒ SƠ 09/BH HOẶC BẢNG 1..15 */}
+          {activeTab === 'MAU09BH' ? (
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {/* Thanh công cụ riêng cho Bảng Hồ sơ điều chỉnh Mẫu 09/BH */}
+              <div className="shrink-0 px-3 py-2 bg-blue-50/70 border-b border-blue-200 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => openCreateMau09Modal(undefined, '1')}
+                    className="px-3 py-1.5 rounded-lg bg-[#004a8f] hover:bg-blue-800 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Tạo / Sửa Hồ sơ 09/BH từ Bảng 1 ({selectedHosoIndices.size} HS chọn)
+                  </button>
+
+                  {mau09Records.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedMau09Ids(new Set(mau09Records.map(r => r.id)))
+                        }
+                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-xs font-bold cursor-pointer"
+                      >
+                        Chọn tất cả ({mau09Records.length})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => exportMau09BhToExcel(mau09Records)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5" />
+                        Xuất Excel 09/BH (22 cột)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          printMau09BhPdfWindow(
+                            mau09Records.filter(r => selectedMau09Ids.has(r.id)).length > 0
+                              ? mau09Records.filter(r => selectedMau09Ids.has(r.id))
+                              : mau09Records,
+                            getOrgConfig().ten_cskcb
+                          )
+                        }
+                        className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        In Mẫu 09/BH (PDF)
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Khối chọn phương thức Ký số & Gửi Cổng cho Mẫu 09/BH */}
+                {mau09Records.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <select
+                      value={signMethod}
+                      onChange={e =>
+                        setSignMethod(
+                          e.target.value as 'SMARTCA_TOTP' | 'SMARTCA_APP' | 'USB_TOKEN'
+                        )
+                      }
+                      className="px-2.5 py-1.5 rounded-lg bg-white border border-blue-300 text-xs font-bold text-slate-800 outline-none cursor-pointer"
+                    >
+                      <option value="SMARTCA_TOTP">☁ VNPT SmartCA (TOTP/OTP v2)</option>
+                      <option value="SMARTCA_APP">📱 VNPT SmartCA (Duyệt App v1)</option>
+                      <option value="USB_TOKEN">🔑 USB Token (Cổng 18088)</option>
+                    </select>
+
+                    {(signMethod === 'SMARTCA_TOTP' || signMethod === 'SMARTCA_APP') &&
+                      smartCaProfiles.length > 0 && (
+                        <select
+                          value={activeSmartCaId}
+                          onChange={e => {
+                            const nextId = e.target.value;
+                            setActiveSmartCAProfile(nextId);
+                            setActiveSmartCaId(nextId);
+                            setSmartCaCfg(getSmartCAConfig());
+                          }}
+                          title="Chọn CKS SmartCA đã đặt tên để ký Mẫu 09/BH"
+                          className="px-2.5 py-1.5 rounded-lg bg-white border border-indigo-300 text-xs font-bold text-indigo-900 max-w-[210px] outline-none cursor-pointer"
+                        >
+                          {smartCaProfiles.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                              {p.userId ? ` (${p.userId})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                    <button
+                      type="button"
+                      disabled={isSigningMau09 || selectedMau09Ids.size === 0}
+                      onClick={() => handleSignAndSubmitMau09Records(false)}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-1 shadow-2xs cursor-pointer"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                      {isSigningMau09
+                        ? 'Đang ký...'
+                        : `Ký số 09/BH (${selectedMau09Ids.size})`}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isSigningMau09 || selectedMau09Ids.size === 0}
+                      onClick={() => handleSignAndSubmitMau09Records(true)}
+                      className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-1 shadow-2xs cursor-pointer"
+                      title="Ký số rồi gửi hồ sơ điều chỉnh Mẫu 09/BH (loaiHs=73) lên Cổng BHXH qua API /api/HSDCTT12/GuiHoSoDieuChinh09BH"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Ký &amp; Gửi Cổng 09/BH ({selectedMau09Ids.size})
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {mau09StatusMsg && (
+                <div
+                  className={`px-4 py-2 text-xs font-bold border-b flex items-center justify-between gap-2 ${
+                    mau09StatusMsg.ok
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-700'
+                  }`}
+                >
+                  <span>{mau09StatusMsg.text}</span>
+                  <button
+                    type="button"
+                    onClick={() => setMau09StatusMsg(null)}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Danh sách các Hồ sơ Mẫu 09/BH đã tạo */}
+              <div className="flex-1 min-h-0 overflow-auto">
+                {mau09Records.length === 0 ? (
+                  <div className="p-12 text-center space-y-3">
+                    <Edit3 className="w-12 h-12 text-blue-500 mx-auto" />
+                    <div className="text-sm font-bold text-slate-800">
+                      Chưa có Hồ sơ điều chỉnh / thu hồi Mẫu 09/BH nào được tạo
+                    </div>
+                    <p className="text-xs text-slate-500 max-w-lg mx-auto">
+                      Hãy tích chọn các hồ sơ cần điều chỉnh hoặc thu hồi ĐNTT ở <b>Bảng 1</b> rồi bấm nút{' '}
+                      <b>"Tạo Hồ sơ 09/BH"</b> để mở bảng điều chỉnh thông tin hành chính (XML1) và chi phí (XML2..15).
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => openCreateMau09Modal(undefined, '1')}
+                      className="px-4 py-2 rounded-xl bg-[#004a8f] hover:bg-blue-800 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Mở bảng Tạo Mẫu 09/BH cho {selectedHosoIndices.size} hồ sơ đang chọn
+                    </button>
+                  </div>
+                ) : (
+                  <table className="w-full text-xs border-collapse">
+                    <thead className="bg-[#004a8f] text-white sticky top-0 z-10">
+                      <tr>
+                        <th className="border-r border-blue-800 px-2 py-2 text-center w-9">
+                          <input
+                            type="checkbox"
+                            checked={
+                              mau09Records.length > 0 &&
+                              mau09Records.every(r => selectedMau09Ids.has(r.id))
+                            }
+                            onChange={e => {
+                              if (e.target.checked) {
+                                setSelectedMau09Ids(new Set(mau09Records.map(r => r.id)));
+                              } else {
+                                setSelectedMau09Ids(new Set());
+                              }
+                            }}
+                            className="w-3.5 h-3.5 accent-amber-400 rounded cursor-pointer"
+                          />
+                        </th>
+                        <th className="border-r border-blue-800 px-2 py-2 text-center w-10">STT</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-center w-36">Trạng thái Ký / Gửi</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-center w-48">Thao tác</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-left w-28">XML1_ID</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-left w-36">Mã liên kết (MA_LK)</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-left w-24">Mã BN</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-left w-44">Họ và tên</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-left w-36">Mã thẻ BHYT</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-center w-28">Ngày vào</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-center w-28">Ngày ra</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-center w-20">Kỳ QT</th>
+                        <th className="border-r border-blue-800 px-2.5 py-2 text-left w-40">Loại yêu cầu</th>
+                        <th className="px-3 py-2 text-left">Tóm tắt nội dung điều chỉnh / thu hồi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {mau09Records.map((rec, idx) => {
+                        const isChecked = selectedMau09Ids.has(rec.id);
+                        const compiled = compileMau09Adjustments(
+                          rec.xml1FieldsDraft,
+                          rec.costRowsDraft
+                        );
+                        const dsXml1 =
+                          rec.dsXml1Dc.length > 0 ? rec.dsXml1Dc : compiled.dsXml1Dc;
+                        const dscp = rec.dscpDc.length > 0 ? rec.dscpDc : compiled.dscpDc;
+
+                        return (
+                          <tr
+                            key={rec.id}
+                            className={`hover:bg-blue-50/50 ${
+                              isChecked ? 'bg-blue-50/25' : 'bg-white'
+                            }`}
+                          >
+                            <td className="border-r border-slate-200 px-2 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() =>
+                                  setSelectedMau09Ids(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(rec.id)) next.delete(rec.id);
+                                    else next.add(rec.id);
+                                    return next;
+                                  })
+                                }
+                                className="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer"
+                              />
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-2 text-center font-mono text-slate-600">
+                              {idx + 1}
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-2 text-center space-y-1">
+                              <div>
+                                {rec.isSigned ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                    title={`Ký bởi: ${rec.signerSubject || ''} lúc ${rec.signingTime || ''}`}
+                                  >
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                    Đã ký số
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                    <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                    Chưa ký số
+                                  </span>
+                                )}
+                              </div>
+                              {rec.submitStatus === 'SUBMITTED' && (
+                                <div
+                                  className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 truncate"
+                                  title={`Mã GD: ${rec.maGiaoDich || ''} - ${rec.submitMessage || ''}`}
+                                >
+                                  Đã gửi: {rec.maGiaoDich || 'OK'}
+                                </div>
+                              )}
+                              {rec.submitStatus === 'ERROR' && (
+                                <div
+                                  className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded px-1.5 py-0.5 truncate"
+                                  title={rec.submitMessage}
+                                >
+                                  Lỗi gửi Cổng
+                                </div>
+                              )}
+                            </td>
+                            <td className="border-r border-slate-200 px-2 py-2 text-center">
+                              <div className="flex flex-wrap items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setMau09ModalDrafts([JSON.parse(JSON.stringify(rec))])
+                                  }
+                                  className="px-2 py-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold text-[10.5px] flex items-center gap-0.5 cursor-pointer"
+                                  title="Mở lại cửa sổ Tạo Mẫu 09/BH để sửa chi tiết hồ sơ này"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  Sửa 09/BH
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isSigningMau09}
+                                  onClick={() => handleSignAndSubmitMau09Records(false, rec.id)}
+                                  className="px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[10.5px] flex items-center gap-0.5 cursor-pointer"
+                                  title="Ký số riêng hồ sơ Mẫu 09/BH này"
+                                >
+                                  <ShieldCheck className="w-3 h-3" />
+                                  Ký
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadMau09XmlFile(rec)}
+                                  className="px-2 py-1 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-[10.5px] flex items-center gap-0.5 cursor-pointer"
+                                  title="Tải file XML Mẫu 09/BH (<HOSO_DIEUCHINH_GD>)"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  XML
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewMau09XmlRec(rec)}
+                                  className="px-1.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10.5px] cursor-pointer"
+                                  title="Xem cấu trúc XML Mẫu 09/BH"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    printMau09BhPdfWindow([rec], getOrgConfig().ten_cskcb)
+                                  }
+                                  className="px-1.5 py-1 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-[10.5px] cursor-pointer"
+                                  title="In biểu mẫu 09/BH dưới dạng PDF"
+                                >
+                                  <Printer className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!confirm(`Xóa hồ sơ Mẫu 09/BH của "${rec.ttXml1.HO_TEN}"?`))
+                                      return;
+                                    setMau09Records(prev => prev.filter(x => x.id !== rec.id));
+                                  }}
+                                  className="p-1 rounded hover:bg-rose-50 text-slate-400 hover:text-rose-600 cursor-pointer"
+                                  title="Xóa hồ sơ 09/BH này"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 font-mono text-slate-700">
+                              {rec.ttXml1.XML1_ID || '—'}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 font-mono font-semibold text-slate-900">
+                              {rec.ttXml1.MA_LK}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 font-mono text-slate-700">
+                              {rec.ttXml1.MA_BN}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 font-bold text-blue-950">
+                              {rec.ttXml1.HO_TEN}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 font-mono text-slate-800">
+                              {rec.ttXml1.MA_THE}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 text-center font-mono text-[11px]">
+                              {formatDisplayDateTime12(rec.ttXml1.NGAY_VAO)}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 text-center font-mono text-[11px]">
+                              {formatDisplayDateTime12(rec.ttXml1.NGAY_RA)}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2 text-center font-mono font-bold text-indigo-700">
+                              {rec.ttXml1.KY_QT}
+                            </td>
+                            <td className="border-r border-slate-200 px-2.5 py-2">
+                              {rec.ttXml1.TRANGTHAI === '2' ? (
+                                <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10.5px]">
+                                  2 - Thu hồi / Hủy ĐNTT
+                                </span>
+                              ) : rec.ttXml1.TRANGTHAI === '4' ? (
+                                <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10.5px]">
+                                  4 - Xin ý kiến thẩm quyền
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10.5px]">
+                                  1 - Đề nghị điều chỉnh
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 space-y-1 text-[11px]">
+                              {dsXml1.length === 0 && dscp.length === 0 ? (
+                                <span className="text-slate-500 italic">
+                                  {rec.ttXml1.TRANGTHAI === '2'
+                                    ? 'Thu hồi toàn bộ hồ sơ khỏi đề nghị thanh toán'
+                                    : 'Chưa có dòng điều chỉnh chi tiết (Bấm "Sửa 09/BH" để bổ sung)'}
+                                </span>
+                              ) : (
+                                <>
+                                  {dsXml1.map((x1, i) => (
+                                    <div key={`x1_${i}`} className="text-slate-800">
+                                      <span className="font-bold text-indigo-700">[XML1]</span>{' '}
+                                      <code className="font-mono font-bold">{x1.TRUONG_TT_GOC}</code>:{' '}
+                                      <span className="line-through text-slate-400">{x1.TT_GOC || '(trống)'}</span>{' '}
+                                      ➔ <b className="text-emerald-700">{x1.TT_DIEUCHINH}</b>{' '}
+                                      <span className="text-slate-500">({x1.LYDO_DIEUCHINH})</span>
+                                    </div>
+                                  ))}
+                                  {dscp.map((cp, i) => (
+                                    <div key={`cp_${i}`} className="text-slate-800">
+                                      <span className="font-bold text-amber-700">
+                                        [XML{cp.SOBANG_XML} #{cp.STT_XML}]
+                                      </span>{' '}
+                                      <code className="font-mono font-bold">{cp.TRUONG_TT_GOC}</code>:{' '}
+                                      <span className="line-through text-slate-400">{cp.TT_GOC || '(trống)'}</span>{' '}
+                                      ➔{' '}
+                                      <b
+                                        className={
+                                          cp.TRANGTHAI === '2' ? 'text-rose-700' : 'text-emerald-700'
+                                        }
+                                      >
+                                        {cp.TRANGTHAI === '2'
+                                          ? 'THU HỒI / HỦY CHI PHÍ'
+                                          : cp.TT_DIEUCHINH}
+                                      </b>{' '}
+                                      <span className="text-slate-500">({cp.LYDO_DIEUCHINH})</span>
+                                    </div>
+                                  ))}
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          ) : activeTab === 'ERRORS' ? (
             <div className="flex-1 min-h-0 overflow-auto">
               {filteredErrors.length === 0 ? (
                 <div className="p-12 text-center">
@@ -2258,17 +3051,26 @@ export default function Xml3176Module() {
                           >
                             <div className="flex items-center justify-center gap-0.5">
                               {activeTab === 'XML1' && (
-                                <button
-                                  onClick={() => {
-                                    setAutoDownloadAfterSign(false);
-                                    openSignModal(row.hosoIndex);
-                                  }}
-                                  className="px-1 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
-                                  title="Ký số riêng cho hồ sơ này"
-                                >
-                                  <ShieldCheck className="w-2.5 h-2.5" />
-                                  Ký
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => openCreateMau09Modal([row.hosoIndex], '1')}
+                                    className="px-1.5 py-0.5 rounded bg-[#004a8f] hover:bg-blue-800 text-white font-extrabold text-[10px] flex items-center gap-0.5 cursor-pointer"
+                                    title="Lập Hồ sơ điều chỉnh / thu hồi ĐNTT Mẫu số 09/BH cho bệnh nhân này"
+                                  >
+                                    09/BH
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setAutoDownloadAfterSign(false);
+                                      openSignModal(row.hosoIndex);
+                                    }}
+                                    className="px-1 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
+                                    title="Ký số riêng cho hồ sơ này"
+                                  >
+                                    <ShieldCheck className="w-2.5 h-2.5" />
+                                    Ký
+                                  </button>
+                                </>
                               )}
                               <button
                                 onClick={() => openEditRowModal(row)}
@@ -3217,6 +4019,56 @@ export default function Xml3176Module() {
                     .join('\n\n')}
               </pre>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TẠO & CHỈNH SỬA HỒ SƠ MẪU SỐ 09/BH (4 PHẦN CHUẨN CỔNG BHXH) */}
+      {mau09ModalDrafts && (
+        <Mau09BhModal
+          initialRecords={mau09ModalDrafts}
+          tenCskcb={getOrgConfig().ten_cskcb}
+          onClose={() => setMau09ModalDrafts(null)}
+          onSaveRecords={handleSaveMau09ModalRecords}
+        />
+      )}
+
+      {/* MODAL XEM TRƯỚC XML MẪU 09/BH (<HOSO_DIEUCHINH_GD>) */}
+      {previewMau09XmlRec && (
+        <div className="fixed inset-0 z-[270] bg-slate-950/75 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                <FileCode2 className="w-4 h-4 text-blue-600" />
+                <span>
+                  XML Mẫu số 09/BH — {previewMau09XmlRec.ttXml1.HO_TEN} (MA_LK:{' '}
+                  {previewMau09XmlRec.ttXml1.MA_LK}){' '}
+                  {previewMau09XmlRec.isSigned ? '• [ĐÃ KÝ SỐ]' : '• [CHƯA KÝ SỐ]'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadMau09XmlFile(previewMau09XmlRec)}
+                  className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Tải file XML
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMau09XmlRec(null)}
+                  className="p-1 rounded-lg hover:bg-slate-200 text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <pre className="p-4 bg-slate-950 text-emerald-300 font-mono text-xs overflow-auto flex-1 leading-relaxed whitespace-pre-wrap break-all">
+              {previewMau09XmlRec.isSigned && previewMau09XmlRec.signedXml
+                ? previewMau09XmlRec.signedXml
+                : buildMau09BhXml(previewMau09XmlRec)}
+            </pre>
           </div>
         </div>
       )}
