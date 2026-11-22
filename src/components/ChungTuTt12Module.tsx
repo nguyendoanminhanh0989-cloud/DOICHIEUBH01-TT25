@@ -368,10 +368,11 @@ export default function ChungTuTt12Module() {
   const [sigSlots, setSigSlots] = useState<SignatureSlot[]>(() => getSavedSignatureSlots());
   const [activeSlotIdx, setActiveSlotIdx] = useState<number>(() => getActiveSignatureSlotIndex());
   const [autoRemoveBgOnUpload, setAutoRemoveBgOnUpload] = useState<boolean>(true);
-  const [bgThreshold, setBgThreshold] = useState<number>(195);
+  const [bgStrength, setBgStrength] = useState<number>(45);
   const [isRemovingBg, setIsRemovingBg] = useState<boolean>(false);
   const [stampPreviewUrl, setStampPreviewUrl] = useState<string>('');
   const [lastCertDisplay, setLastCertDisplay] = useState<{ signerName: string; orgName: string } | null>(null);
+  const rawSlotImagesRef = useRef<Record<number, string>>({});
 
   const activeSlot = sigSlots[activeSlotIdx] || sigSlots[0];
 
@@ -1092,10 +1093,11 @@ export default function ChungTuTt12Module() {
     reader.onload = async ev => {
       const rawDataUrl = String(ev.target?.result || '');
       if (!rawDataUrl) return;
+      rawSlotImagesRef.current[activeSlotIdx] = rawDataUrl;
       setIsRemovingBg(true);
       try {
         if (autoRemoveBgOnUpload || isJpgOrBmp) {
-          const pngUrl = await removeImageBackgroundToPng(rawDataUrl, bgThreshold);
+          const pngUrl = await removeImageBackgroundToPng(rawDataUrl, bgStrength);
           updateActiveSlot({ imageDataUrl: pngUrl, bgRemoved: true });
           setPdfStatusMsg(
             isJpgOrBmp
@@ -1118,13 +1120,16 @@ export default function ChungTuTt12Module() {
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveBgActiveSlot = async () => {
-    if (!activeSlot?.imageDataUrl) return;
+  const applyBgRemovalWithStrength = async (strengthVal: number) => {
+    const sourceImg = rawSlotImagesRef.current[activeSlotIdx] || activeSlot?.imageDataUrl;
+    if (!sourceImg) return;
     setIsRemovingBg(true);
     try {
-      const pngUrl = await removeImageBackgroundToPng(activeSlot.imageDataUrl, bgThreshold);
+      const pngUrl = await removeImageBackgroundToPng(sourceImg, strengthVal);
       updateActiveSlot({ imageDataUrl: pngUrl, bgRemoved: true });
-      setPdfStatusMsg(`✨ Đã xóa nền trắng/xám và chuyển Ô #${activeSlotIdx + 1} sang PNG trong suốt!`);
+      setPdfStatusMsg(
+        `✨ Đã xóa nền trắng/xám (độ mạnh ${strengthVal}) và chuyển Ô #${activeSlotIdx + 1} sang PNG trong suốt!`
+      );
       setPdfStatusType('success');
     } catch (err: any) {
       setPdfStatusMsg(`❌ Lỗi khi xóa nền ảnh: ${err?.message || err}`);
@@ -1132,6 +1137,10 @@ export default function ChungTuTt12Module() {
     } finally {
       setIsRemovingBg(false);
     }
+  };
+
+  const handleRemoveBgActiveSlot = () => {
+    void applyBgRemovalWithStrength(bgStrength);
   };
 
   const handleDownloadActiveSlotPng = () => {
@@ -2266,15 +2275,17 @@ export default function ChungTuTt12Module() {
 
                           <div
                             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-bold text-slate-600"
-                            title="Kéo để chỉnh độ mạnh khi bấm Xóa nền → PNG"
+                            title="Kéo để chỉnh độ mạnh xóa nền giấy xám/tối rồi thả chuột (hoặc bấm Xóa nền → PNG)"
                           >
-                            <span>Ngưỡng: {bgThreshold}</span>
+                            <span>Độ mạnh: {bgStrength}</span>
                             <input
                               type="range"
-                              min={140}
-                              max={235}
-                              value={bgThreshold}
-                              onChange={e => setBgThreshold(Number(e.target.value))}
+                              min={10}
+                              max={90}
+                              value={bgStrength}
+                              onChange={e => setBgStrength(Number(e.target.value))}
+                              onMouseUp={e => void applyBgRemovalWithStrength(Number((e.target as HTMLInputElement).value))}
+                              onTouchEnd={e => void applyBgRemovalWithStrength(Number((e.target as HTMLInputElement).value))}
                               className="w-16 accent-teal-600 cursor-pointer"
                             />
                           </div>
@@ -2291,7 +2302,10 @@ export default function ChungTuTt12Module() {
 
                           <button
                             type="button"
-                            onClick={() => updateActiveSlot({ imageDataUrl: '', bgRemoved: false })}
+                            onClick={() => {
+                              delete rawSlotImagesRef.current[activeSlotIdx];
+                              updateActiveSlot({ imageDataUrl: '', bgRemoved: false });
+                            }}
                             className="px-2 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-700 text-[11px] font-bold transition cursor-pointer"
                           >
                             ✕ Xóa ảnh

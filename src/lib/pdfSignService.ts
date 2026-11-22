@@ -146,12 +146,12 @@ export function extractCertDisplayInfo(subjectDN: string): {
 }
 
 /**
- * Tách nền trắng/xám của ảnh chữ ký tay thành trong suốt (RGBA) và tự động cắt viền trống.
- * Hỗ trợ chỉnh ngưỡng xóa nền (threshold mặc định 190, bảo toàn nét mực xanh/đỏ của con dấu & chữ ký).
+ * Tách nền giấy trắng/xám/vàng nhạt của ảnh chữ ký tay (kể cả ảnh chụp điện thoại JPG) thành trong suốt (RGBA)
+ * và tự động cắt viền trống. Thuật toán tự lấy mẫu màu giấy ở 4 cạnh ảnh để nhận diện đúng nền xám/tối.
  */
 export async function makeSignatureBackgroundTransparent(
   imageSourceUrlOrBase64: string,
-  threshold = 190
+  strength = 45
 ): Promise<HTMLCanvasElement> {
   const img = await loadImageElement(imageSourceUrlOrBase64);
   const canvas = document.createElement('canvas');
@@ -164,9 +164,63 @@ export async function makeSignatureBackgroundTransparent(
   const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const data = imgData.data;
 
-  const safeThreshold = Math.max(120, Math.min(245, Math.round(threshold)));
-  const fadeStart = Math.max(60, safeThreshold - 75);
-  const fadeSpan = Math.max(1, safeThreshold - fadeStart);
+  const w = canvas.width;
+  const h = canvas.height;
+  const borderX = Math.max(2, Math.round(w * 0.06));
+  const borderY = Math.max(2, Math.round(h * 0.06));
+
+  const sampleRs: number[] = [];
+  const sampleGs: number[] = [];
+  const sampleBs: number[] = [];
+  const sampleLums: number[] = [];
+
+  for (let y = 0; y < h; y++) {
+    const onYEdge = y < borderY || y >= h - borderY;
+    for (let x = 0; x < w; x++) {
+      if (!onYEdge && x >= borderX && x < w - borderX) continue;
+      const idx = (y * w + x) * 4;
+      const a = data[idx + 3];
+      if (a <= 20) continue;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      const sat = Math.max(r, g, b) - Math.min(r, g, b);
+      if (lum > 95 && sat < 55) {
+        sampleRs.push(r);
+        sampleGs.push(g);
+        sampleBs.push(b);
+        sampleLums.push(lum);
+      }
+    }
+  }
+
+  let bgR = 255;
+  let bgG = 255;
+  let bgB = 255;
+  let paperShadowLum = 240;
+
+  if (sampleLums.length >= 20) {
+    sampleRs.sort((a, b) => a - b);
+    sampleGs.sort((a, b) => a - b);
+    sampleBs.sort((a, b) => a - b);
+    sampleLums.sort((a, b) => a - b);
+    const mid = Math.floor(sampleLums.length / 2);
+    bgR = sampleRs[mid];
+    bgG = sampleGs[mid];
+    bgB = sampleBs[mid];
+    paperShadowLum = sampleLums[Math.floor(sampleLums.length * 0.2)];
+  }
+
+  const safeStrength =
+    strength > 100
+      ? Math.min(90, Math.max(10, Math.round(255 - strength)))
+      : Math.min(90, Math.max(10, Math.round(strength)));
+
+  const cutLum = Math.max(80, paperShadowLum - Math.round(safeStrength * 0.7));
+  const fadeStart = Math.max(40, cutLum - 26);
+  const fadeSpan = Math.max(1, cutLum - fadeStart);
+  const distCut = safeStrength * 0.9;
 
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i];
@@ -175,17 +229,17 @@ export async function makeSignatureBackgroundTransparent(
     const a = data[i + 3];
     if (a === 0) continue;
 
-    // Tính độ sáng (Luminance) và độ bão hòa màu để bảo toàn nét mực xanh/đỏ (con dấu) khi xóa nền xám
-    const luminance = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-    const maxC = Math.max(r, g, b);
-    const minC = Math.min(r, g, b);
-    const saturation = maxC - minC;
+    const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    const sat = Math.max(r, g, b) - Math.min(r, g, b);
+    const colorDist = Math.hypot(r - bgR, g - bgG, b - bgB);
 
-    if (luminance > safeThreshold && saturation < 45) {
-      data[i + 3] = 0;
-    } else if (luminance > fadeStart && saturation < 45) {
-      const nextAlpha = Math.round(((safeThreshold - luminance) * 255) / fadeSpan);
-      data[i + 3] = Math.min(a, Math.max(0, nextAlpha));
+    if (sat < 48) {
+      if (lum >= cutLum || colorDist <= distCut) {
+        data[i + 3] = 0;
+      } else if (lum > fadeStart) {
+        const nextAlpha = Math.round(((cutLum - lum) * 255) / fadeSpan);
+        data[i + 3] = Math.min(a, Math.max(0, nextAlpha));
+      }
     }
   }
 
@@ -234,9 +288,9 @@ export async function makeSignatureBackgroundTransparent(
  */
 export async function removeImageBackgroundToPng(
   imageSourceUrlOrBase64: string,
-  threshold = 190
+  strength = 45
 ): Promise<string> {
-  const transparentCanvas = await makeSignatureBackgroundTransparent(imageSourceUrlOrBase64, threshold);
+  const transparentCanvas = await makeSignatureBackgroundTransparent(imageSourceUrlOrBase64, strength);
   const maxW = 900;
   const maxH = 500;
   if (transparentCanvas.width <= maxW && transparentCanvas.height <= maxH) {
@@ -825,64 +879,70 @@ function parsePdfStructure(pdfBytes: Uint8Array): ParsedPdfStructure {
     }
   }
 
-  // Tìm danh sách các đối tượng Page theo đúng thứ tự
-  const pageObjIds: number[] = [];
+  // Tìm danh sách các đối tượng Page theo đúng thứ tự (kế thừa /MediaBox và /Rotate từ node /Pages cha nếu có)
+  const pageItems: Array<{
+    id: number;
+    inheritedMediaBox?: [number, number, number, number];
+    inheritedRotate?: number;
+  }> = [];
+  const parseMb = (s: string): [number, number, number, number] | undefined => {
+    const m = s.match(/\/MediaBox\s*\[\s*([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s*\]/);
+    return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), parseFloat(m[4])] : undefined;
+  };
+  const parseRot = (s: string): number | undefined => {
+    const m = s.match(/\/Rotate\s+(\d+)/);
+    return m ? parseInt(m[1], 10) % 360 : undefined;
+  };
+
   const rootBody = objMap.get(rootObjId) || '';
   const pagesRefMatch = rootBody.match(/\/Pages\s+(\d+)\s+0\s+R/);
   if (pagesRefMatch) {
     const pagesId = parseInt(pagesRefMatch[1], 10);
-    const collectKids = (nodeId: number, visited: Set<number>) => {
+    const collectKids = (
+      nodeId: number,
+      visited: Set<number>,
+      inhMb?: [number, number, number, number],
+      inhRot?: number
+    ) => {
       if (visited.has(nodeId)) return;
       visited.add(nodeId);
       const body = objMap.get(nodeId) || '';
+      const mb = parseMb(body) || inhMb;
+      const rot = parseRot(body) ?? inhRot;
       if (/\/Type\s*\/Page\b(?!s)/.test(body)) {
-        pageObjIds.push(nodeId);
+        pageItems.push({ id: nodeId, inheritedMediaBox: mb, inheritedRotate: rot });
         return;
       }
       const kidsMatch = body.match(/\/Kids\s*\[([^\]]+)\]/);
       if (kidsMatch) {
         const refs = Array.from(kidsMatch[1].matchAll(/(\d+)\s+0\s+R/g));
         for (const r of refs) {
-          collectKids(parseInt(r[1], 10), visited);
+          collectKids(parseInt(r[1], 10), visited, mb, rot);
         }
       }
     };
     collectKids(pagesId, new Set<number>());
   }
 
-  if (pageObjIds.length === 0) {
+  if (pageItems.length === 0) {
     for (const [id, body] of objMap.entries()) {
       if (/\/Type\s*\/Page\b(?!s)/.test(body)) {
-        pageObjIds.push(id);
+        pageItems.push({ id });
       }
     }
   }
 
-  const pages = pageObjIds.map((id, idx) => {
-    const body = objMap.get(id) || '';
+  const pages = pageItems.map((item, idx) => {
+    const body = objMap.get(item.id) || '';
     const dictEnd = body.indexOf('stream');
     const dictRaw = (dictEnd >= 0 ? body.slice(0, dictEnd) : body).trim();
-
-    let mediaBox: [number, number, number, number] = [0, 0, 595, 842];
-    const mbMatch = dictRaw.match(/\/MediaBox\s*\[\s*([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s*\]/);
-    if (mbMatch) {
-      mediaBox = [
-        parseFloat(mbMatch[1]),
-        parseFloat(mbMatch[2]),
-        parseFloat(mbMatch[3]),
-        parseFloat(mbMatch[4]),
-      ];
-    }
-
-    let rotation = 0;
-    const rotMatch = dictRaw.match(/\/Rotate\s+(\d+)/);
-    if (rotMatch) {
-      rotation = parseInt(rotMatch[1], 10) % 360;
-    }
+    const mediaBox: [number, number, number, number] =
+      parseMb(dictRaw) || item.inheritedMediaBox || [0, 0, 595, 842];
+    const rotation = parseRot(dictRaw) ?? item.inheritedRotate ?? 0;
 
     return {
       pageNumber: idx + 1,
-      objId: id,
+      objId: item.id,
       dictRaw,
       mediaBox,
       rotation,
@@ -1064,65 +1124,31 @@ export async function signPdfDocument(options: {
   const imName = `/ImSig${sigIndex}`;
 
   // Cấp phát ID cho các Object mới trong bản cập nhật Incremental Update
+  // Chỉ vẽ qua Signature Widget Annotation (/AP /N) trong /Annots để tách biệt hoàn toàn với CTM gốc của trang,
+  // tránh lỗi bị nhân bản thành chữ ký quay dọc giữa bảng khi trang gốc có Rotate 90 hoặc unbalanced q/Q.
   const smaskObjId = pdfInfo.maxObjId + 1;     // Alpha SMask XObject
   const imgObjId = pdfInfo.maxObjId + 2;       // RGB Image XObject
-  const contentObjId = pdfInfo.maxObjId + 3;   // Content stream vẽ con dấu lên trang
-  const apFormObjId = pdfInfo.maxObjId + 4;    // Appearance Form XObject (/AP /N)
-  const sigDictObjId = pdfInfo.maxObjId + 5;   // Signature Dictionary (/Type /Sig)
-  const annotObjId = pdfInfo.maxObjId + 6;     // Signature Widget Annotation (/Subtype /Widget /FT /Sig)
-  const newSize = pdfInfo.maxObjId + 7;
+  const apFormObjId = pdfInfo.maxObjId + 3;    // Appearance Form XObject (/AP /N)
+  const sigDictObjId = pdfInfo.maxObjId + 4;   // Signature Dictionary (/Type /Sig)
+  const annotObjId = pdfInfo.maxObjId + 5;     // Signature Widget Annotation (/Subtype /Widget /FT /Sig)
+  const newSize = pdfInfo.maxObjId + 6;
 
-  // Chuỗi lệnh vẽ ảnh chữ ký lên trang PDF (tự động xoay khớp với /Rotate của trang)
-  let drawCmd = '';
+  // Appearance Form XObject (/AP /N) cho trình đọc PDF (PDF.js / Chrome / Adobe Acrobat / Foxit Reader)
+  let apStreamStr = '';
   if (rotation === 90) {
-    // Đúng ma trận "0 1 -1 0 pageW 0 cm" của MAU_02BH.pdf
-    drawCmd = `q 0 1 -1 0 ${fmtNum(pageW)} 0 cm ${fmtNum(vBoxW)} 0 0 ${fmtNum(vBoxH)} ${fmtNum(vLlx)} ${fmtNum(vLly)} cm ${imName} Do Q\n`;
+    apStreamStr = `q 0 1 -1 0 ${fmtNum(pdfW)} 0 cm ${fmtNum(vBoxW)} 0 0 ${fmtNum(vBoxH)} 0 0 cm ${imName} Do Q`;
   } else if (rotation === 180) {
-    drawCmd = `q -1 0 0 -1 ${fmtNum(pageW)} ${fmtNum(pageH)} cm ${fmtNum(vBoxW)} 0 0 ${fmtNum(vBoxH)} ${fmtNum(vLlx)} ${fmtNum(vLly)} cm ${imName} Do Q\n`;
+    apStreamStr = `q -1 0 0 -1 ${fmtNum(pdfW)} ${fmtNum(pdfH)} cm ${fmtNum(vBoxW)} 0 0 ${fmtNum(vBoxH)} 0 0 cm ${imName} Do Q`;
   } else if (rotation === 270) {
-    drawCmd = `q 0 -1 1 0 0 ${fmtNum(pageH)} cm ${fmtNum(vBoxW)} 0 0 ${fmtNum(vBoxH)} ${fmtNum(vLlx)} ${fmtNum(vLly)} cm ${imName} Do Q\n`;
+    apStreamStr = `q 0 -1 1 0 0 ${fmtNum(pdfH)} cm ${fmtNum(vBoxW)} 0 0 ${fmtNum(vBoxH)} 0 0 cm ${imName} Do Q`;
   } else {
-    drawCmd = `q ${fmtNum(pdfW)} 0 0 ${fmtNum(pdfH)} ${fmtNum(pdfX)} ${fmtNum(pdfY)} cm ${imName} Do Q\n`;
+    apStreamStr = `q ${fmtNum(pdfW)} 0 0 ${fmtNum(pdfH)} 0 0 cm ${imName} Do Q`;
   }
-  const drawCmdBytes = latin1Encode(drawCmd);
-
-  // Appearance Form XObject (/AP /N) cho trình đọc PDF (Adobe Acrobat / Foxit Reader)
-  const apStreamStr =
-    rotation === 90
-      ? `q 0 1 -1 0 ${fmtNum(pdfW)} 0 cm ${fmtNum(vBoxW)} 0 0 ${fmtNum(vBoxH)} 0 0 cm ${imName} Do Q`
-      : `q ${fmtNum(pdfW)} 0 0 ${fmtNum(pdfH)} 0 0 cm ${imName} Do Q`;
   const apStreamBytes = latin1Encode(apStreamStr);
 
-  // Cập nhật Page Dictionary để nối thêm Content Stream mới, XObject mới và Annotation chữ ký
+  // Cập nhật Page Dictionary để nối thêm Annotation chữ ký vào /Annots (không can thiệp /Contents tránh lặp/xoay chữ ký)
   let pageInner = stripOuterAngles(targetPage.dictRaw);
 
-  // 1. Nối thêm contentObjId vào /Contents
-  if (/\/Contents\s*\[([^\]]*)\]/.test(pageInner)) {
-    pageInner = pageInner.replace(
-      /\/Contents\s*\[([^\]]*)\]/,
-      `/Contents [$1 ${contentObjId} 0 R]`
-    );
-  } else if (/\/Contents\s+(\d+\s+0\s+R)/.test(pageInner)) {
-    pageInner = pageInner.replace(
-      /\/Contents\s+(\d+\s+0\s+R)/,
-      `/Contents [$1 ${contentObjId} 0 R]`
-    );
-  }
-
-  // 2. Nối thêm imName vào /Resources -> /XObject
-  if (/\/XObject\s*<<([^>]*)>>/.test(pageInner)) {
-    pageInner = pageInner.replace(
-      /\/XObject\s*<<([^>]*)>>/,
-      `/XObject <<$1 ${imName} ${imgObjId} 0 R>>`
-    );
-  } else if (/\/Resources\s*<</.test(pageInner)) {
-    pageInner = pageInner.replace(
-      /\/Resources\s*<</,
-      `/Resources <</XObject <<${imName} ${imgObjId} 0 R>> `
-    );
-  }
-
-  // 3. Nối thêm annotObjId vào /Annots
   if (/\/Annots\s*\[([^\]]*)\]/.test(pageInner)) {
     pageInner = pageInner.replace(
       /\/Annots\s*\[([^\]]*)\]/,
@@ -1161,12 +1187,6 @@ export async function signPdfDocument(options: {
   );
   const imgFooter = latin1Encode(`\nendstream\nendobj\n`);
   const imgObjBytes = concatUint8([imgHeader, compressedRgb, imgFooter]);
-
-  const contentObjBytes = concatUint8([
-    latin1Encode(`${contentObjId} 0 obj\n<</Length ${drawCmdBytes.length}>>\nstream\n`),
-    drawCmdBytes,
-    latin1Encode(`\nendstream\nendobj\n`),
-  ]);
 
   const apFormObjBytes = concatUint8([
     latin1Encode(
@@ -1217,10 +1237,6 @@ export async function signPdfDocument(options: {
   pieces.push(imgObjBytes);
   cursor += imgObjBytes.length;
 
-  const contentOffset = cursor;
-  pieces.push(contentObjBytes);
-  cursor += contentObjBytes.length;
-
   const apFormOffset = cursor;
   pieces.push(apFormObjBytes);
   cursor += apFormObjBytes.length;
@@ -1247,10 +1263,9 @@ export async function signPdfDocument(options: {
     `${pad10(pageObjOffset)} 00000 n \n` +
     `${pdfInfo.rootObjId} 1\n` +
     `${pad10(rootObjOffset)} 00000 n \n` +
-    `${smaskObjId} 6\n` +
+    `${smaskObjId} 5\n` +
     `${pad10(smaskOffset)} 00000 n \n` +
     `${pad10(imgOffset)} 00000 n \n` +
-    `${pad10(contentOffset)} 00000 n \n` +
     `${pad10(apFormOffset)} 00000 n \n` +
     `${pad10(sigDictOffset)} 00000 n \n` +
     `${pad10(annotOffset)} 00000 n \n`;
