@@ -152,8 +152,8 @@ export const MAU09_COST_TABLE_OPTIONS: Array<{
 ];
 
 export const MAU09_TRANGTHAI_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: '1', label: '1 - Đề nghị điều chỉnh' },
-  { value: '2', label: '2 - Đề nghị thu hồi / hủy ĐNTT' },
+  { value: '2', label: '2 - Điều chỉnh thông tin dữ liệu gốc' },
+  { value: '1', label: '1 - Thu hồi đề nghị thanh toán' },
   { value: '4', label: '4 - Xin ý kiến các cấp có thẩm quyền' },
 ];
 
@@ -244,7 +244,7 @@ export function isCostFieldAdjusted(f: Mau09CostFieldDraft): boolean {
  * Kiểm tra xem 1 dòng chi phí gốc có thay đổi hoặc bị đánh dấu thu hồi/hủy không
  */
 export function isCostRowAdjusted(row: Mau09SourceCostRow): boolean {
-  if (row.withdrawEntireRow || row.trangThai === '2') return true;
+  if (row.withdrawEntireRow || row.trangThai === '1') return true;
   return row.fieldDrafts.some(isCostFieldAdjusted);
 }
 
@@ -292,8 +292,8 @@ export function compileMau09Adjustments(
   const dscpDc: Mau09ChiPhiItem[] = [];
   let sttCp = 1;
   for (const row of costRowsDraft) {
-    if (row.withdrawEntireRow || row.trangThai === '2') {
-      // Thu hồi / hủy cả dòng chi phí -> chỉ xuất 1 thẻ <CHIPHI> duy nhất với TRANGTHAI=2
+    if (row.withdrawEntireRow || row.trangThai === '1') {
+      // Thu hồi / hủy cả dòng chi phí -> chỉ xuất 1 thẻ <CHIPHI> duy nhất với TRANGTHAI=1
       const keyField =
         row.tableId === 'XML2'
           ? 'TEN_THUOC'
@@ -310,7 +310,7 @@ export function compileMau09Adjustments(
         ID_CP: row.idCp.trim(),
         STT_XML: row.sttXml.trim() || '1',
         NGAY_YL: normalizeTo12DigitDateTime(row.ngayYl) || row.ngayYl.trim(),
-        TRANGTHAI: '2',
+        TRANGTHAI: '1',
         TRUONG_TT_GOC: targetDraft?.field || keyField,
         TT_GOC: targetDraft?.originalValue || String(row.thanhTienGoc || ''),
         LYDO: row.lyDoTuChoi.trim(),
@@ -320,7 +320,7 @@ export function compileMau09Adjustments(
         LYDO_DIEUCHINH:
           row.withdrawReason.trim() ||
           row.lyDoTuChoi.trim() ||
-          'Thu hồi / hủy chi phí đề nghị thanh toán',
+          'Thu hồi chi phí đề nghị thanh toán',
       });
       continue;
     }
@@ -376,7 +376,7 @@ export function compileMau09Adjustments(
           ID_CP: row.idCp.trim(),
           STT_XML: row.sttXml.trim() || '1',
           NGAY_YL: normalizeTo12DigitDateTime(row.ngayYl) || row.ngayYl.trim(),
-          TRANGTHAI: row.trangThai || '1',
+          TRANGTHAI: row.trangThai || '2',
           TRUONG_TT_GOC: mf.field,
           TT_GOC: mf.ttGoc.trim() !== '' ? mf.ttGoc.trim() : mf.originalValue,
           LYDO: row.lyDoTuChoi.trim(),
@@ -495,7 +495,7 @@ export function createMau09DraftFromHoso(
         sttXml,
         idCp: rf.ID_CP || rf.ID_CHIPHI || '',
         ngayYl,
-        trangThai: '1',
+        trangThai: '2',
         lyDoTuChoi: '',
         tuChoi: '0',
         summaryLabel,
@@ -516,8 +516,8 @@ export function createMau09DraftFromHoso(
     ttMau: {
       MAU_SO: '09/BH',
       MA_CSKCB: (defaults?.maCskcb || f1.MA_CSKCB || doc.maCskcb || '48225').trim(),
-      NGUOILAPBIEU: (defaults?.nguoiLapBieu || '').trim(),
-      THUTRUONG_DV: (defaults?.thuTruongDv || '').trim(),
+      NGUOILAPBIEU: (defaults?.nguoiLapBieu || 'NGƯỜI LẬP BIỂU').trim(),
+      THUTRUONG_DV: (defaults?.thuTruongDv || 'THỦ TRƯỞNG ĐƠN VỊ').trim(),
       NGAYTHANGNAM: getTodayYyyyMmDd(),
     },
     ttXml1: {
@@ -529,7 +529,7 @@ export function createMau09DraftFromHoso(
       NGAY_VAO: normalizeTo12DigitDateTime(f1.NGAY_VAO || ''),
       NGAY_RA: normalizeTo12DigitDateTime(f1.NGAY_RA || ''),
       KY_QT: kyQt,
-      TRANGTHAI: defaults?.trangThai || '1',
+      TRANGTHAI: defaults?.trangThai || '2',
     },
     xml1FieldsDraft,
     costRowsDraft,
@@ -539,77 +539,112 @@ export function createMau09DraftFromHoso(
   };
 }
 
+function xmlTag(name: string, val: any): string {
+  const s = String(val ?? '');
+  return s === '' ? `<${name}/>` : `<${name}>${escXml(s)}</${name}>`;
+}
+
+function resolveEffectiveAdjustments(rec: Mau09BhRecord): {
+  dsXml1: Mau09Xml1DcItem[];
+  dscp: Mau09ChiPhiItem[];
+} {
+  // Khi thu hồi toàn bộ hồ sơ ĐNTT (TRANGTHAI = '1'), Cổng BHXH yêu cầu DS_XML1_DIEUCHINH và DSCP_DIEUCHINH đều rỗng
+  if (rec.ttXml1.TRANGTHAI === '1') {
+    return { dsXml1: [], dscp: [] };
+  }
+  const compiled = compileMau09Adjustments(rec.xml1FieldsDraft, rec.costRowsDraft);
+  return {
+    dsXml1: rec.dsXml1Dc.length > 0 ? rec.dsXml1Dc : compiled.dsXml1Dc,
+    dscp: rec.dscpDc.length > 0 ? rec.dscpDc : compiled.dscpDc,
+  };
+}
+
 /**
- * Tạo chuỗi XML chuẩn <HOSO_DIEUCHINH_GD> theo đúng Mục IX Quyết định 326/QĐ-BHXH (trang 66-69)
+ * Tạo chuỗi XML chuẩn <HOSO_DIEUCHINH_GD> theo đúng Mục IX Quyết định 326/QĐ-BHXH & Cổng tiếp nhận BHXH:
+ * - Xuất XML dạng 1 dòng gọn sạch (<?xml version="1.0" encoding="UTF-8"?>), thẻ rỗng dùng self-closing <TAG/>
+ * - Quy ước TRANGTHAI chuẩn Cổng BHXH: 1 = Thu hồi đề nghị thanh toán; 2 = Điều chỉnh thông tin dữ liệu gốc; 4 = Xin ý kiến
+ * - Khi thu hồi toàn bộ hồ sơ ĐNTT (TT_XML1/TRANGTHAI = '1'): <DS_XML1_DIEUCHINH/><DSCP_DIEUCHINH/> phải để rỗng hoàn toàn
  */
 export function buildMau09BhXml(record: Mau09BhRecord): string {
   const ttHosoId = `Id-${genUuid()}`;
   const { ttMau, ttXml1 } = record;
-  const compiled = compileMau09Adjustments(record.xml1FieldsDraft, record.costRowsDraft);
-  const dsXml1 = record.dsXml1Dc.length > 0 ? record.dsXml1Dc : compiled.dsXml1Dc;
-  const dscp = record.dscpDc.length > 0 ? record.dscpDc : compiled.dscpDc;
+  const { dsXml1, dscp } = resolveEffectiveAdjustments(record);
 
   const xml1DcNodes = dsXml1
     .map(
-      (item, idx) => `        <TT_XML1_DC>
-          <STT>${idx + 1}</STT>
-          <TRUONG_TT_GOC>${escXml(item.TRUONG_TT_GOC)}</TRUONG_TT_GOC>
-          <TT_GOC>${escXml(item.TT_GOC)}</TT_GOC>
-          <TRUONG_TT_DIEUCHINH>${escXml(item.TRUONG_TT_DIEUCHINH)}</TRUONG_TT_DIEUCHINH>
-          <TT_DIEUCHINH>${escXml(item.TT_DIEUCHINH)}</TT_DIEUCHINH>
-          <LYDO_DIEUCHINH>${escXml(item.LYDO_DIEUCHINH)}</LYDO_DIEUCHINH>
-        </TT_XML1_DC>`
+      (item, idx) =>
+        `<TT_XML1_DC>` +
+        xmlTag('STT', idx + 1) +
+        xmlTag('TRUONG_TT_GOC', item.TRUONG_TT_GOC) +
+        xmlTag('TT_GOC', item.TT_GOC) +
+        xmlTag('TRUONG_TT_DIEUCHINH', item.TRUONG_TT_DIEUCHINH) +
+        xmlTag('TT_DIEUCHINH', item.TT_DIEUCHINH) +
+        xmlTag('LYDO_DIEUCHINH', item.LYDO_DIEUCHINH) +
+        `</TT_XML1_DC>`
     )
-    .join('\n');
+    .join('');
 
   const chiPhiNodes = dscp
     .map(
-      (cp, idx) => `        <CHIPHI>
-          <STT>${idx + 1}</STT>
-          <SOBANG_XML>${escXml(cp.SOBANG_XML)}</SOBANG_XML>
-          <ID_CP>${escXml(cp.ID_CP)}</ID_CP>
-          <STT_XML>${escXml(cp.STT_XML)}</STT_XML>
-          <NGAY_YL>${escXml(normalizeTo12DigitDateTime(cp.NGAY_YL) || cp.NGAY_YL)}</NGAY_YL>
-          <TRANGTHAI>${escXml(cp.TRANGTHAI || '1')}</TRANGTHAI>
-          <TRUONG_TT_GOC>${escXml(cp.TRUONG_TT_GOC)}</TRUONG_TT_GOC>
-          <TT_GOC>${escXml(cp.TT_GOC)}</TT_GOC>
-          <LYDO>${escXml(cp.LYDO)}</LYDO>
-          <TUCHOI>${escXml(cp.TUCHOI || '0')}</TUCHOI>
-          <TRUONG_TT_DIEUCHINH>${escXml(cp.TRUONG_TT_DIEUCHINH)}</TRUONG_TT_DIEUCHINH>
-          <TT_DIEUCHINH>${escXml(cp.TT_DIEUCHINH)}</TT_DIEUCHINH>
-          <LYDO_DIEUCHINH>${escXml(cp.LYDO_DIEUCHINH)}</LYDO_DIEUCHINH>
-        </CHIPHI>`
+      (cp, idx) =>
+        `<CHIPHI>` +
+        xmlTag('STT', idx + 1) +
+        xmlTag('SOBANG_XML', cp.SOBANG_XML) +
+        xmlTag('ID_CP', cp.ID_CP) +
+        xmlTag('STT_XML', cp.STT_XML) +
+        xmlTag('NGAY_YL', normalizeTo12DigitDateTime(cp.NGAY_YL) || cp.NGAY_YL) +
+        xmlTag('TRANGTHAI', cp.TRANGTHAI || '2') +
+        xmlTag('TRUONG_TT_GOC', cp.TRUONG_TT_GOC) +
+        xmlTag('TT_GOC', cp.TT_GOC) +
+        xmlTag('LYDO', cp.LYDO) +
+        xmlTag('TUCHOI', cp.TUCHOI || '0') +
+        xmlTag('TRUONG_TT_DIEUCHINH', cp.TRUONG_TT_DIEUCHINH) +
+        xmlTag('TT_DIEUCHINH', cp.TT_DIEUCHINH) +
+        xmlTag('LYDO_DIEUCHINH', cp.LYDO_DIEUCHINH) +
+        `</CHIPHI>`
     )
-    .join('\n');
+    .join('');
 
-  return `<?xml version="1.0" encoding="utf-8"?>
-<HOSO_DIEUCHINH_GD>
-  <TT_HOSO Id="${ttHosoId}">
-    <TT_MAU>
-      <MAU_SO>${escXml(ttMau.MAU_SO || '09/BH')}</MAU_SO>
-      <MA_CSKCB>${escXml(ttMau.MA_CSKCB)}</MA_CSKCB>
-      <NGUOILAPBIEU>${escXml(ttMau.NGUOILAPBIEU)}</NGUOILAPBIEU>
-      <THUTRUONG_DV>${escXml(ttMau.THUTRUONG_DV)}</THUTRUONG_DV>
-      <NGAYTHANGNAM>${escXml(ttMau.NGAYTHANGNAM || getTodayYyyyMmDd())}</NGAYTHANGNAM>
-    </TT_MAU>
-    <TT_XML1>
-      <XML1_ID>${escXml(ttXml1.XML1_ID)}</XML1_ID>
-      <MA_LK>${escXml(ttXml1.MA_LK)}</MA_LK>
-      <MA_BN>${escXml(ttXml1.MA_BN)}</MA_BN>
-      <HO_TEN>${escXml(ttXml1.HO_TEN)}</HO_TEN>
-      <MA_THE>${escXml(ttXml1.MA_THE)}</MA_THE>
-      <NGAY_VAO>${escXml(normalizeTo12DigitDateTime(ttXml1.NGAY_VAO))}</NGAY_VAO>
-      <NGAY_RA>${escXml(normalizeTo12DigitDateTime(ttXml1.NGAY_RA))}</NGAY_RA>
-      <KY_QT>${escXml(ttXml1.KY_QT)}</KY_QT>
-      <TRANGTHAI>${escXml(ttXml1.TRANGTHAI || '1')}</TRANGTHAI>
-    </TT_XML1>
-    <TT_DIEUCHINH>
-      <DS_XML1_DIEUCHINH>${xml1DcNodes ? `\n${xml1DcNodes}\n      ` : ''}</DS_XML1_DIEUCHINH>
-      <DSCP_DIEUCHINH>${chiPhiNodes ? `\n${chiPhiNodes}\n      ` : ''}</DSCP_DIEUCHINH>
-    </TT_DIEUCHINH>
-  </TT_HOSO>
-  <CHUKYDONVI/>
-</HOSO_DIEUCHINH_GD>`;
+  const dsXml1Xml = xml1DcNodes
+    ? `<DS_XML1_DIEUCHINH>${xml1DcNodes}</DS_XML1_DIEUCHINH>`
+    : '<DS_XML1_DIEUCHINH/>';
+  const dscpXml = chiPhiNodes
+    ? `<DSCP_DIEUCHINH>${chiPhiNodes}</DSCP_DIEUCHINH>`
+    : '<DSCP_DIEUCHINH/>';
+
+  const ttMauXml =
+    `<TT_MAU>` +
+    xmlTag('MAU_SO', ttMau.MAU_SO || '09/BH') +
+    xmlTag('MA_CSKCB', ttMau.MA_CSKCB) +
+    xmlTag('NGUOILAPBIEU', (ttMau.NGUOILAPBIEU || '').trim() || 'NGƯỜI LẬP BIỂU') +
+    xmlTag('THUTRUONG_DV', (ttMau.THUTRUONG_DV || '').trim() || 'THỦ TRƯỞNG ĐƠN VỊ') +
+    xmlTag('NGAYTHANGNAM', ttMau.NGAYTHANGNAM || getTodayYyyyMmDd()) +
+    `</TT_MAU>`;
+
+  const ttXml1Xml =
+    `<TT_XML1>` +
+    xmlTag('XML1_ID', ttXml1.XML1_ID) +
+    xmlTag('MA_LK', ttXml1.MA_LK) +
+    xmlTag('MA_BN', ttXml1.MA_BN) +
+    xmlTag('HO_TEN', ttXml1.HO_TEN) +
+    xmlTag('MA_THE', ttXml1.MA_THE) +
+    xmlTag('NGAY_VAO', normalizeTo12DigitDateTime(ttXml1.NGAY_VAO)) +
+    xmlTag('NGAY_RA', normalizeTo12DigitDateTime(ttXml1.NGAY_RA)) +
+    xmlTag('KY_QT', ttXml1.KY_QT) +
+    xmlTag('TRANGTHAI', ttXml1.TRANGTHAI || '2') +
+    `</TT_XML1>`;
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<HOSO_DIEUCHINH_GD>` +
+    `<TT_HOSO Id="${escXml(ttHosoId)}">` +
+    ttMauXml +
+    ttXml1Xml +
+    `<TT_DIEUCHINH>${dsXml1Xml}${dscpXml}</TT_DIEUCHINH>` +
+    `</TT_HOSO>` +
+    `<CHUKYDONVI/>` +
+    `</HOSO_DIEUCHINH_GD>`
+  );
 }
 
 /**
@@ -619,9 +654,7 @@ export function exportMau09BhToExcel(records: Mau09BhRecord[], fileName?: string
   const excelRows: Record<string, any>[] = [];
 
   for (const rec of records) {
-    const compiled = compileMau09Adjustments(rec.xml1FieldsDraft, rec.costRowsDraft);
-    const dsXml1 = rec.dsXml1Dc.length > 0 ? rec.dsXml1Dc : compiled.dsXml1Dc;
-    const dscp = rec.dscpDc.length > 0 ? rec.dscpDc : compiled.dscpDc;
+    const { dsXml1, dscp } = resolveEffectiveAdjustments(rec);
     const namQt = rec.ttXml1.KY_QT.slice(0, 4);
     const thangQt = rec.ttXml1.KY_QT.slice(4, 6);
 
@@ -645,7 +678,7 @@ export function exportMau09BhToExcel(records: Mau09BhRecord[], fileName?: string
         TRUONG_THONG_TIN_DIEU_CHINH: x1.TRUONG_TT_DIEUCHINH,
         THONG_TIN_DIEU_CHINH: x1.TT_DIEUCHINH,
         LY_DO_DIEU_CHINH: x1.LYDO_DIEUCHINH,
-        TRANG_THAI: rec.ttXml1.TRANGTHAI || '1',
+        TRANG_THAI: rec.ttXml1.TRANGTHAI || '2',
         MA_CSKCB: rec.ttMau.MA_CSKCB,
         NAM_QT: namQt,
         THANG_QT: thangQt,
@@ -672,7 +705,7 @@ export function exportMau09BhToExcel(records: Mau09BhRecord[], fileName?: string
         TRUONG_THONG_TIN_DIEU_CHINH: cp.TRUONG_TT_DIEUCHINH,
         THONG_TIN_DIEU_CHINH: cp.TT_DIEUCHINH,
         LY_DO_DIEU_CHINH: cp.LYDO_DIEUCHINH,
-        TRANG_THAI: cp.TRANGTHAI || rec.ttXml1.TRANGTHAI || '1',
+        TRANG_THAI: cp.TRANGTHAI || rec.ttXml1.TRANGTHAI || '2',
         MA_CSKCB: rec.ttMau.MA_CSKCB,
         NAM_QT: namQt,
         THANG_QT: thangQt,
@@ -700,10 +733,10 @@ export function exportMau09BhToExcel(records: Mau09BhRecord[], fileName?: string
         TRUONG_THONG_TIN_DIEU_CHINH: 'MA_LK',
         THONG_TIN_DIEU_CHINH: rec.ttXml1.MA_LK,
         LY_DO_DIEU_CHINH:
-          rec.ttXml1.TRANGTHAI === '2'
-            ? 'Đề nghị thu hồi / hủy hồ sơ ĐNTT'
+          rec.ttXml1.TRANGTHAI === '1'
+            ? 'Thu hồi đề nghị thanh toán'
             : 'Đề nghị điều chỉnh hồ sơ',
-        TRANG_THAI: rec.ttXml1.TRANGTHAI || '1',
+        TRANG_THAI: rec.ttXml1.TRANGTHAI || '2',
         MA_CSKCB: rec.ttMau.MA_CSKCB,
         NAM_QT: namQt,
         THANG_QT: thangQt,
@@ -754,7 +787,7 @@ export function recalculateSingleMau09CostRow(
   if (costRow.tableId !== 'XML2' && costRow.tableId !== 'XML3') {
     return { nextRow: costRow, updatedRow: costRow, changed: false };
   }
-  if (costRow.withdrawEntireRow || costRow.trangThai === '2') {
+  if (costRow.withdrawEntireRow || costRow.trangThai === '1') {
     return { nextRow: costRow, updatedRow: costRow, changed: false };
   }
 
@@ -959,11 +992,11 @@ export function recalculateAndSyncMau09Prices(
     const hasAnyFieldChange = cr.fieldDrafts.some(
       fd => fd.ttDieuChinh.trim() !== fd.originalValue.trim()
     );
-    if (!hasAnyFieldChange && !cr.withdrawEntireRow && cr.trangThai !== '2') {
+    if (!hasAnyFieldChange && !cr.withdrawEntireRow && cr.trangThai !== '1') {
       return cr;
     }
     const { nextRow, changed } = recalculateSingleMau09CostRow(cr, reasonText);
-    if (changed || cr.withdrawEntireRow || cr.trangThai === '2') {
+    if (changed || cr.withdrawEntireRow || cr.trangThai === '1') {
       changedCostRowsCount++;
     }
     return nextRow;
@@ -983,7 +1016,7 @@ export function recalculateAndSyncMau09Prices(
 
   for (const cr of nextCostRows) {
     if (cr.tableId !== 'XML2' && cr.tableId !== 'XML3') continue;
-    if (cr.withdrawEntireRow || cr.trangThai === '2') {
+    if (cr.withdrawEntireRow || cr.trangThai === '1') {
       // Dòng chi phí bị thu hồi / hủy -> không cộng vào tổng đề nghị thanh toán sau điều chỉnh
       continue;
     }
@@ -1102,11 +1135,9 @@ export function printMau09BhPdfWindow(records: Mau09BhRecord[], tenDonVi = ''): 
 
   const tableBodyRows: string[] = [];
   for (const rec of records) {
-    const compiled = compileMau09Adjustments(rec.xml1FieldsDraft, rec.costRowsDraft);
-    const dsXml1 = rec.dsXml1Dc.length > 0 ? rec.dsXml1Dc : compiled.dsXml1Dc;
-    const dscp = rec.dscpDc.length > 0 ? rec.dscpDc : compiled.dscpDc;
+    const { dsXml1, dscp } = resolveEffectiveAdjustments(rec);
     const trangThaiText =
-      rec.ttXml1.TRANGTHAI === '2'
+      rec.ttXml1.TRANGTHAI === '1'
         ? 'Thu hồi đề nghị thanh toán'
         : rec.ttXml1.TRANGTHAI === '4'
         ? 'Xin ý kiến cấp có thẩm quyền'
@@ -1140,7 +1171,7 @@ export function printMau09BhPdfWindow(records: Mau09BhRecord[], tenDonVi = ''): 
 
     for (const cp of dscp) {
       const cpTrangThai =
-        cp.TRANGTHAI === '2'
+        cp.TRANGTHAI === '1'
           ? 'Thu hồi đề nghị thanh toán'
           : cp.TRANGTHAI === '4'
           ? 'Xin ý kiến cấp có thẩm quyền'

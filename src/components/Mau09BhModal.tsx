@@ -151,7 +151,7 @@ export default function Mau09BhModal({
   // Tính Thành tiền sau điều chỉnh thực tế của 1 dòng chi phí (tự tính theo đơn giá/số lượng đã sửa)
   const getEffectiveRowThanhTienDc = (r: Mau09BhRecord['costRowsDraft'][number]): number => {
     const gocVal = r.thanhTienGoc || 0;
-    if (r.withdrawEntireRow || r.trangThai === '2') return 0;
+    if (r.withdrawEntireRow || r.trangThai === '1') return 0;
     const recalcRow =
       r.tableId === 'XML2' || r.tableId === 'XML3'
         ? recalculateSingleMau09CostRow(r).nextRow
@@ -281,7 +281,7 @@ export default function Mau09BhModal({
           matchedCount += targetRows.length;
           const firstRow = targetRows[0];
           const nextXml1Id = String(firstRow.XML1_ID || rec.ttXml1.XML1_ID || '').trim();
-          const nextTrangThai = String(firstRow.TRANG_THAI || rec.ttXml1.TRANGTHAI || '1').trim();
+          const nextTrangThai = String(firstRow.TRANG_THAI || rec.ttXml1.TRANGTHAI || '2').trim();
 
           const nextXml1Fields = rec.xml1FieldsDraft.map(f => {
             const hit = targetRows.find(
@@ -313,7 +313,7 @@ export default function Mau09BhModal({
               idCp: String(h0.ID_CHIPHI || cRow.idCp || '').trim(),
               lyDoTuChoi: String(h0.LY_DO || cRow.lyDoTuChoi || '').trim(),
               tuChoi: String(h0.TU_CHOI ?? cRow.tuChoi ?? '0').trim(),
-              trangThai: String(h0.TRANG_THAI || cRow.trangThai || '1').trim(),
+              trangThai: String(h0.TRANG_THAI || cRow.trangThai || '2').trim(),
               fieldDrafts: cRow.fieldDrafts.map(fd => {
                 const fHit = rowHits.find(
                   r =>
@@ -795,6 +795,19 @@ export default function Mau09BhModal({
                     className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded text-slate-900 font-mono focus:border-blue-600 focus:outline-none"
                   />
                 </div>
+
+                {currentRec.ttXml1.TRANGTHAI === '1' && (
+                  <div className="md:col-span-3 bg-rose-50 border border-rose-200 rounded-lg px-3.5 py-2.5 text-xs text-rose-800 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <b>Đang chọn chế độ: 1 - Thu hồi đề nghị thanh toán (thu hồi toàn bộ hồ sơ).</b>{' '}
+                      Theo chuẩn Cổng tiếp nhận BHXH (Công văn 2274/BHXH-TTKS &amp; Mẫu XML đối chứng), khi thu hồi toàn bộ hồ sơ ĐNTT, hai thẻ{' '}
+                      <code className="font-mono font-bold">&lt;DS_XML1_DIEUCHINH/&gt;</code> và{' '}
+                      <code className="font-mono font-bold">&lt;DSCP_DIEUCHINH/&gt;</code> sẽ tự động xuất rỗng (không cần sửa Phần 3 hay Phần 4). Nếu chỉ muốn điều chỉnh/thu hồi từng dịch vụ lẻ trong hồ sơ, hãy chọn Trạng thái{' '}
+                      <b>"2 - Điều chỉnh thông tin dữ liệu gốc"</b>.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1075,7 +1088,7 @@ export default function Mau09BhModal({
                                 }
                                 return {
                                   ...cr,
-                                  trangThai: '2',
+                                  trangThai: '1',
                                   withdrawEntireRow: true,
                                   withdrawReason: reason.trim(),
                                 };
@@ -1218,7 +1231,7 @@ export default function Mau09BhModal({
                                         )}
                                         {rowMod && (
                                           <span className="ml-1.5 px-2 py-0.2 rounded-full text-[10px] font-extrabold bg-amber-500 text-white">
-                                            {costRow.withdrawEntireRow || costRow.trangThai === '2'
+                                            {costRow.withdrawEntireRow || costRow.trangThai === '1'
                                               ? 'Thu hồi / Hủy CP'
                                               : 'Đã điều chỉnh'}
                                           </span>
@@ -1255,7 +1268,7 @@ export default function Mau09BhModal({
                                                   ? {
                                                       ...cr,
                                                       trangThai: val,
-                                                      withdrawEntireRow: val === '2',
+                                                      withdrawEntireRow: val === '1',
                                                     }
                                                   : cr
                                               ),
@@ -1263,12 +1276,12 @@ export default function Mau09BhModal({
                                           }}
                                           className="px-2 py-0.5 border border-slate-300 rounded bg-white text-[11px] font-semibold cursor-pointer"
                                         >
-                                          <option value="1">1 - Đề nghị điều chỉnh</option>
-                                          <option value="2">2 - Thu hồi / Hủy chi phí</option>
+                                          <option value="2">2 - Điều chỉnh thông tin dữ liệu gốc</option>
+                                          <option value="1">1 - Thu hồi đề nghị thanh toán (hủy CP)</option>
                                           <option value="4">4 - Xin ý kiến thẩm quyền</option>
                                         </select>
 
-                                        {costRow.withdrawEntireRow || costRow.trangThai === '2' ? (
+                                        {costRow.withdrawEntireRow || costRow.trangThai === '1' ? (
                                           <input
                                             type="text"
                                             value={costRow.withdrawReason}
@@ -1289,7 +1302,7 @@ export default function Mau09BhModal({
                                         ) : null}
 
                                         {(costRow.tableId === 'XML2' || costRow.tableId === 'XML3') &&
-                                          !(costRow.withdrawEntireRow || costRow.trangThai === '2') && (
+                                          !(costRow.withdrawEntireRow || costRow.trangThai === '1') && (
                                             <button
                                               type="button"
                                               onClick={() => handleRecalculateSingleRow(costRow.sourceRowId)}
@@ -1311,7 +1324,7 @@ export default function Mau09BhModal({
                                                   cr.sourceRowId === costRow.sourceRowId
                                                     ? {
                                                         ...cr,
-                                                        trangThai: '1',
+                                                        trangThai: '2',
                                                         withdrawEntireRow: false,
                                                         withdrawReason: '',
                                                         fieldDrafts: cr.fieldDrafts.map(fd => ({
@@ -1366,11 +1379,11 @@ export default function Mau09BhModal({
                                           {formatDisplayDateTime12(costRow.ngayYl)}
                                         </td>
                                         <td className="border-r border-slate-200 px-2 py-1 text-[11px]">
-                                          {costRow.trangThai === '2'
-                                            ? '2 - Đề nghị hủy'
+                                          {costRow.trangThai === '1'
+                                            ? '1 - Thu hồi / Hủy'
                                             : costRow.trangThai === '4'
                                             ? '4 - Xin ý kiến'
-                                            : '1 - Điều chỉnh'}
+                                            : '2 - Điều chỉnh'}
                                         </td>
                                         <td
                                           className="border-r border-slate-200 px-2 py-1 font-mono font-semibold text-slate-800"
@@ -1713,7 +1726,7 @@ export default function Mau09BhModal({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <pre className="p-4 bg-slate-950 text-emerald-300 font-mono text-xs overflow-auto flex-1 leading-relaxed whitespace-pre-wrap">
+            <pre className="p-4 bg-slate-950 text-emerald-300 font-mono text-xs overflow-auto flex-1 leading-relaxed whitespace-pre-wrap break-all">
               {previewXmlContent}
             </pre>
           </div>

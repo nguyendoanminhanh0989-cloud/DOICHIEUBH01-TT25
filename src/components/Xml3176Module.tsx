@@ -350,7 +350,7 @@ export default function Xml3176Module() {
   }, [mau09Records]);
 
   // Mở cửa sổ Tạo / Điều chỉnh Mẫu 09/BH từ danh sách hồ sơ bệnh nhân đã chọn ở Bảng 1
-  const openCreateMau09Modal = (targetIndices?: number[], defaultTrangThai = '1') => {
+  const openCreateMau09Modal = (targetIndices?: number[], defaultTrangThai = '2') => {
     if (!doc) return;
     const indices =
       targetIndices && targetIndices.length > 0
@@ -365,8 +365,8 @@ export default function Xml3176Module() {
       const existing = mau09Records.find(r => r.hosoIndex === hIdx);
       if (existing) {
         const cloned: Mau09BhRecord = JSON.parse(JSON.stringify(existing));
-        if (targetIndices === undefined && defaultTrangThai === '2') {
-          cloned.ttXml1.TRANGTHAI = '2';
+        if (targetIndices === undefined && defaultTrangThai === '1') {
+          cloned.ttXml1.TRANGTHAI = '1';
         }
         return cloned;
       }
@@ -435,7 +435,7 @@ export default function Xml3176Module() {
 
         // 2. Đồng bộ các trường chi phí XML2..XML15 đã sửa hoặc thu hồi/hủy chi phí
         for (const cRow of rec.costRowsDraft) {
-          const isWithdrawn = cRow.withdrawEntireRow || cRow.trangThai === '2';
+          const isWithdrawn = cRow.withdrawEntireRow || cRow.trangThai === '1';
           if (isWithdrawn) {
             anyChanged = true;
             recCostChanged = true;
@@ -1816,7 +1816,7 @@ export default function Xml3176Module() {
             </button>
 
             <button
-              onClick={() => openCreateMau09Modal(undefined, '1')}
+              onClick={() => openCreateMau09Modal(undefined, '2')}
               disabled={!doc || selectedHosoIndices.size === 0}
               className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-transparent bg-[#004a8f] hover:bg-blue-800 disabled:opacity-50 text-white text-[11px] font-extrabold shadow-2xs transition-colors cursor-pointer"
               title="Lập Bảng kê chi tiết điều chỉnh / thu hồi ĐNTT (Mẫu số 09/BH - TT12/2026/TT-BTC) cho các hồ sơ đã chọn"
@@ -2182,7 +2182,7 @@ export default function Xml3176Module() {
                     <>
                       <button
                         type="button"
-                        onClick={() => openCreateMau09Modal(undefined, '1')}
+                        onClick={() => openCreateMau09Modal(undefined, '2')}
                         className="px-3 py-1 rounded-lg bg-[#004a8f] hover:bg-blue-800 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
                         title="Mở bảng Tạo Mẫu 09/BH để điều chỉnh thông tin hành chính (XML1) hoặc điều chỉnh/hủy chi phí (XML2..15) cho các hồ sơ đã chọn"
                       >
@@ -2192,7 +2192,7 @@ export default function Xml3176Module() {
 
                       <button
                         type="button"
-                        onClick={() => openCreateMau09Modal(undefined, '2')}
+                        onClick={() => openCreateMau09Modal(undefined, '1')}
                         className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
                         title="Mở bảng Tạo Mẫu 09/BH với trạng thái Thu hồi đề nghị thanh toán cho các hồ sơ đã chọn"
                       >
@@ -2326,7 +2326,7 @@ export default function Xml3176Module() {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => openCreateMau09Modal(undefined, '1')}
+                    onClick={() => openCreateMau09Modal(undefined, '2')}
                     className="px-3 py-1.5 rounded-lg bg-[#004a8f] hover:bg-blue-800 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-2xs cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -2471,7 +2471,7 @@ export default function Xml3176Module() {
                     </p>
                     <button
                       type="button"
-                      onClick={() => openCreateMau09Modal(undefined, '1')}
+                      onClick={() => openCreateMau09Modal(undefined, '2')}
                       className="px-4 py-2 rounded-xl bg-[#004a8f] hover:bg-blue-800 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
                     >
                       <Plus className="w-4 h-4" />
@@ -2673,9 +2673,9 @@ export default function Xml3176Module() {
                               {rec.ttXml1.KY_QT}
                             </td>
                             <td className="border-r border-slate-200 px-2.5 py-2">
-                              {rec.ttXml1.TRANGTHAI === '2' ? (
+                              {rec.ttXml1.TRANGTHAI === '1' ? (
                                 <span className="px-2 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10.5px]">
-                                  2 - Thu hồi / Hủy ĐNTT
+                                  1 - Thu hồi ĐNTT
                                 </span>
                               ) : rec.ttXml1.TRANGTHAI === '4' ? (
                                 <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10.5px]">
@@ -2683,16 +2683,18 @@ export default function Xml3176Module() {
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10.5px]">
-                                  1 - Đề nghị điều chỉnh
+                                  2 - Điều chỉnh dữ liệu gốc
                                 </span>
                               )}
                             </td>
                             <td className="px-3 py-2 space-y-1 text-[11px]">
-                              {dsXml1.length === 0 && dscp.length === 0 ? (
+                              {rec.ttXml1.TRANGTHAI === '1' ? (
+                                <span className="text-rose-700 font-bold">
+                                  Thu hồi toàn bộ hồ sơ đề nghị thanh toán (DS_XML1 &amp; DSCP rỗng)
+                                </span>
+                              ) : dsXml1.length === 0 && dscp.length === 0 ? (
                                 <span className="text-slate-500 italic">
-                                  {rec.ttXml1.TRANGTHAI === '2'
-                                    ? 'Thu hồi toàn bộ hồ sơ khỏi đề nghị thanh toán'
-                                    : 'Chưa có dòng điều chỉnh chi tiết (Bấm "Sửa 09/BH" để bổ sung)'}
+                                  Chưa có dòng điều chỉnh chi tiết (Bấm "Sửa 09/BH" để bổ sung)
                                 </span>
                               ) : (
                                 <>
@@ -2715,11 +2717,11 @@ export default function Xml3176Module() {
                                       ➔{' '}
                                       <b
                                         className={
-                                          cp.TRANGTHAI === '2' ? 'text-rose-700' : 'text-emerald-700'
+                                          cp.TRANGTHAI === '1' ? 'text-rose-700' : 'text-emerald-700'
                                         }
                                       >
-                                        {cp.TRANGTHAI === '2'
-                                          ? 'THU HỒI / HỦY CHI PHÍ'
+                                        {cp.TRANGTHAI === '1'
+                                          ? 'Thu hồi CP'
                                           : cp.TT_DIEUCHINH}
                                       </b>{' '}
                                       <span className="text-slate-500">({cp.LYDO_DIEUCHINH})</span>
@@ -3121,7 +3123,7 @@ export default function Xml3176Module() {
                               {activeTab === 'XML1' && (
                                 <>
                                   <button
-                                    onClick={() => openCreateMau09Modal([row.hosoIndex], '1')}
+                                    onClick={() => openCreateMau09Modal([row.hosoIndex], '2')}
                                     className="px-1.5 py-0.5 rounded bg-[#004a8f] hover:bg-blue-800 text-white font-extrabold text-[10px] flex items-center gap-0.5 cursor-pointer"
                                     title="Lập Hồ sơ điều chỉnh / thu hồi ĐNTT Mẫu số 09/BH cho bệnh nhân này"
                                   >
