@@ -23,6 +23,10 @@ import {
   signSmartCAHash,
   testSmartCaConnection,
   SmartCAConfig,
+  SmartCAProfile,
+  getSmartCAProfiles,
+  getActiveSmartCAProfileId,
+  setActiveSmartCAProfile,
 } from '../lib/vnptSmartCaService';
 import {
   checkLocalTokenSigner,
@@ -281,6 +285,17 @@ export default function Xml3176Module() {
     return 'USB_TOKEN';
   });
   const [smartCaCfg, setSmartCaCfg] = useState<SmartCAConfig>(() => getSmartCAConfig());
+  const [smartCaProfiles, setSmartCaProfiles] = useState<SmartCAProfile[]>(() => getSmartCAProfiles());
+  const [activeSmartCaId, setActiveSmartCaId] = useState<string>(() => getActiveSmartCAProfileId());
+  React.useEffect(() => {
+    const syncProfiles = () => {
+      setSmartCaProfiles(getSmartCAProfiles());
+      setActiveSmartCaId(getActiveSmartCAProfileId());
+      setSmartCaCfg(getSmartCAConfig());
+    };
+    window.addEventListener('smartca-profiles-changed', syncProfiles);
+    return () => window.removeEventListener('smartca-profiles-changed', syncProfiles);
+  }, []);
   const [localSigner, setLocalSigner] = useState<LocalSignerStatus | null>(null);
   const [selectedTokenSerial, setSelectedTokenSerial] = useState<string>('');
   const [isCheckingToken, setIsCheckingToken] = useState(false);
@@ -1033,6 +1048,8 @@ export default function Xml3176Module() {
       setSignPackageMode('COMBINED');
     }
     const latestCfg = getSmartCAConfig();
+    setSmartCaProfiles(getSmartCAProfiles());
+    setActiveSmartCaId(getActiveSmartCAProfileId());
     setSmartCaCfg(latestCfg);
     setSignStatusMsg(null);
     setShowSignModal(true);
@@ -2864,9 +2881,34 @@ export default function Xml3176Module() {
                 </div>
               ) : (
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  {smartCaProfiles.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-200">
+                      <label className="text-xs font-extrabold text-slate-800 whitespace-nowrap">
+                        Chọn CKS SmartCA cần ký:
+                      </label>
+                      <select
+                        value={activeSmartCaId}
+                        onChange={e => {
+                          const nextId = e.target.value;
+                          setActiveSmartCAProfile(nextId);
+                          setActiveSmartCaId(nextId);
+                          setSmartCaCfg(getSmartCAConfig());
+                          setSignStatusMsg(null);
+                        }}
+                        className="flex-1 min-w-[200px] px-2.5 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                      >
+                        {smartCaProfiles.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}{p.userId ? ` — ID: ${p.userId}` : ''}{p.serialNumber ? ` (Serial: ...${p.serialNumber.slice(-8)})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-slate-700">
-                      Cấu hình VNPT SmartCA hiện tại (Dùng chung toàn phần mềm):
+                      Cấu hình VNPT SmartCA đang chọn:
                     </span>
                     <button
                       onClick={() => {
@@ -3187,6 +3229,8 @@ export default function Xml3176Module() {
           onClose={() => {
             setShowConfigModal(false);
             setGatewayConfigTab(false);
+            setSmartCaProfiles(getSmartCAProfiles());
+            setActiveSmartCaId(getActiveSmartCAProfileId());
             setSmartCaCfg(getSmartCAConfig());
           }}
         />

@@ -48,6 +48,10 @@ import {
 } from '../lib/pdfSignService';
 import {
   getSmartCAConfig,
+  SmartCAProfile,
+  getSmartCAProfiles,
+  getActiveSmartCAProfileId,
+  setActiveSmartCAProfile,
   SignatureSlot,
   getSavedSignatureSlots,
   saveSignatureSlots,
@@ -373,7 +377,29 @@ export default function ChungTuTt12Module() {
   const [isRemovingBg, setIsRemovingBg] = useState<boolean>(false);
   const [stampPreviewUrl, setStampPreviewUrl] = useState<string>('');
   const [lastCertDisplay, setLastCertDisplay] = useState<{ signerName: string; orgName: string } | null>(null);
+  const [smartCaProfiles, setSmartCaProfiles] = useState<SmartCAProfile[]>(() => getSmartCAProfiles());
+  const [activeSmartCaId, setActiveSmartCaId] = useState<string>(() => getActiveSmartCAProfileId());
   const rawSlotImagesRef = useRef<Record<number, string>>({});
+
+  useEffect(() => {
+    const syncSmartCaProfiles = () => {
+      setSmartCaProfiles(getSmartCAProfiles());
+      setActiveSmartCaId(getActiveSmartCAProfileId());
+      setLastCertDisplay(null);
+    };
+    window.addEventListener('smartca-profiles-changed', syncSmartCaProfiles);
+    return () => window.removeEventListener('smartca-profiles-changed', syncSmartCaProfiles);
+  }, []);
+
+  const handleSelectSmartCaProfile = (profileId: string) => {
+    const activated = setActiveSmartCAProfile(profileId);
+    setActiveSmartCaId(profileId);
+    setLastCertDisplay(null);
+    if (activated) {
+      setPdfStatusMsg(`🔄 Đã chọn CKS SmartCA: "${activated.name}" (${activated.userId || 'chưa có User ID'})`);
+      setPdfStatusType('info');
+    }
+  };
 
   const activeSlot = sigSlots[activeSlotIdx] || sigSlots[0];
 
@@ -542,6 +568,7 @@ export default function ChungTuTt12Module() {
     activeSlot?.bgRemoved,
     showConfigModal,
     lastCertDisplay,
+    activeSmartCaId,
   ]);
 
   // Render trang PDF lên Canvas mỗi khi pdfBytes hoặc pdfPageNumber thay đổi
@@ -1490,6 +1517,21 @@ export default function ChungTuTt12Module() {
                   XUẤT XML
                 </button>
 
+                {smartCaProfiles.length > 0 && (
+                  <select
+                    value={activeSmartCaId}
+                    onChange={e => handleSelectSmartCaProfile(e.target.value)}
+                    title="Chọn chữ ký số VNPT SmartCA để ký XML"
+                    className="px-2 py-1 rounded-lg bg-sky-50 border border-sky-300 text-sky-900 text-[11px] font-bold max-w-[185px] outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer"
+                  >
+                    {smartCaProfiles.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{p.userId ? ` (${p.userId})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
                 <button
                   type="button"
                   disabled={isBusy || rows.length === 0}
@@ -2076,6 +2118,26 @@ export default function ChungTuTt12Module() {
 
               {/* Các nút Ký số PDF & Xuất file */}
               <div className="flex flex-wrap items-center gap-1.5">
+                {smartCaProfiles.length > 0 && (
+                  <div className="flex items-center gap-1 bg-sky-50 border border-sky-200 rounded-xl px-2 py-1">
+                    <span className="text-[10.5px] font-extrabold text-sky-800 whitespace-nowrap">
+                      CKS SmartCA:
+                    </span>
+                    <select
+                      value={activeSmartCaId}
+                      onChange={e => handleSelectSmartCaProfile(e.target.value)}
+                      title="Chọn chữ ký số VNPT SmartCA đã cấu hình trước khi ký"
+                      className="bg-white border border-sky-300 rounded-lg px-2 py-0.5 text-[11px] font-bold text-slate-800 max-w-[200px] outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer"
+                    >
+                      {smartCaProfiles.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.userId ? ` (${p.userId})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <button
                   type="button"
                   disabled={isPdfBusy || !pdfBytes}
@@ -2598,7 +2660,15 @@ export default function ChungTuTt12Module() {
 
       {/* MODAL CẤU HÌNH CHỮ KÝ SỐ SẴN CÓ CỦA WEB APP */}
       {showConfigModal && (
-        <ConfigModal onClose={() => setShowConfigModal(false)} initialTab="smartca" />
+        <ConfigModal
+          onClose={() => {
+            setShowConfigModal(false);
+            setSmartCaProfiles(getSmartCAProfiles());
+            setActiveSmartCaId(getActiveSmartCAProfileId());
+            setLastCertDisplay(null);
+          }}
+          initialTab="smartca"
+        />
       )}
     </div>
   );

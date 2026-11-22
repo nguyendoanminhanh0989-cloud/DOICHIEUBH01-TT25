@@ -30,7 +30,14 @@ export interface SmartCAConfig {
   caCertBase64?: string;      // chain_data.ca_cert
   certId?: string;            // cert_id
   subjectDN?: string;         // Subject DN trích xuất từ X.509
+  certSubject?: string;       // Alias hiển thị Subject DN
+  manualOtp?: string;         // OTP nhập tay cho Gói tích hợp v2
   signatureImageBase64?: string; // Ảnh chữ ký tay / con dấu (DataURL hoặc Base64 PNG) dùng khi ký số PDF Mẫu 02/BH
+}
+
+export interface SmartCAProfile extends SmartCAConfig {
+  id: string;
+  name: string;
 }
 
 const SIGNATURE_IMAGE_STORAGE_KEY = 'bhxh_tt12_signature_image_v1';
@@ -171,8 +178,10 @@ export interface SmartCATestResult {
 }
 
 const STORAGE_KEY = 'vnpt_smartca_config';
+const PROFILES_STORAGE_KEY = 'vnpt_smartca_profiles_v1';
+const ACTIVE_PROFILE_KEY = 'vnpt_smartca_active_profile_v1';
 
-// Tự động xóa sạch cấu hình SmartCA khi tắt web hoặc F5 theo đúng yêu cầu bảo mật của người dùng (Chế độ session_only)
+// Tự động xóa sạch cấu hình SmartCA chế độ session_only khi tắt web hoặc F5 (giữ nguyên các cấu hình persistent)
 if (typeof window !== 'undefined') {
   try {
     // 1. Kiểm tra dọn dẹp ngay khi khởi động
@@ -184,8 +193,26 @@ if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
     }
 
+    // Bảo đảm localStorage PROFILES_STORAGE_KEY chỉ giữ các cấu hình persistent
+    const localProfilesRaw = localStorage.getItem(PROFILES_STORAGE_KEY);
+    if (localProfilesRaw) {
+      try {
+        const arr = JSON.parse(localProfilesRaw);
+        if (Array.isArray(arr)) {
+          const persistentOnly = arr.filter((p: any) => p && p.storageMode === 'persistent');
+          if (persistentOnly.length !== arr.length) {
+            if (persistentOnly.length > 0) {
+              localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(persistentOnly));
+            } else {
+              localStorage.removeItem(PROFILES_STORAGE_KEY);
+            }
+          }
+        }
+      } catch {}
+    }
+
     // Kiểm tra nếu trang vừa được F5 / Reload:
-    // Theo yêu cầu: Mỗi lần F5 hoặc tắt web thì mất cấu hình (không lưu lại trên web)
+    // Chế độ session_only tự động xóa sạch khi F5 hoặc tắt web
     const navEntries = performance.getEntriesByType?.('navigation');
     const isReload = navEntries && navEntries.length > 0 && (navEntries[0] as PerformanceNavigationTiming).type === 'reload';
     if (isReload) {
@@ -195,10 +222,11 @@ if (typeof window !== 'undefined') {
       if (local && !local.includes('"storageMode":"persistent"')) {
         localStorage.removeItem(STORAGE_KEY);
       }
+      sessionStorage.removeItem(PROFILES_STORAGE_KEY);
     }
   } catch {}
 
-  // 2. Dọn dẹp trước khi rời trang hoặc tắt web
+  // 2. Dọn dẹp phần session_only trước khi rời trang hoặc tắt web
   window.addEventListener('beforeunload', () => {
     try {
       const session = sessionStorage.getItem(STORAGE_KEY);
@@ -210,17 +238,291 @@ if (typeof window !== 'undefined') {
         sessionStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(STORAGE_KEY);
       }
+      sessionStorage.removeItem(PROFILES_STORAGE_KEY);
     } catch {}
   });
 }
 
+function normalizeSmartCAProfile(raw: any, fallbackIndex = 1): SmartCAProfile {
+  const defaults = VNPT_SMARTCA_DEFAULTS.prod;
+  const subj = raw?.subjectDN || raw?.certSubject || undefined;
+  let defaultName = `CKS SmartCA #${fallbackIndex}`;
+  if (subj && typeof subj === 'string') {
+    const cnMatch = subj.match(/(?:^|,\s*)CN=([^,]+)/i);
+    if (cnMatch?.[1]) defaultName = cnMatch[1].trim();
+  } else if (raw?.userId) {
+    defaultName = `SmartCA (${String(raw.userId).trim()})`;
+  }
+
+  return {
+    id: String(raw?.id || `smartca_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
+    name: typeof raw?.name === 'string' && raw.name.trim() ? raw.name.trim() : defaultName,
+    signMode: raw?.signMode || (raw?.totpSecret ? 'TOTP' : 'APP'),
+    storageMode: raw?.storageMode === 'session_only' ? 'session_only' : 'persistent',
+    baseUrl: raw?.baseUrl || defaults.baseUrl,
+    urlEseal: raw?.urlEseal || defaults.urlEseal,
+    urlQd769: raw?.urlQd769 || defaults.urlQd769,
+    clientId: String(raw?.clientId || ''),
+    clientSecret: String(raw?.clientSecret || ''),
+    userId: String(raw?.userId || ''),
+    password: String(raw?.password || ''),
+    serialNumber: String(raw?.serialNumber || ''),
+    totpSecret: String(raw?.totpSecret || ''),
+    certificateBase64: raw?.certificateBase64 || undefined,
+    caCertBase64: raw?.caCertBase64 || undefined,
+    certId: raw?.certId || undefined,
+    subjectDN: subj,
+    certSubject: subj,
+    manualOtp: raw?.manualOtp || undefined,
+    signatureImageBase64: raw?.signatureImageBase64 || undefined,
+  };
+}
+
+function syncLegacyConfigStorage(profile: SmartCAProfile | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!profile) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    const json = JSON.stringify(profile);
+    sessionStorage.setItem(STORAGE_KEY, json);
+    if (profile.storageMode === 'persistent') {
+      localStorage.setItem(STORAGE_KEY, json);
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {}
+}
+
+function persistSmartCAProfileLists(profiles: SmartCAProfile[]): void {
+  if (typeof window === 'undefined') return;
+  const persistentList = profiles.filter(p => p.storageMode === 'persistent');
+  const sessionList = profiles.filter(p => p.storageMode !== 'persistent');
+  try {
+    if (persistentList.length > 0) {
+      localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(persistentList));
+    } else {
+      localStorage.removeItem(PROFILES_STORAGE_KEY);
+    }
+  } catch (err) {
+    console.warn('Lỗi ghi localStorage vnpt_smartca_profiles_v1:', err);
+  }
+  try {
+    if (sessionList.length > 0) {
+      sessionStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(sessionList));
+    } else {
+      sessionStorage.removeItem(PROFILES_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+export const createEmptySmartCAProfile = (index?: number): SmartCAProfile => {
+  const num = index && index > 0 ? index : 1;
+  return {
+    id: `smartca_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name: `CKS SmartCA #${num}`,
+    signMode: 'TOTP',
+    storageMode: 'persistent',
+    baseUrl: VNPT_SMARTCA_DEFAULTS.prod.baseUrl,
+    urlEseal: VNPT_SMARTCA_DEFAULTS.prod.urlEseal,
+    urlQd769: VNPT_SMARTCA_DEFAULTS.prod.urlQd769,
+    clientId: '',
+    clientSecret: '',
+    userId: '',
+    password: '',
+    serialNumber: '',
+    totpSecret: '',
+  };
+};
+
+export const getSmartCAProfiles = (): SmartCAProfile[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const mergedMap = new Map<string, SmartCAProfile>();
+    const localRaw = localStorage.getItem(PROFILES_STORAGE_KEY);
+    const sessionRaw = sessionStorage.getItem(PROFILES_STORAGE_KEY);
+
+    if (localRaw) {
+      try {
+        const arr = JSON.parse(localRaw);
+        if (Array.isArray(arr)) {
+          arr.forEach((item, idx) => {
+            if (item && typeof item === 'object' && item.id && item.storageMode === 'persistent') {
+              mergedMap.set(String(item.id), normalizeSmartCAProfile(item, idx + 1));
+            }
+          });
+        }
+      } catch {}
+    }
+
+    if (sessionRaw) {
+      try {
+        const arr = JSON.parse(sessionRaw);
+        if (Array.isArray(arr)) {
+          arr.forEach((item, idx) => {
+            if (item && typeof item === 'object' && item.id) {
+              mergedMap.set(String(item.id), normalizeSmartCAProfile(item, idx + 1));
+            }
+          });
+        }
+      } catch {}
+    }
+
+    if (mergedMap.size > 0) {
+      return Array.from(mergedMap.values());
+    }
+
+    // Tự động chuyển đổi (migrate) cấu hình đơn cũ nếu có
+    const legacyRaw = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
+    if (legacyRaw) {
+      try {
+        const legacy = JSON.parse(legacyRaw);
+        if (legacy && (legacy.clientId || legacy.userId || legacy.serialNumber)) {
+          const migrated = normalizeSmartCAProfile(
+            {
+              ...legacy,
+              id: 'smartca_default',
+              storageMode: legacy.storageMode || 'session_only',
+            },
+            1
+          );
+          return [migrated];
+        }
+      } catch {}
+    }
+  } catch {}
+  return [];
+};
+
+export const getActiveSmartCAProfileId = (): string => {
+  if (typeof window === 'undefined') return '';
+  const profiles = getSmartCAProfiles();
+  if (profiles.length === 0) return '';
+  try {
+    const stored =
+      sessionStorage.getItem(ACTIVE_PROFILE_KEY) ||
+      localStorage.getItem(ACTIVE_PROFILE_KEY) ||
+      '';
+    if (stored && profiles.some(p => p.id === stored)) {
+      return stored;
+    }
+  } catch {}
+  return profiles[0].id;
+};
+
+export const setActiveSmartCAProfile = (profileId: string): SmartCAProfile | null => {
+  const profiles = getSmartCAProfiles();
+  const target = profiles.find(p => p.id === profileId);
+  if (!target) return null;
+
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.setItem(ACTIVE_PROFILE_KEY, target.id);
+      if (target.storageMode === 'persistent') {
+        localStorage.setItem(ACTIVE_PROFILE_KEY, target.id);
+      } else {
+        localStorage.removeItem(ACTIVE_PROFILE_KEY);
+      }
+    } catch {}
+  }
+
+  syncLegacyConfigStorage(target);
+  inMemoryCertCache = null;
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('smartca-profiles-changed'));
+  }
+  return target;
+};
+
+export const saveSmartCAProfile = (profile: SmartCAProfile, makeActive = true): SmartCAProfile[] => {
+  const profiles = getSmartCAProfiles();
+  const existingIdx = profiles.findIndex(p => p.id === profile.id);
+  const normalized = normalizeSmartCAProfile(profile, existingIdx >= 0 ? existingIdx + 1 : profiles.length + 1);
+
+  const nextList =
+    existingIdx >= 0
+      ? profiles.map(p => (p.id === normalized.id ? normalized : p))
+      : [...profiles, normalized];
+
+  persistSmartCAProfileLists(nextList);
+
+  const currentActiveId = getActiveSmartCAProfileId();
+  if (makeActive || !currentActiveId || currentActiveId === normalized.id) {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(ACTIVE_PROFILE_KEY, normalized.id);
+        if (normalized.storageMode === 'persistent') {
+          localStorage.setItem(ACTIVE_PROFILE_KEY, normalized.id);
+        } else {
+          localStorage.removeItem(ACTIVE_PROFILE_KEY);
+        }
+      } catch {}
+    }
+    syncLegacyConfigStorage(normalized);
+  }
+
+  inMemoryCertCache = null;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('smartca-profiles-changed'));
+  }
+  return nextList;
+};
+
+export const deleteSmartCAProfile = (profileId: string): SmartCAProfile[] => {
+  const profiles = getSmartCAProfiles();
+  const nextList = profiles.filter(p => p.id !== profileId);
+  persistSmartCAProfileLists(nextList);
+
+  const currentActive =
+    (typeof window !== 'undefined'
+      ? sessionStorage.getItem(ACTIVE_PROFILE_KEY) || localStorage.getItem(ACTIVE_PROFILE_KEY)
+      : '') || '';
+
+  if (nextList.length === 0) {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(ACTIVE_PROFILE_KEY);
+        localStorage.removeItem(ACTIVE_PROFILE_KEY);
+      } catch {}
+    }
+    syncLegacyConfigStorage(null);
+  } else if (currentActive === profileId || !nextList.some(p => p.id === currentActive)) {
+    const nextActive = nextList[0];
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(ACTIVE_PROFILE_KEY, nextActive.id);
+        if (nextActive.storageMode === 'persistent') {
+          localStorage.setItem(ACTIVE_PROFILE_KEY, nextActive.id);
+        } else {
+          localStorage.removeItem(ACTIVE_PROFILE_KEY);
+        }
+      } catch {}
+    }
+    syncLegacyConfigStorage(nextActive);
+  }
+
+  inMemoryCertCache = null;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('smartca-profiles-changed'));
+  }
+  return nextList;
+};
+
 /**
- * Đọc cấu hình VNPT SmartCA:
- * Mặc định: 'session_only' (Chỉ lưu tạm thời, F5 hoặc tắt web sẽ tự động xóa sạch để bảo mật tuyệt đối).
- * Nếu người dùng chủ động chọn 'persistent' thì mới lưu lâu dài trên máy.
+ * Đọc cấu hình VNPT SmartCA đang được chọn (ưu tiên profile đang kích hoạt trong danh sách nhiều CKS SmartCA).
  */
 export const getSmartCAConfig = (): SmartCAConfig => {
   try {
+    const profiles = getSmartCAProfiles();
+    if (profiles.length > 0) {
+      const activeId = getActiveSmartCAProfileId();
+      const active = profiles.find(p => p.id === activeId) || profiles[0];
+      return active;
+    }
+
     const localRaw = localStorage.getItem(STORAGE_KEY);
     const sessionRaw = sessionStorage.getItem(STORAGE_KEY);
 
@@ -232,6 +534,7 @@ export const getSmartCAConfig = (): SmartCAConfig => {
     // Nếu là chế độ lưu tạm trong phiên (session_only), không đọc localStorage
     if (sessionObj && sessionObj.storageMode === 'session_only') {
       const defaults = VNPT_SMARTCA_DEFAULTS.prod;
+      const subj = sessionObj.subjectDN || sessionObj.certSubject || undefined;
       return {
         signMode: sessionObj.signMode || (sessionObj.totpSecret ? 'TOTP' : 'APP'),
         storageMode: 'session_only',
@@ -247,7 +550,9 @@ export const getSmartCAConfig = (): SmartCAConfig => {
         certificateBase64: sessionObj.certificateBase64 || undefined,
         caCertBase64: sessionObj.caCertBase64 || undefined,
         certId: sessionObj.certId || undefined,
-        subjectDN: sessionObj.subjectDN || undefined,
+        subjectDN: subj,
+        certSubject: subj,
+        manualOtp: sessionObj.manualOtp || undefined,
       };
     }
 
@@ -255,6 +560,7 @@ export const getSmartCAConfig = (): SmartCAConfig => {
     if (localObj && localObj.storageMode === 'persistent') {
       const merged = { ...(sessionObj || {}), ...localObj };
       const defaults = VNPT_SMARTCA_DEFAULTS.prod;
+      const subj = merged.subjectDN || merged.certSubject || undefined;
       return {
         signMode: merged.signMode || (merged.totpSecret ? 'TOTP' : 'APP'),
         storageMode: 'persistent',
@@ -270,12 +576,15 @@ export const getSmartCAConfig = (): SmartCAConfig => {
         certificateBase64: merged.certificateBase64 || undefined,
         caCertBase64: merged.caCertBase64 || undefined,
         certId: merged.certId || undefined,
-        subjectDN: merged.subjectDN || undefined,
+        subjectDN: subj,
+        certSubject: subj,
+        manualOtp: merged.manualOtp || undefined,
       };
     }
 
     if (sessionObj) {
       const defaults = VNPT_SMARTCA_DEFAULTS.prod;
+      const subj = sessionObj.subjectDN || sessionObj.certSubject || undefined;
       return {
         signMode: sessionObj.signMode || (sessionObj.totpSecret ? 'TOTP' : 'APP'),
         storageMode: sessionObj.storageMode || 'session_only',
@@ -291,7 +600,9 @@ export const getSmartCAConfig = (): SmartCAConfig => {
         certificateBase64: sessionObj.certificateBase64 || undefined,
         caCertBase64: sessionObj.caCertBase64 || undefined,
         certId: sessionObj.certId || undefined,
-        subjectDN: sessionObj.subjectDN || undefined,
+        subjectDN: subj,
+        certSubject: subj,
+        manualOtp: sessionObj.manualOtp || undefined,
       };
     }
   } catch (e) {
@@ -313,21 +624,21 @@ export const getSmartCAConfig = (): SmartCAConfig => {
 };
 
 /**
- * Lưu cấu hình VNPT SmartCA:
- * - Mặc định storageMode === 'session_only': Chỉ lưu vào sessionStorage, tự động xóa localStorage. Khi F5 hoặc tắt web sẽ tự động xóa sạch.
- * - Nếu storageMode === 'persistent': Lưu vĩnh viễn vào localStorage.
+ * Lưu cấu hình VNPT SmartCA (đồng bộ cả profile đang kích hoạt nếu đang dùng danh sách nhiều CKS).
  */
 export const saveSmartCAConfig = (config: SmartCAConfig): void => {
   try {
     const existing = getSmartCAConfig();
     const storageMode = config.storageMode || existing.storageMode || 'session_only';
+    const subj = config.subjectDN || config.certSubject || existing.subjectDN || existing.certSubject || undefined;
     const toSave: SmartCAConfig = {
       ...existing,
       ...config,
       storageMode,
       certificateBase64: config.certificateBase64 || existing.certificateBase64 || undefined,
       caCertBase64: config.caCertBase64 || existing.caCertBase64 || undefined,
-      subjectDN: config.subjectDN || existing.subjectDN || undefined,
+      subjectDN: subj,
+      certSubject: subj,
       serialNumber: config.serialNumber || existing.serialNumber || '',
       clientId: config.clientId !== undefined && config.clientId !== '' ? config.clientId : existing.clientId,
       clientSecret: config.clientSecret !== undefined && config.clientSecret !== '' ? config.clientSecret : existing.clientSecret,
@@ -335,6 +646,22 @@ export const saveSmartCAConfig = (config: SmartCAConfig): void => {
       password: config.password !== undefined && config.password !== '' ? config.password : existing.password,
       totpSecret: config.totpSecret !== undefined && config.totpSecret !== '' ? config.totpSecret : existing.totpSecret,
     };
+
+    const profiles = getSmartCAProfiles();
+    if (profiles.length > 0) {
+      const activeId = getActiveSmartCAProfileId();
+      const active = profiles.find(p => p.id === activeId) || profiles[0];
+      saveSmartCAProfile(
+        {
+          ...active,
+          ...toSave,
+          id: active.id,
+          name: (config as SmartCAProfile).name || active.name,
+        },
+        true
+      );
+      return;
+    }
 
     const json = JSON.stringify(toSave);
     if (storageMode === 'session_only') {

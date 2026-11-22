@@ -26,6 +26,10 @@ import {
   saveSmartCAConfig,
   testSmartCaConnection,
   SmartCAConfig,
+  SmartCAProfile,
+  getSmartCAProfiles,
+  getActiveSmartCAProfileId,
+  setActiveSmartCAProfile,
 } from '../lib/vnptSmartCaService';
 import ConfigModal from './ConfigModal';
 
@@ -56,6 +60,8 @@ export default function KySoModal({
   const [currentRecords, setCurrentRecords] = useState<HoSoRecord[]>(records);
   const [step, setStep] = useState<Step>('config');
   const [smartCaCfg, setSmartCaCfg] = useState<SmartCAConfig>(() => getSmartCAConfig());
+  const [smartCaProfiles, setSmartCaProfiles] = useState<SmartCAProfile[]>(() => getSmartCAProfiles());
+  const [activeSmartCaId, setActiveSmartCaId] = useState<string>(() => getActiveSmartCAProfileId());
   const [showSmartCaSetup, setShowSmartCaSetup] = useState(false);
   const [isFetchingCert, setIsFetchingCert] = useState(false);
   const [smartCaNotice, setSmartCaNotice] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -134,9 +140,21 @@ export default function KySoModal({
   useEffect(() => {
     checkSigner();
     if (signMethod === 'SMARTCA_TOTP' || signMethod === 'SMARTCA_APP') {
+      setSmartCaProfiles(getSmartCAProfiles());
+      setActiveSmartCaId(getActiveSmartCAProfileId());
       setSmartCaCfg(getSmartCAConfig());
     }
   }, [signMethod]);
+
+  useEffect(() => {
+    const syncProfiles = () => {
+      setSmartCaProfiles(getSmartCAProfiles());
+      setActiveSmartCaId(getActiveSmartCAProfileId());
+      setSmartCaCfg(getSmartCAConfig());
+    };
+    window.addEventListener('smartca-profiles-changed', syncProfiles);
+    return () => window.removeEventListener('smartca-profiles-changed', syncProfiles);
+  }, []);
 
   const handleQuickFetchSmartCaCert = async () => {
     const latest = getSmartCAConfig();
@@ -779,6 +797,31 @@ export default function KySoModal({
                   {/* === PANEL HỖ TRỢ HÌNH THỨC 2: VNPT SMARTCA (CHUẨN 769/QĐ-BTTTT v2.0) === */}
                   {(signMethod === 'SMARTCA_TOTP' || signMethod === 'SMARTCA_APP') && (
                     <div className="mt-3 p-4 bg-blue-50/60 border border-blue-200 rounded-xl space-y-3">
+                      {smartCaProfiles.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-2 pb-2.5 border-b border-blue-200/70">
+                          <label className="text-xs font-extrabold text-blue-900 whitespace-nowrap">
+                            Chọn CKS SmartCA cần ký:
+                          </label>
+                          <select
+                            value={activeSmartCaId}
+                            onChange={e => {
+                              const nextId = e.target.value;
+                              setActiveSmartCAProfile(nextId);
+                              setActiveSmartCaId(nextId);
+                              setSmartCaCfg(getSmartCAConfig());
+                              setSmartCaNotice(null);
+                            }}
+                            className="flex-1 min-w-[200px] px-2.5 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                          >
+                            {smartCaProfiles.map(p => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}{p.userId ? ` — ID: ${p.userId}` : ''}{p.serialNumber ? ` (Serial: ...${p.serialNumber.slice(-8)})` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className={cn(
@@ -1120,6 +1163,8 @@ export default function KySoModal({
           initialTab="smartca"
           onClose={() => {
             setShowSmartCaSetup(false);
+            setSmartCaProfiles(getSmartCAProfiles());
+            setActiveSmartCaId(getActiveSmartCAProfileId());
             setSmartCaCfg(getSmartCAConfig());
           }}
         />

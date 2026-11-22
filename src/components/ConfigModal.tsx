@@ -11,6 +11,8 @@ import {
   Network,
   Upload,
   Download,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { bhxhGetToken } from '../lib/bhxhService';
@@ -18,6 +20,13 @@ import { getOrgConfig, saveOrgConfig } from '../lib/signAndSubmitService';
 import {
   getSmartCAConfig,
   saveSmartCAConfig,
+  SmartCAProfile,
+  getSmartCAProfiles,
+  getActiveSmartCAProfileId,
+  saveSmartCAProfile,
+  setActiveSmartCAProfile,
+  deleteSmartCAProfile,
+  createEmptySmartCAProfile,
   testSmartCaConnection,
   CertificateInfo,
   VNPT_SMARTCA_DEFAULTS,
@@ -29,6 +38,7 @@ import {
 interface ConfigModalProps {
   onClose: () => void;
   initialTab?: TabType;
+  isOpen?: boolean;
 }
 
 type TabType = 'facility' | 'smartca' | 'bhyt';
@@ -36,9 +46,20 @@ type TabType = 'facility' | 'smartca' | 'bhyt';
 export default function ConfigModal({ onClose, initialTab = 'smartca' }: ConfigModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
 
-  // Lấy cấu hình đã lưu bền vững (localStorage ưu tiên)
+  // Lấy cấu hình đã lưu bền vững (hỗ trợ nhiều CKS VNPT SmartCA có đặt tên)
   const initialOrg = getOrgConfig();
-  const initialSmartCA = getSmartCAConfig();
+  const initialProfilesList = getSmartCAProfiles();
+  const initialActiveProfileId = getActiveSmartCAProfileId();
+  const initialActiveProfile =
+    initialProfilesList.find(p => p.id === initialActiveProfileId) ||
+    initialProfilesList[0] ||
+    createEmptySmartCAProfile(1);
+  const initialSmartCA = initialProfilesList.length > 0 ? initialActiveProfile : getSmartCAConfig();
+
+  const [profiles, setProfiles] = useState<SmartCAProfile[]>(() => initialProfilesList);
+  const [editingProfileId, setEditingProfileId] = useState<string>(() => initialActiveProfile.id);
+  const [profileName, setProfileName] = useState<string>(() => initialActiveProfile.name || 'CKS SmartCA #1');
+  const profileNameInputRef = useRef<HTMLInputElement>(null);
 
   // Form states - Facility
   const [maCskcb, setMaCskcb] = useState(() => initialOrg.ma_cskcb || '48225');
@@ -66,10 +87,88 @@ export default function ConfigModal({ onClose, initialTab = 'smartca' }: ConfigM
   const [smartcaCertId, setSmartcaCertId] = useState(() => initialSmartCA.certId || '');
   const [smartcaSubject, setSmartcaSubject] = useState(() => initialSmartCA.subjectDN || '');
   const [smartcaStorageMode, setSmartcaStorageMode] = useState<'persistent' | 'session_only'>(
-    () => initialSmartCA.storageMode || 'session_only'
+    () => initialSmartCA.storageMode || 'persistent'
   );
   const [signatureImageB64, setSignatureImageB64] = useState<string>(() => getSavedSignatureImage());
   const [fetchedCerts, setFetchedCerts] = useState<CertificateInfo[]>([]);
+
+  const loadProfileIntoForm = (p: SmartCAProfile) => {
+    setEditingProfileId(p.id);
+    setProfileName(p.name || 'CKS SmartCA');
+    setSmartcaSignMode(p.signMode || (p.totpSecret ? 'TOTP' : 'APP'));
+    setSmartcaStorageMode(p.storageMode || 'persistent');
+    setSmartcaBaseUrl(p.baseUrl || VNPT_SMARTCA_DEFAULTS.prod.baseUrl);
+    setSmartcaUrlEseal(p.urlEseal || VNPT_SMARTCA_DEFAULTS.prod.urlEseal);
+    setSmartcaUrlQd769(p.urlQd769 || VNPT_SMARTCA_DEFAULTS.prod.urlQd769);
+    setSmartcaClientId(p.clientId || '');
+    setSmartcaClientSecret(p.clientSecret || '');
+    setSmartcaUserId(p.userId || '');
+    setSmartcaPassword(p.password || '');
+    setSmartcaSerialNumber(p.serialNumber || '');
+    setSmartcaTotpSecret(p.totpSecret || '');
+    setSmartcaCertificate(p.certificateBase64 || '');
+    setSmartcaCaCert(p.caCertBase64 || '');
+    setSmartcaCertId(p.certId || '');
+    setSmartcaSubject(p.subjectDN || p.certSubject || '');
+    setFetchedCerts([]);
+    setTestResult(null);
+  };
+
+  const buildCurrentProfileFromForm = (): SmartCAProfile => {
+    const trimmedName = profileName.trim();
+    const fallbackName = smartcaUserId.trim()
+      ? `SmartCA (${smartcaUserId.trim()})`
+      : `CKS SmartCA #${Math.max(1, profiles.length)}`;
+    return {
+      id: editingProfileId,
+      name: trimmedName || fallbackName,
+      signMode: smartcaSignMode,
+      storageMode: smartcaStorageMode,
+      baseUrl: smartcaBaseUrl,
+      urlEseal: smartcaUrlEseal,
+      urlQd769: smartcaUrlQd769,
+      clientId: smartcaClientId,
+      clientSecret: smartcaClientSecret,
+      userId: smartcaUserId,
+      password: smartcaPassword,
+      serialNumber: smartcaSerialNumber,
+      totpSecret: smartcaTotpSecret,
+      certificateBase64: smartcaCertificate || undefined,
+      caCertBase64: smartcaCaCert || undefined,
+      certId: smartcaCertId || undefined,
+      subjectDN: smartcaSubject || undefined,
+      certSubject: smartcaSubject || undefined,
+      signatureImageBase64: signatureImageB64 || undefined,
+    };
+  };
+
+  const handleSelectProfileCard = (p: SmartCAProfile) => {
+    setActiveSmartCAProfile(p.id);
+    loadProfileIntoForm(p);
+  };
+
+  const handleAddNewProfile = () => {
+    const next = createEmptySmartCAProfile(profiles.length + 1);
+    loadProfileIntoForm(next);
+    setTimeout(() => {
+      profileNameInputRef.current?.focus();
+      profileNameInputRef.current?.select();
+    }, 50);
+  };
+
+  const handleDeleteProfileCard = (e: React.MouseEvent, p: SmartCAProfile) => {
+    e.stopPropagation();
+    if (!confirm(`Bạn có chắc chắn muốn xóa cấu hình CKS "${p.name}"?`)) return;
+    const remaining = deleteSmartCAProfile(p.id);
+    setProfiles(remaining);
+    if (editingProfileId === p.id) {
+      const nextActive =
+        remaining.find(x => x.id === getActiveSmartCAProfileId()) ||
+        remaining[0] ||
+        createEmptySmartCAProfile(1);
+      loadProfileIntoForm(nextActive);
+    }
+  };
 
   // Form states - BHYT
   const [bhytUsername, setBhytUsername] = useState(
@@ -110,22 +209,6 @@ export default function ConfigModal({ onClose, initialTab = 'smartca' }: ConfigM
     if (orgConfig.ten_cskcb) setTenCskcb(orgConfig.ten_cskcb);
     if (orgConfig.bhxh_account?.username) setBhytUsername(orgConfig.bhxh_account.username);
     if (orgConfig.bhxh_account?.password) setBhytPassword(orgConfig.bhxh_account.password);
-
-    const smartCAConfig = getSmartCAConfig();
-    if (smartCAConfig.signMode) setSmartcaSignMode(smartCAConfig.signMode);
-    if (smartCAConfig.baseUrl) setSmartcaBaseUrl(smartCAConfig.baseUrl);
-    if (smartCAConfig.urlEseal) setSmartcaUrlEseal(smartCAConfig.urlEseal);
-    if (smartCAConfig.urlQd769) setSmartcaUrlQd769(smartCAConfig.urlQd769);
-    if (smartCAConfig.clientId) setSmartcaClientId(smartCAConfig.clientId);
-    if (smartCAConfig.clientSecret) setSmartcaClientSecret(smartCAConfig.clientSecret);
-    if (smartCAConfig.serialNumber) setSmartcaSerialNumber(smartCAConfig.serialNumber);
-    if (smartCAConfig.userId) setSmartcaUserId(smartCAConfig.userId);
-    if (smartCAConfig.password) setSmartcaPassword(smartCAConfig.password);
-    if (smartCAConfig.totpSecret) setSmartcaTotpSecret(smartCAConfig.totpSecret);
-    if (smartCAConfig.certificateBase64) setSmartcaCertificate(smartCAConfig.certificateBase64);
-    if (smartCAConfig.caCertBase64) setSmartcaCaCert(smartCAConfig.caCertBase64);
-    if (smartCAConfig.certId) setSmartcaCertId(smartCAConfig.certId);
-    if (smartCAConfig.subjectDN) setSmartcaSubject(smartCAConfig.subjectDN);
   }, []);
 
   // Load danh mục CSKCB
@@ -220,15 +303,21 @@ export default function ConfigModal({ onClose, initialTab = 'smartca' }: ConfigM
           setSmartcaCaCert(newCaCert);
           setSmartcaCertId(newCertId);
 
-          // Tự động lưu chứng thư vừa lấy vào bộ nhớ để dùng ký ngay
-          saveSmartCAConfig({
-            ...config,
-            serialNumber: newSerial,
-            certificateBase64: newCert,
-            caCertBase64: newCaCert,
-            certId: newCertId,
-            subjectDN: newSubject,
-          });
+          // Tự động lưu chứng thư vừa lấy vào profile SmartCA đang chỉnh sửa
+          const baseProf = buildCurrentProfileFromForm();
+          const savedList = saveSmartCAProfile(
+            {
+              ...baseProf,
+              serialNumber: newSerial,
+              certificateBase64: newCert,
+              caCertBase64: newCaCert,
+              certId: newCertId,
+              subjectDN: newSubject,
+              certSubject: newSubject,
+            },
+            true
+          );
+          setProfiles(savedList);
         }
         setTestResult({
           success: res.status === 'success',
@@ -261,53 +350,49 @@ export default function ConfigModal({ onClose, initialTab = 'smartca' }: ConfigM
       },
     });
 
-    saveSmartCAConfig({
-      signMode: smartcaSignMode,
-      storageMode: smartcaStorageMode,
-      baseUrl: smartcaBaseUrl,
-      urlEseal: smartcaUrlEseal,
-      urlQd769: smartcaUrlQd769,
-      clientId: smartcaClientId,
-      clientSecret: smartcaClientSecret,
-      userId: smartcaUserId,
-      password: smartcaPassword,
-      serialNumber: smartcaSerialNumber,
-      totpSecret: smartcaTotpSecret,
-      certificateBase64: smartcaCertificate || undefined,
-      caCertBase64: smartcaCaCert || undefined,
-      certId: smartcaCertId || undefined,
-      subjectDN: smartcaSubject || undefined,
-      signatureImageBase64: signatureImageB64 || undefined,
-    });
+    const savedProfile = buildCurrentProfileFromForm();
+    const updatedProfiles = saveSmartCAProfile(savedProfile, true);
+    setProfiles(updatedProfiles);
     saveSignatureImage(signatureImageB64);
 
-    alert('Đã lưu cấu hình Chữ ký số & Đơn vị thành công!');
+    alert(`Đã lưu cấu hình CKS "${savedProfile.name}" & Đơn vị thành công!`);
     onClose();
   };
 
   const handleClearConfig = () => {
     if (
       confirm(
-        'Bạn có chắc chắn muốn xóa cấu hình tài khoản (Mật khẩu, User ID, TOTP)? Các thiết lập hệ thống (Client ID, Secret, Serial) vẫn được giữ lại.'
+        `Bạn có chắc chắn muốn xóa thông tin tài khoản của "${profileName || 'CKS đang chọn'}" (User ID, Mật khẩu, TOTP)? Các CKS SmartCA khác vẫn được giữ nguyên.`
       )
     ) {
       setSmartcaUserId('');
       setSmartcaPassword('');
       setSmartcaTotpSecret('');
-      setBhytUsername('');
-      setBhytPassword('');
+      setSmartcaCertificate('');
+      setSmartcaCaCert('');
+      setSmartcaCertId('');
+      setSmartcaSerialNumber('');
+      setSmartcaSubject('');
       setTestResult(null);
 
-      sessionStorage.removeItem('org_config');
-      localStorage.removeItem('org_config');
-      sessionStorage.removeItem('vnpt_smartca_config');
-      localStorage.removeItem('vnpt_smartca_config');
-      sessionStorage.removeItem('cskcb_config');
-      localStorage.removeItem('cskcb_config');
-      sessionStorage.removeItem('bhxh_token');
-      sessionStorage.removeItem('bhxh_id_token');
+      if (profiles.some(p => p.id === editingProfileId)) {
+        const clearedProfile: SmartCAProfile = {
+          ...buildCurrentProfileFromForm(),
+          userId: '',
+          password: '',
+          totpSecret: '',
+          certificateBase64: undefined,
+          caCertBase64: undefined,
+          certId: undefined,
+          serialNumber: '',
+          subjectDN: undefined,
+          certSubject: undefined,
+        };
+        const updatedList = saveSmartCAProfile(clearedProfile, true);
+        setProfiles(updatedList);
+      }
 
-      alert('Đã xóa thông tin tài khoản!');
+      alert('Đã xóa thông tin tài khoản của cấu hình CKS đang chọn!');
     }
   };
 
@@ -451,6 +536,95 @@ export default function ConfigModal({ onClose, initialTab = 'smartca' }: ConfigM
           {/* VNPT SmartCA Tab */}
           {activeTab === 'smartca' && (
             <div className="space-y-4">
+              {/* Quản lý danh sách nhiều CKS VNPT SmartCA có đặt tên riêng */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50/60 p-4 rounded-xl border border-blue-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-black uppercase text-blue-900 tracking-wide">
+                      Danh sách Chữ ký số VNPT SmartCA đã cấu hình ({profiles.length} CKS)
+                    </div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">
+                      Cấu hình nhiều tài khoản SmartCA khác nhau (Giám đốc, Kế toán trưởng, Phòng khám...) và đặt tên gợi nhớ để chọn đúng CKS khi ký.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddNewProfile}
+                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-xs cursor-pointer transition"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Thêm CKS SmartCA mới
+                  </button>
+                </div>
+
+                {profiles.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {profiles.map(p => {
+                      const isEditing = p.id === editingProfileId;
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => handleSelectProfileCard(p)}
+                          className={cn(
+                            'group flex items-center gap-2 px-3 py-2 rounded-xl border text-xs cursor-pointer transition',
+                            isEditing
+                              ? 'bg-white border-blue-600 ring-2 ring-blue-500/30 shadow-xs text-blue-950'
+                              : 'bg-white/80 border-slate-200 hover:border-blue-300 hover:bg-white text-slate-700'
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              'w-2.5 h-2.5 rounded-full shrink-0',
+                              isEditing ? 'bg-emerald-500' : 'bg-slate-300'
+                            )}
+                          />
+                          <div className="min-w-0">
+                            <div className="font-extrabold flex items-center gap-1.5">
+                              <span className="truncate max-w-[190px]">{p.name}</span>
+                              {isEditing && (
+                                <span className="text-[10px] px-1.5 py-px rounded bg-blue-100 text-blue-700 font-bold">
+                                  Đang chọn
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[10.5px] text-slate-500 font-mono truncate max-w-[230px]">
+                              ID: {p.userId || '(chưa nhập)'} • {p.signMode || 'TOTP'}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={e => handleDeleteProfileCard(e, p)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer ml-1"
+                            title={`Xóa cấu hình "${p.name}"`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-600 bg-white/80 px-3 py-2 rounded-lg border border-dashed border-blue-300">
+                    Chưa có cấu hình SmartCA nào được lưu. Hãy đặt tên gợi nhớ bên dưới, nhập thông tin và bấm <b>Lưu cấu hình</b>.
+                  </div>
+                )}
+
+                {/* Ô đặt tên gợi nhớ cho CKS đang thêm / sửa */}
+                <div className="bg-white p-3 rounded-xl border border-blue-200/80">
+                  <label className="block text-xs font-extrabold text-blue-900 mb-1">
+                    Tên gợi nhớ CKS (tránh nhầm lẫn) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    ref={profileNameInputRef}
+                    type="text"
+                    value={profileName}
+                    onChange={e => setProfileName(e.target.value)}
+                    placeholder="VD: CKS Giám đốc - BS Nguyễn Văn A, CKS Kế toán trưởng..."
+                    className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+
               {/* Cấu hình 3 đường link kết nối VNPT SmartCA */}
               <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
