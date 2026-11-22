@@ -377,24 +377,67 @@ export default function Xml3176Module() {
     return { signedCount, unsignedCount, modifiedCount };
   }, [doc]);
 
-  // Tổng hợp chi phí từ Bảng 1 (tính trên các hồ sơ đang tích chọn hoặc toàn bộ nếu chưa tích)
+  const parseXmlMoney = (val: unknown): number => {
+    if (val === null || val === undefined) return 0;
+    const raw = String(val).trim();
+    if (!raw) return 0;
+    const direct = Number(raw);
+    if (Number.isFinite(direct)) return direct;
+    const normalized = Number(raw.replace(',', '.'));
+    return Number.isFinite(normalized) ? normalized : 0;
+  };
+
+  const formatBhxhAmount = (val: number): string => {
+    const rounded = Math.round(val * 100) / 100 || 0;
+    return rounded.toLocaleString('vi-VN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  // Tổng hợp chi phí từ Bảng 1 theo đúng các hồ sơ đang tích chọn (chuẩn Cổng BHXH)
   const costSummary = useMemo(() => {
-    if (!doc) return { tongChiBv: 0, bhtt: 0, bntt: 0, thuoc: 0, vtyt: 0, count: 0 };
-    const rowsToSum =
-      selectedHosoIndices.size > 0
-        ? doc.tables.XML1.filter(r => selectedHosoIndices.has(r.hosoIndex))
-        : doc.tables.XML1;
+    if (!doc) {
+      return {
+        tongChiBv: 0,
+        tongChiBh: 0,
+        bhtt: 0,
+        bntt: 0,
+        bnttRaw: 0,
+        bncct: 0,
+        thuoc: 0,
+        vtyt: 0,
+        count: 0,
+      };
+    }
+    const rowsToSum = doc.tables.XML1.filter(r => selectedHosoIndices.has(r.hosoIndex));
     return rowsToSum.reduce(
       (acc, r) => {
-        acc.tongChiBv += Number(r.fields.T_TONGCHI_BV || 0);
-        acc.bhtt += Number(r.fields.T_BHTT || 0);
-        acc.bntt += Number(r.fields.T_BNTT || 0) + Number(r.fields.T_BNCCT || 0);
-        acc.thuoc += Number(r.fields.T_THUOC || 0);
-        acc.vtyt += Number(r.fields.T_VTYT || 0);
+        const rawTongChiBv = String(r.fields.T_TONGCHI_BV ?? '').trim();
+        const bnttRaw = parseXmlMoney(r.fields.T_BNTT);
+        const bncct = parseXmlMoney(r.fields.T_BNCCT);
+        acc.tongChiBv += parseXmlMoney(rawTongChiBv ? rawTongChiBv : r.fields.T_TONGCHI_BH);
+        acc.tongChiBh += parseXmlMoney(r.fields.T_TONGCHI_BH);
+        acc.bhtt += parseXmlMoney(r.fields.T_BHTT);
+        acc.bnttRaw += bnttRaw;
+        acc.bncct += bncct;
+        acc.bntt += bnttRaw + bncct;
+        acc.thuoc += parseXmlMoney(r.fields.T_THUOC);
+        acc.vtyt += parseXmlMoney(r.fields.T_VTYT);
         acc.count += 1;
         return acc;
       },
-      { tongChiBv: 0, bhtt: 0, bntt: 0, thuoc: 0, vtyt: 0, count: 0 }
+      {
+        tongChiBv: 0,
+        tongChiBh: 0,
+        bhtt: 0,
+        bntt: 0,
+        bnttRaw: 0,
+        bncct: 0,
+        thuoc: 0,
+        vtyt: 0,
+        count: 0,
+      }
     );
   }, [doc, selectedHosoIndices]);
 
@@ -1582,21 +1625,43 @@ export default function Xml3176Module() {
                   }}
                   className="w-20 px-1.5 py-0.5 text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
-                <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10.5px] font-extrabold">
-                  Chọn {selectedHosoIndices.size}/{doc.hosoFiles.length} HS
-                </span>
               </div>
 
-              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200">
-                <span className="text-[10.5px] font-bold text-slate-500">Tổng chi BV:</span>
-                <strong className="text-slate-900 font-extrabold">
-                  {costSummary.tongChiBv.toLocaleString('vi-VN')} đ
-                </strong>
-                <span className="text-slate-300">|</span>
-                <span className="text-[10.5px] font-bold text-slate-500">BHYT TT:</span>
-                <strong className="text-emerald-700 font-extrabold">
-                  {costSummary.bhtt.toLocaleString('vi-VN')} đ
-                </strong>
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10.5px] font-bold text-slate-600">Tổng HS chọn:</span>
+                  <span className="bg-white border border-slate-300 rounded px-2 py-0.5 font-extrabold tabular-nums text-[11.5px] text-blue-700 text-right min-w-[54px]">
+                    {selectedHosoIndices.size}
+                    <span className="text-[10px] font-semibold text-slate-400">/{doc.hosoFiles.length}</span>
+                  </span>
+                </div>
+                <div
+                  className="flex items-center gap-1"
+                  title={`Tổng chi BV (T_TONGCHI_BV): ${formatBhxhAmount(costSummary.tongChiBv)} | Tổng chi BH (T_TONGCHI_BH): ${formatBhxhAmount(costSummary.tongChiBh)}`}
+                >
+                  <span className="text-[10.5px] font-bold text-slate-600">Tổng chi:</span>
+                  <span className="bg-white border border-slate-300 rounded px-2 py-0.5 font-extrabold tabular-nums text-[11.5px] text-slate-900 text-right min-w-[82px]">
+                    {formatBhxhAmount(costSummary.tongChiBv)}
+                  </span>
+                </div>
+                <div
+                  className="flex items-center gap-1"
+                  title={`Tổng bệnh nhân thanh toán = T_BNTT (${formatBhxhAmount(costSummary.bnttRaw)}) + T_BNCCT (${formatBhxhAmount(costSummary.bncct)})`}
+                >
+                  <span className="text-[10.5px] font-bold text-slate-600">Tổng BNTT:</span>
+                  <span className="bg-white border border-slate-300 rounded px-2 py-0.5 font-extrabold tabular-nums text-[11.5px] text-amber-700 text-right min-w-[78px]">
+                    {formatBhxhAmount(costSummary.bntt)}
+                  </span>
+                </div>
+                <div
+                  className="flex items-center gap-1"
+                  title={`Tổng BHYT thanh toán (T_BHTT): ${formatBhxhAmount(costSummary.bhtt)}`}
+                >
+                  <span className="text-[10.5px] font-bold text-slate-600">Tổng BHTT:</span>
+                  <span className="bg-white border border-slate-300 rounded px-2 py-0.5 font-extrabold tabular-nums text-[11.5px] text-emerald-700 text-right min-w-[82px]">
+                    {formatBhxhAmount(costSummary.bhtt)}
+                  </span>
+                </div>
               </div>
             </div>
 
