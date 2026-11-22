@@ -248,6 +248,23 @@ export function isCostRowAdjusted(row: Mau09SourceCostRow): boolean {
   return row.fieldDrafts.some(isCostFieldAdjusted);
 }
 
+// Nhóm các trường Đơn giá & Thành tiền liên đới trên cùng 1 dòng chi phí (XML2, XML3).
+// Khi người dùng sửa giá (hoặc bấm Đồng bộ tính lại thành tiền) cho 1 dịch vụ/thuốc (1 STT_XML),
+// các trường tiền liên đới trên cùng dòng đó đều thay đổi theo, nhưng khi xuất XML Mẫu 09/BH (<DSCP_DIEUCHINH>)
+// chỉ xuất 1 thẻ <CHIPHI> đại diện cho lần sửa giá của dịch vụ đó để không bị lặp lại nhiều thẻ <CHIPHI> cho cùng 1 công khám/dịch vụ.
+const COUPLED_COST_MONEY_FIELDS = new Set([
+  'DON_GIA',
+  'DON_GIA_BV',
+  'DON_GIA_BH',
+  'THANH_TIEN_BV',
+  'THANH_TIEN_BH',
+  'T_BHTT',
+  'T_BNCCT',
+  'T_BNTT',
+]);
+
+const AUTO_SYNC_REASON_PREFIX = 'Đồng bộ thành tiền';
+
 /**
  * Tổng hợp danh sách <TT_XML1_DC> và <CHIPHI> từ trạng thái chỉnh sửa trên form Mẫu 09/BH
  */
@@ -275,31 +292,8 @@ export function compileMau09Adjustments(
   const dscpDc: Mau09ChiPhiItem[] = [];
   let sttCp = 1;
   for (const row of costRowsDraft) {
-    const modifiedFields = row.fieldDrafts.filter(isCostFieldAdjusted);
-    if (modifiedFields.length > 0) {
-      for (const mf of modifiedFields) {
-        dscpDc.push({
-          STT: sttCp++,
-          SOBANG_XML: row.soBangXml,
-          ID_CP: row.idCp.trim(),
-          STT_XML: row.sttXml.trim() || '1',
-          NGAY_YL: normalizeTo12DigitDateTime(row.ngayYl) || row.ngayYl.trim(),
-          TRANGTHAI: row.trangThai || '1',
-          TRUONG_TT_GOC: mf.field,
-          TT_GOC: mf.ttGoc.trim() !== '' ? mf.ttGoc.trim() : mf.originalValue,
-          LYDO: row.lyDoTuChoi.trim(),
-          TUCHOI: row.tuChoi.trim() || '0',
-          TRUONG_TT_DIEUCHINH: mf.field,
-          TT_DIEUCHINH: mf.ttDieuChinh.trim(),
-          LYDO_DIEUCHINH:
-            mf.lyDoDieuChinh.trim() ||
-            row.withdrawReason.trim() ||
-            row.lyDoTuChoi.trim() ||
-            `Điều chỉnh chỉ tiêu ${mf.field}`,
-        });
-      }
-    } else if (row.withdrawEntireRow || row.trangThai === '2') {
-      // Thu hồi / hủy cả dòng chi phí
+    if (row.withdrawEntireRow || row.trangThai === '2') {
+      // Thu hồi / hủy cả dòng chi phí -> chỉ xuất 1 thẻ <CHIPHI> duy nhất với TRANGTHAI=2
       const keyField =
         row.tableId === 'XML2'
           ? 'TEN_THUOC'
@@ -328,6 +322,74 @@ export function compileMau09Adjustments(
           row.lyDoTuChoi.trim() ||
           'Thu hồi / hủy chi phí đề nghị thanh toán',
       });
+      continue;
+    }
+
+    const modifiedFields = row.fieldDrafts.filter(isCostFieldAdjusted);
+    if (modifiedFields.length > 0) {
+      // Tách các trường hành chính/mã/số lượng và nhóm trường Đơn giá/Thành tiền liên đới trên cùng 1 dòng chi phí
+      const nonMoneyFields = modifiedFields.filter(
+        mf => !COUPLED_COST_MONEY_FIELDS.has(mf.field)
+      );
+      const moneyFields = modifiedFields.filter(mf =>
+        COUPLED_COST_MONEY_FIELDS.has(mf.field)
+      );
+
+      let selectedFieldsToEmit: Mau09CostFieldDraft[] = [...nonMoneyFields];
+
+      if (moneyFields.length === 1) {
+        selectedFieldsToEmit.push(moneyFields[0]);
+      } else if (moneyFields.length > 1) {
+        // Khi 1 công khám / dịch vụ / thuốc có nhiều trường giá/tiền cùng thay đổi (VD: DON_GIA_BV, DON_GIA_BH, THANH_TIEN_BV, THANH_TIEN_BH, T_BHTT),
+        // chỉ chọn 1 trường giá đại diện mà người dùng trực tiếp nhập lý do để xuất 1 thẻ <CHIPHI> duy nhất, tránh bị lặp 2-5 lần trong XML.
+        const userReasonFields = moneyFields.filter(
+          mf =>
+            mf.lyDoDieuChinh.trim() !== '' &&
+            !mf.lyDoDieuChinh.trim().startsWith(AUTO_SYNC_REASON_PREFIX)
+        );
+        const pool = userReasonFields.length > 0 ? userReasonFields : moneyFields;
+        const priorityOrder = [
+          'DON_GIA',
+          'DON_GIA_BV',
+          'DON_GIA_BH',
+          'THANH_TIEN_BV',
+          'THANH_TIEN_BH',
+          'T_BHTT',
+          'T_BNCCT',
+          'T_BNTT',
+        ];
+        const primaryMoneyField =
+          priorityOrder.map(p => pool.find(mf => mf.field === p)).find(Boolean) ||
+          pool[0];
+        if (primaryMoneyField) {
+          selectedFieldsToEmit.push(primaryMoneyField);
+        }
+      }
+
+      // Sắp xếp lại theo thứ tự stt gốc của trường trong bảng
+      selectedFieldsToEmit.sort((a, b) => a.stt - b.stt);
+
+      for (const mf of selectedFieldsToEmit) {
+        dscpDc.push({
+          STT: sttCp++,
+          SOBANG_XML: row.soBangXml,
+          ID_CP: row.idCp.trim(),
+          STT_XML: row.sttXml.trim() || '1',
+          NGAY_YL: normalizeTo12DigitDateTime(row.ngayYl) || row.ngayYl.trim(),
+          TRANGTHAI: row.trangThai || '1',
+          TRUONG_TT_GOC: mf.field,
+          TT_GOC: mf.ttGoc.trim() !== '' ? mf.ttGoc.trim() : mf.originalValue,
+          LYDO: row.lyDoTuChoi.trim(),
+          TUCHOI: row.tuChoi.trim() || '0',
+          TRUONG_TT_DIEUCHINH: mf.field,
+          TT_DIEUCHINH: mf.ttDieuChinh.trim(),
+          LYDO_DIEUCHINH:
+            mf.lyDoDieuChinh.trim() ||
+            row.withdrawReason.trim() ||
+            row.lyDoTuChoi.trim() ||
+            `Điều chỉnh chỉ tiêu ${mf.field}`,
+        });
+      }
     }
   }
 
@@ -688,12 +750,12 @@ function fmtMoneyXml(n: number): string {
 export function recalculateSingleMau09CostRow(
   costRow: Mau09SourceCostRow,
   defaultReason = 'Đồng bộ thành tiền theo đơn giá/số lượng điều chỉnh'
-): { nextRow: Mau09SourceCostRow; changed: boolean } {
+): { nextRow: Mau09SourceCostRow; updatedRow: Mau09SourceCostRow; changed: boolean } {
   if (costRow.tableId !== 'XML2' && costRow.tableId !== 'XML3') {
-    return { nextRow: costRow, changed: false };
+    return { nextRow: costRow, updatedRow: costRow, changed: false };
   }
   if (costRow.withdrawEntireRow || costRow.trangThai === '2') {
-    return { nextRow: costRow, changed: false };
+    return { nextRow: costRow, updatedRow: costRow, changed: false };
   }
 
   const getFieldVal = (name: string): string => {
@@ -780,7 +842,8 @@ export function recalculateSingleMau09CostRow(
       thanhTienBh = rawTtBh;
     }
 
-    // Cập nhật lại DON_GIA_BV / DON_GIA_BH nếu vừa tự đồng bộ
+    // Cập nhật lại DON_GIA_BV / DON_GIA_BH nếu vừa tự đồng bộ (đánh dấu lý do tự đồng bộ để khi xuất XML 09/BH chỉ lấy đúng 1 trường người dùng sửa)
+    const autoPriceSyncReason = `${AUTO_SYNC_REASON_PREFIX} theo đơn giá điều chỉnh`;
     costRow = {
       ...costRow,
       fieldDrafts: costRow.fieldDrafts.map(fd => {
@@ -788,14 +851,14 @@ export function recalculateSingleMau09CostRow(
           return {
             ...fd,
             ttDieuChinh: fmtMoneyXml(donGiaBv),
-            lyDoDieuChinh: fd.lyDoDieuChinh.trim() || existingRowReason,
+            lyDoDieuChinh: fd.lyDoDieuChinh.trim() || autoPriceSyncReason,
           };
         }
         if (fd.field === 'DON_GIA_BH' && fmtMoneyXml(donGiaBh) !== fd.ttDieuChinh) {
           return {
             ...fd,
             ttDieuChinh: fmtMoneyXml(donGiaBh),
-            lyDoDieuChinh: fd.lyDoDieuChinh.trim() || existingRowReason,
+            lyDoDieuChinh: fd.lyDoDieuChinh.trim() || autoPriceSyncReason,
           };
         }
         return fd;
@@ -820,6 +883,9 @@ export function recalculateSingleMau09CostRow(
     T_BNTT: fmtMoneyXml(tBntt),
   };
 
+  const autoSyncReason = `${AUTO_SYNC_REASON_PREFIX} theo đơn giá/số lượng điều chỉnh`;
+
+  // Cập nhật các trường thành tiền ăn theo (THANH_TIEN_BV, THANH_TIEN_BH, T_BHTT, T_BNCCT, T_BNTT)
   let changed = false;
   const nextFieldDrafts = costRow.fieldDrafts.map(fd => {
     if (!(fd.field in computedMap)) return fd;
@@ -836,18 +902,21 @@ export function recalculateSingleMau09CostRow(
         ttGoc: fd.ttGoc || fd.originalValue,
         ttDieuChinh: newVal,
         lyDoDieuChinh: isDiffFromOrig
-          ? fd.lyDoDieuChinh.trim() || existingRowReason
+          ? fd.lyDoDieuChinh.trim() || autoSyncReason
           : fd.lyDoDieuChinh,
       };
     }
     return fd;
   });
 
+  const nextRow: Mau09SourceCostRow = {
+    ...costRow,
+    fieldDrafts: nextFieldDrafts,
+  };
+
   return {
-    nextRow: {
-      ...costRow,
-      fieldDrafts: nextFieldDrafts,
-    },
+    nextRow,
+    updatedRow: nextRow,
     changed,
   };
 }
@@ -863,27 +932,25 @@ export function recalculateAndSyncMau09Prices(
   record: Mau09BhRecord,
   options?: {
     syncXml1TotalsToDsXml1Dc?: boolean;
+    syncXml1Totals?: boolean;
     customReason?: string;
+    defaultReason?: string;
   }
 ): {
+  record: Mau09BhRecord;
   updatedRecord: Mau09BhRecord;
+  recalculatedRowCount: number;
   changedCostRowsCount: number;
+  updatedXml1TotalCount: number;
   changedXml1TotalsCount: number;
-  totalsComparison: {
-    T_THUOC: { goc: number; dc: number };
-    T_VTYT: { goc: number; dc: number };
-    T_TONGCHI_BV: { goc: number; dc: number };
-    T_TONGCHI_BH: { goc: number; dc: number };
-    T_BHTT: { goc: number; dc: number };
-    T_BNCCT: { goc: number; dc: number };
-    T_BNTT: { goc: number; dc: number };
-    T_NGUONKHAC: { goc: number; dc: number };
-  };
+  totalsComparison: Record<string, { goc: number; dc: number }>;
 } {
-  const syncXml1 = options?.syncXml1TotalsToDsXml1Dc ?? true;
+  const syncXml1 =
+    options?.syncXml1Totals ?? options?.syncXml1TotalsToDsXml1Dc ?? false;
   const reasonText =
+    options?.defaultReason?.trim() ||
     options?.customReason?.trim() ||
-    'Đồng bộ thành tiền và tổng chi phí hồ sơ sau khi điều chỉnh/thu hồi chi phí';
+    `${AUTO_SYNC_REASON_PREFIX} và tổng chi phí hồ sơ sau khi điều chỉnh/thu hồi chi phí`;
 
   let changedCostRowsCount = 0;
   const nextCostRows = record.costRowsDraft.map(cr => {
@@ -1013,8 +1080,11 @@ export function recalculateAndSyncMau09Prices(
   };
 
   return {
+    record: updatedRecord,
     updatedRecord,
+    recalculatedRowCount: changedCostRowsCount,
     changedCostRowsCount,
+    updatedXml1TotalCount: changedXml1TotalsCount,
     changedXml1TotalsCount,
     totalsComparison,
   };

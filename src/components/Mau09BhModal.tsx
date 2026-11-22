@@ -79,7 +79,7 @@ export default function Mau09BhModal({
   const [onlyModifiedCost, setOnlyModifiedCost] = useState<boolean>(false);
   const [expandedCostRowIds, setExpandedCostRowIds] = useState<Record<string, boolean>>({});
   const [syncTo3176Doc, setSyncTo3176Doc] = useState<boolean>(true);
-  const [syncXml1TotalsOnCalc, setSyncXml1TotalsOnCalc] = useState<boolean>(true);
+  const [syncXml1TotalsOnCalc, setSyncXml1TotalsOnCalc] = useState<boolean>(false);
   const [previewXmlContent, setPreviewXmlContent] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -148,6 +148,24 @@ export default function Mau09BhModal({
     });
   }, [currentRec, selectedCostTable, onlyModifiedCost]);
 
+  // Tính Thành tiền sau điều chỉnh thực tế của 1 dòng chi phí (tự tính theo đơn giá/số lượng đã sửa)
+  const getEffectiveRowThanhTienDc = (r: Mau09BhRecord['costRowsDraft'][number]): number => {
+    const gocVal = r.thanhTienGoc || 0;
+    if (r.withdrawEntireRow || r.trangThai === '2') return 0;
+    const recalcRow =
+      r.tableId === 'XML2' || r.tableId === 'XML3'
+        ? recalculateSingleMau09CostRow(r).nextRow
+        : r;
+    const ttField =
+      recalcRow.fieldDrafts.find(f => f.field === 'THANH_TIEN_BV') ||
+      recalcRow.fieldDrafts.find(f => f.field === 'THANH_TIEN_BH') ||
+      recalcRow.fieldDrafts.find(f => f.field === 'T_BHTT');
+    const dcNum = ttField
+      ? Number(String(ttField.ttDieuChinh || '0').replace(/,/g, '.'))
+      : gocVal;
+    return Number.isFinite(dcNum) ? dcNum : gocVal;
+  };
+
   // Tính Tổng gốc / Tổng ĐC / Chênh lệch cho Phần 4 và đối chiếu Tổng đơn toàn hồ sơ (XML2 + XML3 -> XML1)
   const costTotals = useMemo(() => {
     let tongGoc = 0;
@@ -155,18 +173,7 @@ export default function Mau09BhModal({
     for (const r of filteredCostRows) {
       const gocVal = r.thanhTienGoc || 0;
       tongGoc += gocVal;
-      if (r.withdrawEntireRow || r.trangThai === '2') {
-        tongDc += 0;
-      } else {
-        const ttField =
-          r.fieldDrafts.find(f => f.field === 'THANH_TIEN_BV') ||
-          r.fieldDrafts.find(f => f.field === 'THANH_TIEN_BH') ||
-          r.fieldDrafts.find(f => f.field === 'T_BHTT');
-        const dcNum = ttField
-          ? Number(String(ttField.ttDieuChinh || '0').replace(/,/g, '.'))
-          : gocVal;
-        tongDc += Number.isFinite(dcNum) ? dcNum : gocVal;
-      }
+      tongDc += getEffectiveRowThanhTienDc(r);
     }
     return {
       tongGoc,
@@ -1199,6 +1206,14 @@ export default function Mau09BhModal({
                                           <span className="text-[11px] font-mono text-slate-600 ml-1">
                                             — Thành tiền gốc:{' '}
                                             <b>{costRow.thanhTienGoc.toLocaleString('vi-VN')}</b>
+                                            {rowMod && (
+                                              <span className="text-blue-700 font-extrabold ml-1">
+                                                ➔ Sau ĐC:{' '}
+                                                {getEffectiveRowThanhTienDc(costRow).toLocaleString(
+                                                  'vi-VN'
+                                                )}
+                                              </span>
+                                            )}
                                           </span>
                                         )}
                                         {rowMod && (
