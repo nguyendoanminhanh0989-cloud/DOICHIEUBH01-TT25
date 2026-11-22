@@ -54,6 +54,7 @@ import {
   getActiveSignatureSlotIndex,
   saveActiveSignatureSlotIndex,
   DEFAULT_VNPT_SUBJECT,
+  DEFAULT_VNPT_CERT,
 } from '../lib/vnptSmartCaService';
 import ConfigModal from './ConfigModal';
 import {
@@ -517,7 +518,8 @@ export default function ChungTuTt12Module() {
     let cancelled = false;
     const cfg = getSmartCAConfig();
     const subject = cfg.subjectDN || DEFAULT_VNPT_SUBJECT;
-    const { signerName, orgName } = lastCertDisplay || extractCertDisplayInfo(subject);
+    const certB64 = cfg.certificateBase64 || DEFAULT_VNPT_CERT;
+    const { signerName, orgName } = lastCertDisplay || extractCertDisplayInfo(subject, undefined, certB64);
 
     createCompositeSignatureStamp({
       signerName,

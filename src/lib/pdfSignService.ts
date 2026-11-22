@@ -118,29 +118,173 @@ export async function renderPdfPageToCanvas(
   };
 }
 
-/**
- * Trích xuất tên người ký (CN) và tên tổ chức (O) từ chuỗi Subject DN của chứng thư số
- * Giữ nguyên logic ExtractCertificateInfo trong MainView.xaml.cs (dòng 1603-1636)
- */
-export function extractCertDisplayInfo(subjectDN: string): {
-  signerName: string;
-  orgName: string;
-} {
-  let signerName = '';
-  let orgName = '';
+function decodeAsn1Oid(oidBytes: Uint8Array): string {
+  if (!oidBytes || oidBytes.length === 0) return '';
+  const first = oidBytes[0];
+  const parts: number[] = [Math.floor(first / 40), first % 40];
+  let val = 0;
+  for (let i = 1; i < oidBytes.length; i++) {
+    const b = oidBytes[i];
+    val = val * 128 + (b & 0x7f);
+    if ((b & 0x80) === 0) {
+      parts.push(val);
+      val = 0;
+    }
+  }
+  return parts.join('.');
+}
 
-  const parts = (subjectDN || '').split(',');
-  for (const part of parts) {
-    const p = part.trim();
-    if (/^CN=/i.test(p) && !signerName) {
-      signerName = p.substring(3).trim();
-    } else if (/^O=/i.test(p) && !orgName) {
-      orgName = p.substring(2).trim();
+function decodeAsn1StringValue(tag: number, bytes: Uint8Array): string {
+  if (!bytes || bytes.length === 0) return '';
+  if (tag === 0x1e) {
+    // BMPString (UTF-16BE)
+    let out = '';
+    for (let i = 0; i + 1 < bytes.length; i += 2) {
+      out += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+    }
+    return out.trim();
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes).trim();
+  } catch {
+    let out = '';
+    for (let i = 0; i < bytes.length; i++) out += String.fromCharCode(bytes[i]);
+    return out.trim();
+  }
+}
+
+function parseAsn1NameAttributes(nameContent: Uint8Array): {
+  cn: string;
+  o: string;
+  ou: string;
+} {
+  let cn = '';
+  let o = '';
+  let ou = '';
+  let pos = 0;
+
+  while (pos + 2 <= nameContent.length) {
+    const rdnSet = readAsn1Tlv(nameContent, pos);
+    if (rdnSet.totalLen <= 0 || pos + rdnSet.totalLen > nameContent.length) break;
+    pos += rdnSet.totalLen;
+
+    let setPos = 0;
+    while (setPos + 2 <= rdnSet.contentSlice.length) {
+      const attrSeq = readAsn1Tlv(rdnSet.contentSlice, setPos);
+      if (attrSeq.totalLen <= 0 || setPos + attrSeq.totalLen > rdnSet.contentSlice.length) break;
+      setPos += attrSeq.totalLen;
+
+      if (attrSeq.contentSlice.length < 2) continue;
+      const oidTlv = readAsn1Tlv(attrSeq.contentSlice, 0);
+      if (oidTlv.tag !== 0x06 || oidTlv.totalLen >= attrSeq.contentSlice.length) continue;
+      const valTlv = readAsn1Tlv(attrSeq.contentSlice, oidTlv.totalLen);
+      const oid = decodeAsn1Oid(oidTlv.contentSlice);
+      const val = decodeAsn1StringValue(valTlv.tag, valTlv.contentSlice);
+      if (!val) continue;
+
+      if (oid === '2.5.4.3' && !cn) cn = val;
+      else if (oid === '2.5.4.10' && !o) o = val;
+      else if (oid === '2.5.4.11' && !ou) ou = val;
     }
   }
 
-  if (!signerName) signerName = subjectDN || 'Đơn vị Khám chữa bệnh';
-  if (!orgName) orgName = signerName;
+  return { cn, o, ou };
+}
+
+export function extractCertNamesFromBase64(rawCertBase64?: string): {
+  issuerCN: string;
+  issuerO: string;
+  subjectCN: string;
+  subjectO: string;
+} | null {
+  if (!rawCertBase64 || rawCertBase64.trim().length < 50) return null;
+  try {
+    const certDer = base64ToBytes(rawCertBase64);
+    const certSeq = readAsn1Tlv(certDer, 0);
+    const tbsCert = readAsn1Tlv(certSeq.contentSlice, 0);
+    const tbs = tbsCert.contentSlice;
+
+    let pos = 0;
+    if (pos + 2 > tbs.length) return null;
+    const first = readAsn1Tlv(tbs, pos);
+    if (first.tag === 0xa0) {
+      pos += first.totalLen;
+    }
+    if (pos + 2 > tbs.length) return null;
+    const serialTlv = readAsn1Tlv(tbs, pos);
+    pos += serialTlv.totalLen;
+
+    if (pos + 2 > tbs.length) return null;
+    const sigAlgTlv = readAsn1Tlv(tbs, pos);
+    pos += sigAlgTlv.totalLen;
+
+    if (pos + 2 > tbs.length) return null;
+    const issuerTlv = readAsn1Tlv(tbs, pos);
+    pos += issuerTlv.totalLen;
+
+    if (pos + 2 > tbs.length) return null;
+    const validityTlv = readAsn1Tlv(tbs, pos);
+    pos += validityTlv.totalLen;
+
+    if (pos + 2 > tbs.length) return null;
+    const subjectTlv = readAsn1Tlv(tbs, pos);
+
+    const issuerAttrs = parseAsn1NameAttributes(issuerTlv.contentSlice);
+    const subjectAttrs = parseAsn1NameAttributes(subjectTlv.contentSlice);
+    return {
+      issuerCN: issuerAttrs.cn,
+      issuerO: issuerAttrs.o,
+      subjectCN: subjectAttrs.cn,
+      subjectO: subjectAttrs.o,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseDnFields(dn: string): { cn: string; o: string } {
+  let cn = '';
+  let o = '';
+  const parts = (dn || '').split(',');
+  for (const part of parts) {
+    const p = part.trim();
+    if (/^CN=/i.test(p) && !cn) {
+      cn = p.substring(3).trim();
+    } else if (/^O=/i.test(p) && !o) {
+      o = p.substring(2).trim();
+    }
+  }
+  return { cn, o };
+}
+
+/**
+ * Trích xuất tên người ký (Subject CN) và tổ chức xác thực (Issuer CA: CN hoặc O của CA cấp chứng thư)
+ * từ chuỗi Subject DN, Issuer DN và/hoặc chứng thư số X.509 Base64
+ */
+export function extractCertDisplayInfo(
+  subjectDN: string,
+  issuerDN?: string,
+  rawCertBase64?: string
+): {
+  signerName: string;
+  orgName: string;
+} {
+  const subjFields = parseDnFields(subjectDN);
+  const parsed = extractCertNamesFromBase64(rawCertBase64);
+
+  const signerName = subjFields.cn || parsed?.subjectCN || subjectDN || 'Đơn vị Khám chữa bệnh';
+
+  let orgName = '';
+  if (parsed) {
+    orgName = parsed.issuerCN || parsed.issuerO || '';
+  }
+  if (!orgName && issuerDN && issuerDN.trim()) {
+    const issFields = parseDnFields(issuerDN);
+    orgName = issFields.cn || issFields.o || issuerDN.trim();
+  }
+  if (!orgName) {
+    orgName = 'Tổ chức cung cấp dịch vụ CKS';
+  }
 
   return { signerName, orgName };
 }
@@ -1017,6 +1161,7 @@ export async function signPdfDocument(options: {
   let rawCertBase64 = '';
   let caCertBase64 = '';
   let subjectDN = '';
+  let issuerDN = '';
   let serialNumber = '';
   let smartCaCfg: SmartCAConfig | null = null;
 
@@ -1033,6 +1178,7 @@ export async function signPdfDocument(options: {
     rawCertBase64 = certInfo.rawCertBase64;
     caCertBase64 = smartCaCfg.caCertBase64 || '';
     subjectDN = certInfo.subject;
+    issuerDN = 'VNPT SmartCA';
     serialNumber = certInfo.serialNumber;
   } else {
     onProgress?.('🔐 Đang kiểm tra và đọc Chứng thư số từ thiết bị USB Token...');
@@ -1052,10 +1198,11 @@ export async function signPdfDocument(options: {
     const unlocked = status.unlockedCert || (await unlockAndFetchTokenCertificate(undefined, undefined, onProgress));
     rawCertBase64 = unlocked.rawCertBase64 || '';
     subjectDN = unlocked.subject || '';
+    issuerDN = unlocked.issuer || unlocked.issuerName || '';
     serialNumber = unlocked.serial || '';
   }
 
-  const { signerName, orgName } = extractCertDisplayInfo(subjectDN);
+  const { signerName, orgName } = extractCertDisplayInfo(subjectDN, issuerDN, rawCertBase64);
   const now = new Date();
 
   onProgress?.('🎨 Đang tạo con dấu chữ ký độ phân giải cao (tách nền trong suốt + thông tin CKS)...');
