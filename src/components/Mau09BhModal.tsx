@@ -14,6 +14,8 @@ import {
   RotateCcw,
   CheckCircle2,
   AlertTriangle,
+  Calculator,
+  RefreshCw,
 } from 'lucide-react';
 import {
   Mau09BhRecord,
@@ -29,6 +31,8 @@ import {
   exportMau09BhToExcel,
   importMau09BhExcelRows,
   printMau09BhPdfWindow,
+  recalculateSingleMau09CostRow,
+  recalculateAndSyncMau09Prices,
 } from '../lib/mau09BhService';
 import { Xml3176TableId } from '../lib/xml3176Service';
 import { getSavedSignatureSlots } from '../lib/vnptSmartCaService';
@@ -75,6 +79,7 @@ export default function Mau09BhModal({
   const [onlyModifiedCost, setOnlyModifiedCost] = useState<boolean>(false);
   const [expandedCostRowIds, setExpandedCostRowIds] = useState<Record<string, boolean>>({});
   const [syncTo3176Doc, setSyncTo3176Doc] = useState<boolean>(true);
+  const [syncXml1TotalsOnCalc, setSyncXml1TotalsOnCalc] = useState<boolean>(true);
   const [previewXmlContent, setPreviewXmlContent] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -143,7 +148,7 @@ export default function Mau09BhModal({
     });
   }, [currentRec, selectedCostTable, onlyModifiedCost]);
 
-  // Tính Tổng gốc / Tổng ĐC / Chênh lệch cho Phần 4
+  // Tính Tổng gốc / Tổng ĐC / Chênh lệch cho Phần 4 và đối chiếu Tổng đơn toàn hồ sơ (XML2 + XML3 -> XML1)
   const costTotals = useMemo(() => {
     let tongGoc = 0;
     let tongDc = 0;
@@ -169,6 +174,62 @@ export default function Mau09BhModal({
       chenhLech: tongDc - tongGoc,
     };
   }, [filteredCostRows]);
+
+  // Đối chiếu trực tiếp Tổng tiền toàn hồ sơ (XML1: T_THUOC, T_TONGCHI_BV, T_TONGCHI_BH, T_BHTT, T_BNCCT, T_BNTT)
+  const liveHosoTotalsPreview = useMemo(() => {
+    if (!currentRec) return null;
+    return recalculateAndSyncMau09Prices(currentRec, {
+      syncXml1Totals: syncXml1TotalsOnCalc,
+    }).totalsComparison;
+  }, [currentRec, syncXml1TotalsOnCalc]);
+
+  // Đồng bộ & Tính lại Giá / Thành tiền từng dòng thuốc, DVKT, VTYT (XML2, XML3) và cập nhật Tổng chi phí hồ sơ (XML1)
+  const handleRecalculateAndSyncAllPrices = (applyToAllDrafts = false) => {
+    let totalRecalcRows = 0;
+    let totalSyncedXml1 = 0;
+
+    setDraftRecords(prev =>
+      prev.map((rec, idx) => {
+        if (!applyToAllDrafts && idx !== activeIdx) return rec;
+        const res = recalculateAndSyncMau09Prices(rec, {
+          syncXml1Totals: syncXml1TotalsOnCalc,
+          defaultReason:
+            'Đồng bộ thành tiền và tổng chi phí sau điều chỉnh giá / số lượng / thu hồi chi phí',
+        });
+        totalRecalcRows += res.recalculatedRowCount;
+        totalSyncedXml1 += res.updatedXml1TotalCount;
+        return res.record;
+      })
+    );
+
+    showTempToast(
+      `🧮 Đã tính lại thành tiền (${totalRecalcRows} dòng XML2/XML3) và đồng bộ ${totalSyncedXml1} chỉ tiêu Tổng tiền lên Phần 3 (XML1)!`
+    );
+  };
+
+  // Tính lại thành tiền cho 1 dòng chi phí XML2 / XML3 cụ thể
+  const handleRecalculateSingleRow = (sourceRowId: string) => {
+    updateCurrentRecord(rec => {
+      const nextRows = rec.costRowsDraft.map(cr => {
+        if (cr.sourceRowId !== sourceRowId) return cr;
+        return recalculateSingleMau09CostRow(
+          cr,
+          'Cập nhật đồng bộ thành tiền theo đơn giá / số lượng điều chỉnh'
+        ).updatedRow;
+      });
+      const tempRec: Mau09BhRecord = {
+        ...rec,
+        costRowsDraft: nextRows,
+      };
+      if (syncXml1TotalsOnCalc) {
+        return recalculateAndSyncMau09Prices(tempRec, {
+          syncXml1Totals: true,
+        }).record;
+      }
+      return tempRec;
+    });
+    showTempToast('🧮 Đã tính lại Thành tiền (THANH_TIEN_BV, THANH_TIEN_BH, T_BHTT, T_BNCCT, T_BNTT) và đồng bộ Tổng hồ sơ!');
+  };
 
   const modifiedCounts = useMemo(() => {
     if (!currentRec) return { xml1Count: 0, costCount: 0 };
@@ -995,40 +1056,70 @@ export default function Mau09BhModal({
                               'Thu hồi chi phí đề nghị thanh toán'
                             ) || '';
                           if (!reason.trim()) return;
-                          updateCurrentRecord(r => ({
-                            ...r,
-                            costRowsDraft: r.costRowsDraft.map(cr => {
-                              if (
-                                selectedCostTable !== 'ALL' &&
-                                cr.tableId !== selectedCostTable
-                              ) {
-                                return cr;
-                              }
-                              return {
-                                ...cr,
-                                trangThai: '2',
-                                withdrawEntireRow: true,
-                                withdrawReason: reason.trim(),
-                              };
-                            }),
-                          }));
+                          updateCurrentRecord(r => {
+                            const updatedRec: Mau09BhRecord = {
+                              ...r,
+                              costRowsDraft: r.costRowsDraft.map(cr => {
+                                if (
+                                  selectedCostTable !== 'ALL' &&
+                                  cr.tableId !== selectedCostTable
+                                ) {
+                                  return cr;
+                                }
+                                return {
+                                  ...cr,
+                                  trangThai: '2',
+                                  withdrawEntireRow: true,
+                                  withdrawReason: reason.trim(),
+                                };
+                              }),
+                            };
+                            return syncXml1TotalsOnCalc
+                              ? recalculateAndSyncMau09Prices(updatedRec, { syncXml1Totals: true }).record
+                              : updatedRec;
+                          });
                         }}
                         className="px-2.5 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold cursor-pointer transition"
                       >
                         Thu hồi tất cả dòng đang chọn
                       </button>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => handleRecalculateAndSyncAllPrices(false)}
+                      className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
+                      title="Tính lại Thành tiền (THANH_TIEN_BV, THANH_TIEN_BH, T_BHTT, T_BNCCT, T_BNTT) của từng dòng Thuốc/DVKT bị sửa giá/số lượng hoặc thu hồi, và cập nhật đồng bộ Tổng tiền hồ sơ (T_THUOC, T_TONGCHI_BV, T_TONGCHI_BH, T_BHTT, T_BNCCT, T_BNTT) lên Bảng 1 (XML1)"
+                    >
+                      <Calculator className="w-3.5 h-3.5" />
+                      Đồng bộ &amp; Tính lại Giá / Tổng tiền
+                    </button>
                   </div>
 
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={onlyModifiedCost}
-                      onChange={e => setOnlyModifiedCost(e.target.checked)}
-                      className="w-3.5 h-3.5 accent-blue-600 rounded"
-                    />
-                    Chỉ hiện dòng đã điều chỉnh
-                  </label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label
+                      className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded cursor-pointer select-none"
+                      title="Khi sửa giá hoặc thu hồi thuốc/DVKT, tự động đẩy các trường Tổng tiền bị thay đổi (T_THUOC, T_TONGCHI_BV, T_TONGCHI_BH, T_BHTT, T_BNCCT, T_BNTT) vào Phần 3 (DS_XML1_DIEUCHINH)"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={syncXml1TotalsOnCalc}
+                        onChange={e => setSyncXml1TotalsOnCalc(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-emerald-600 rounded"
+                      />
+                      Tự đồng bộ Tổng tiền lên XML1 (Phần 3)
+                    </label>
+
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={onlyModifiedCost}
+                        onChange={e => setOnlyModifiedCost(e.target.checked)}
+                        className="w-3.5 h-3.5 accent-blue-600 rounded"
+                      />
+                      Chỉ hiện dòng đã điều chỉnh
+                    </label>
+                  </div>
                 </div>
 
                 {/* Bảng Điều chỉnh / hủy chi phí */}
@@ -1181,6 +1272,19 @@ export default function Mau09BhModal({
                                             className="px-2 py-0.5 border border-rose-400 rounded bg-white text-[11px] w-56"
                                           />
                                         ) : null}
+
+                                        {(costRow.tableId === 'XML2' || costRow.tableId === 'XML3') &&
+                                          !(costRow.withdrawEntireRow || costRow.trangThai === '2') && (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRecalculateSingleRow(costRow.sourceRowId)}
+                                              className="px-2 py-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 text-[10.5px] font-bold flex items-center gap-1 cursor-pointer transition"
+                                              title="Tính lại Thành tiền BV, Thành tiền BH, Quỹ BHTT, BNCCT, BNTT theo Đơn giá / Số lượng / Tỷ lệ / Mức hưởng đã sửa của dòng này"
+                                            >
+                                              <Calculator className="w-3 h-3" />
+                                              Tính lại thành tiền
+                                            </button>
+                                          )}
 
                                         {rowMod && (
                                           <button
@@ -1397,34 +1501,106 @@ export default function Mau09BhModal({
                     </table>
                   </div>
 
-                  {/* Dòng tổng cộng dưới chân bảng Chi phí (Tổng gốc | Tổng ĐC | Chênh lệch) */}
-                  <div className="bg-slate-100 border-t border-slate-300 px-4 py-2 flex flex-wrap items-center justify-end gap-6 text-xs">
-                    <div className="px-3 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700">
-                      Tổng gốc:{' '}
-                      <b className="text-slate-900 font-mono">
-                        {costTotals.tongGoc.toLocaleString('vi-VN')}
-                      </b>
+                  {/* Dòng tổng cộng dưới chân bảng Chi phí (Tổng gốc | Tổng ĐC | Chênh lệch + Đối chiếu Tổng đơn XML1) */}
+                  <div className="bg-slate-100 border-t border-slate-300 px-4 py-2.5 space-y-2 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleRecalculateAndSyncAllPrices(false)}
+                          className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-2xs cursor-pointer transition"
+                          title="Theo hướng dẫn Phụ lục 1 TT12/2026/TT-BTC (trang 6): Cập nhật đồng bộ thành tiền của từng thuốc/DVKT và tính lại Tổng chi phí toàn hồ sơ (XML1)"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          Đồng bộ &amp; Tính lại Giá / Thành tiền toàn hồ sơ
+                        </button>
+                        <span className="text-[11px] text-slate-600">
+                          (Sửa Đơn giá / Số lượng / Tỷ lệ hoặc Thu hồi dịch vụ ➔ Bấm để tự tính lại Thành tiền &amp; Tổng chi Bảng 1)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div className="px-3 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700">
+                          Tổng gốc (bảng đang xem):{' '}
+                          <b className="text-slate-900 font-mono">
+                            {costTotals.tongGoc.toLocaleString('vi-VN')}
+                          </b>
+                        </div>
+                        <div className="px-3 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700">
+                          Tổng ĐC:{' '}
+                          <b className="text-blue-700 font-mono">
+                            {costTotals.tongDc.toLocaleString('vi-VN')}
+                          </b>
+                        </div>
+                        <div className="px-3 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700">
+                          Chênh lệch:{' '}
+                          <b
+                            className={`font-mono ${
+                              costTotals.chenhLech < 0
+                                ? 'text-rose-600'
+                                : costTotals.chenhLech > 0
+                                ? 'text-emerald-600'
+                                : 'text-slate-800'
+                            }`}
+                          >
+                            {costTotals.chenhLech.toLocaleString('vi-VN')}
+                          </b>
+                        </div>
+                      </div>
                     </div>
-                    <div className="px-3 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700">
-                      Tổng ĐC:{' '}
-                      <b className="text-blue-700 font-mono">
-                        {costTotals.tongDc.toLocaleString('vi-VN')}
-                      </b>
-                    </div>
-                    <div className="px-3 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700">
-                      Chênh lệch:{' '}
-                      <b
-                        className={`font-mono ${
-                          costTotals.chenhLech < 0
-                            ? 'text-rose-600'
-                            : costTotals.chenhLech > 0
-                            ? 'text-emerald-600'
-                            : 'text-slate-800'
-                        }`}
-                      >
-                        {costTotals.chenhLech.toLocaleString('vi-VN')}
-                      </b>
-                    </div>
+
+                    {/* Bảng tóm tắt tác động tới Tổng tiền toàn đơn/hồ sơ (XML1) */}
+                    {liveHosoTotalsPreview && (
+                      <div className="bg-white border border-blue-200 rounded-lg p-2.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px]">
+                        {[
+                          { key: 'T_TONGCHI_BV', label: 'Tổng chi BV (T_TONGCHI_BV)' },
+                          { key: 'T_TONGCHI_BH', label: 'Tổng chi BH (T_TONGCHI_BH)' },
+                          { key: 'T_BHTT', label: 'Quỹ BHYT trả (T_BHTT)' },
+                          { key: 'T_BNCCT', label: 'BN cùng chi trả (T_BNCCT)' },
+                          { key: 'T_BNTT', label: 'BN tự trả (T_BNTT)' },
+                          { key: 'T_THUOC', label: 'Tổng tiền thuốc (T_THUOC)' },
+                        ].map(item => {
+                          const pair = liveHosoTotalsPreview[item.key] || { goc: 0, dc: 0 };
+                          const diff = Math.round((pair.dc - pair.goc) * 100) / 100;
+                          const changed = Math.abs(diff) >= 0.01;
+                          return (
+                            <div
+                              key={item.key}
+                              className={`px-2.5 py-1.5 rounded border ${
+                                changed
+                                  ? 'bg-amber-50/80 border-amber-300'
+                                  : 'bg-slate-50 border-slate-200'
+                              }`}
+                            >
+                              <div className="font-bold text-slate-600 truncate" title={item.label}>
+                                {item.label}
+                              </div>
+                              <div className="flex items-baseline justify-between gap-1 mt-0.5 font-mono">
+                                <span className="text-slate-500 line-through text-[10px]">
+                                  {changed ? pair.goc.toLocaleString('vi-VN') : ''}
+                                </span>
+                                <span
+                                  className={`font-extrabold text-xs ${
+                                    changed ? 'text-blue-800' : 'text-slate-800'
+                                  }`}
+                                >
+                                  {pair.dc.toLocaleString('vi-VN')}
+                                </span>
+                              </div>
+                              {changed && (
+                                <div
+                                  className={`text-[10px] font-mono font-bold text-right ${
+                                    diff < 0 ? 'text-rose-600' : 'text-emerald-700'
+                                  }`}
+                                >
+                                  {diff > 0 ? `+${diff.toLocaleString('vi-VN')}` : diff.toLocaleString('vi-VN')}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1447,6 +1623,16 @@ export default function Mau09BhModal({
           </label>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleRecalculateAndSyncAllPrices(true)}
+              className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition"
+              title="Đồng bộ & Tính lại Thành tiền từng dịch vụ/thuốc (XML2, XML3) và Tổng chi phí hồ sơ (XML1) cho tất cả hồ sơ đang mở"
+            >
+              <Calculator className="w-3.5 h-3.5 text-emerald-700" />
+              Đồng bộ &amp; Tính lại Giá ({draftRecords.length} HS)
+            </button>
+
             <button
               type="button"
               onClick={() => setPreviewXmlContent(buildMau09BhXml(currentRec))}

@@ -666,6 +666,360 @@ export async function importMau09BhExcelRows(file: File): Promise<Record<string,
   return XLSX.utils.sheet_to_json<Record<string, any>>(firstSheet, { defval: '' });
 }
 
+function parseNum(v: any, fallback = 0): number {
+  if (v === null || v === undefined) return fallback;
+  const s = String(v).trim().replace(/,/g, '.');
+  if (!s) return fallback;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function fmtMoneyXml(n: number): string {
+  const rounded = Math.round((n + Number.EPSILON) * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+}
+
+/**
+ * Tính toán lại thành tiền của 1 dòng chi phí (XML2 hoặc XML3) khi người dùng sửa Số lượng / Đơn giá / Tỷ lệ / Mức hưởng
+ * Theo đúng quy định tại trang 6 của PL1_HDSD_TT12_2026_03_05_09_BH ("Kiểm tra lại giá trị điều chỉnh và cập nhật đồng bộ thành tiền")
+ * và công thức chuẩn QĐ 3176/QĐ-BYT & TT 12/2026/TT-BTC (trang 62-63).
+ */
+export function recalculateSingleMau09CostRow(
+  costRow: Mau09SourceCostRow,
+  defaultReason = 'Đồng bộ thành tiền theo đơn giá/số lượng điều chỉnh'
+): { nextRow: Mau09SourceCostRow; changed: boolean } {
+  if (costRow.tableId !== 'XML2' && costRow.tableId !== 'XML3') {
+    return { nextRow: costRow, changed: false };
+  }
+  if (costRow.withdrawEntireRow || costRow.trangThai === '2') {
+    return { nextRow: costRow, changed: false };
+  }
+
+  const getFieldVal = (name: string): string => {
+    const f = costRow.fieldDrafts.find(x => x.field === name);
+    return f ? f.ttDieuChinh : '';
+  };
+  const getOrigVal = (name: string): string => {
+    const f = costRow.fieldDrafts.find(x => x.field === name);
+    return f ? f.originalValue : '';
+  };
+
+  // Tìm lý do điều chỉnh mà người dùng đã nhập trên dòng này để gán đồng bộ cho các trường thành tiền ăn theo
+  const existingRowReason =
+    costRow.fieldDrafts.find(x => x.lyDoDieuChinh.trim() !== '')?.lyDoDieuChinh.trim() ||
+    costRow.withdrawReason.trim() ||
+    costRow.lyDoTuChoi.trim() ||
+    defaultReason;
+
+  const soLuong = parseNum(getFieldVal('SO_LUONG'), 0);
+  const mucHuong = parseNum(getFieldVal('MUC_HUONG'), 100);
+  const tNguonKhac = parseNum(getFieldVal('T_NGUONKHAC'), 0);
+
+  let thanhTienBv = parseNum(getFieldVal('THANH_TIEN_BV'), 0);
+  let thanhTienBh = parseNum(getFieldVal('THANH_TIEN_BH'), 0);
+
+  if (costRow.tableId === 'XML2') {
+    const donGia = parseNum(getFieldVal('DON_GIA'), 0);
+    const tyleTtBh = parseNum(getFieldVal('TYLE_TT_BH'), 100);
+    const driverChanged = ['SO_LUONG', 'DON_GIA', 'TYLE_TT_BH'].some(
+      k => getFieldVal(k).trim() !== getOrigVal(k).trim()
+    );
+    if (driverChanged || (soLuong > 0 && donGia > 0)) {
+      thanhTienBv = Math.round((soLuong * donGia + Number.EPSILON) * 100) / 100;
+      thanhTienBh =
+        Math.round((soLuong * donGia * (tyleTtBh / 100) + Number.EPSILON) * 100) / 100;
+    }
+  } else if (costRow.tableId === 'XML3') {
+    let donGiaBv = parseNum(getFieldVal('DON_GIA_BV'), 0);
+    let donGiaBh = parseNum(getFieldVal('DON_GIA_BH'), 0);
+    const origDonGiaBv = parseNum(getOrigVal('DON_GIA_BV'), 0);
+    const origDonGiaBh = parseNum(getOrigVal('DON_GIA_BH'), 0);
+
+    // Nếu gốc DON_GIA_BV == DON_GIA_BH và người dùng chỉ vừa sửa 1 trong 2 ô giá, tự đồng bộ ô giá còn lại
+    const bvChanged = getFieldVal('DON_GIA_BV').trim() !== getOrigVal('DON_GIA_BV').trim();
+    const bhChanged = getFieldVal('DON_GIA_BH').trim() !== getOrigVal('DON_GIA_BH').trim();
+    if (origDonGiaBv === origDonGiaBh) {
+      if (bvChanged && !bhChanged) donGiaBh = donGiaBv;
+      else if (bhChanged && !bvChanged) donGiaBv = donGiaBh;
+    }
+
+    const tyleDv = parseNum(getFieldVal('TYLE_TT_DV'), 100);
+    const tyleBh = parseNum(getFieldVal('TYLE_TT_BH'), 100);
+    const tTranTt = parseNum(getFieldVal('T_TRANTT'), 0);
+
+    // Kiểm tra xem ở dữ liệu gốc THANH_TIEN_BV có nhân TYLE_TT_DV hay không
+    const origSl = parseNum(getOrigVal('SO_LUONG'), 1);
+    const origTtBv = parseNum(getOrigVal('THANH_TIEN_BV'), 0);
+    const origTyleDv = parseNum(getOrigVal('TYLE_TT_DV'), 100);
+    const usesTyleDvOnBv =
+      origTyleDv > 0 &&
+      origTyleDv < 100 &&
+      Math.abs(origTtBv - origSl * origDonGiaBv * (origTyleDv / 100)) <
+        Math.abs(origTtBv - origSl * origDonGiaBv);
+
+    const driverChanged = [
+      'SO_LUONG',
+      'DON_GIA_BV',
+      'DON_GIA_BH',
+      'TYLE_TT_DV',
+      'TYLE_TT_BH',
+      'T_TRANTT',
+    ].some(k => getFieldVal(k).trim() !== getOrigVal(k).trim());
+
+    if (driverChanged || (soLuong > 0 && (donGiaBv > 0 || donGiaBh > 0))) {
+      thanhTienBv = usesTyleDvOnBv
+        ? Math.round((soLuong * donGiaBv * (tyleDv / 100) + Number.EPSILON) * 100) / 100
+        : Math.round((soLuong * donGiaBv + Number.EPSILON) * 100) / 100;
+
+      const effTyleBh = (tyleDv < 100 ? tyleDv / 100 : 1) * (tyleBh < 100 ? tyleBh / 100 : 1);
+      let rawTtBh = Math.round((soLuong * donGiaBh * effTyleBh + Number.EPSILON) * 100) / 100;
+      if (tTranTt > 0 && rawTtBh > tTranTt) {
+        rawTtBh = tTranTt;
+      }
+      thanhTienBh = rawTtBh;
+    }
+
+    // Cập nhật lại DON_GIA_BV / DON_GIA_BH nếu vừa tự đồng bộ
+    costRow = {
+      ...costRow,
+      fieldDrafts: costRow.fieldDrafts.map(fd => {
+        if (fd.field === 'DON_GIA_BV' && fmtMoneyXml(donGiaBv) !== fd.ttDieuChinh) {
+          return {
+            ...fd,
+            ttDieuChinh: fmtMoneyXml(donGiaBv),
+            lyDoDieuChinh: fd.lyDoDieuChinh.trim() || existingRowReason,
+          };
+        }
+        if (fd.field === 'DON_GIA_BH' && fmtMoneyXml(donGiaBh) !== fd.ttDieuChinh) {
+          return {
+            ...fd,
+            ttDieuChinh: fmtMoneyXml(donGiaBh),
+            lyDoDieuChinh: fd.lyDoDieuChinh.trim() || existingRowReason,
+          };
+        }
+        return fd;
+      }),
+    };
+  }
+
+  // Tính T_BHTT, T_BNCCT, T_BNTT từ THANH_TIEN_BV, THANH_TIEN_BH, T_NGUONKHAC, MUC_HUONG
+  const baseBhForFund = Math.max(0, thanhTienBh - tNguonKhac);
+  const tBhtt = Math.round((baseBhForFund * (mucHuong / 100) + Number.EPSILON) * 100) / 100;
+  const tBncct = Math.max(0, Math.round((baseBhForFund - tBhtt + Number.EPSILON) * 100) / 100);
+  const tBntt = Math.max(
+    0,
+    Math.round((thanhTienBv - thanhTienBh + Number.EPSILON) * 100) / 100
+  );
+
+  const computedMap: Record<string, string> = {
+    THANH_TIEN_BV: fmtMoneyXml(thanhTienBv),
+    THANH_TIEN_BH: fmtMoneyXml(thanhTienBh),
+    T_BHTT: fmtMoneyXml(tBhtt),
+    T_BNCCT: fmtMoneyXml(tBncct),
+    T_BNTT: fmtMoneyXml(tBntt),
+  };
+
+  let changed = false;
+  const nextFieldDrafts = costRow.fieldDrafts.map(fd => {
+    if (!(fd.field in computedMap)) return fd;
+    const newVal = computedMap[fd.field];
+    const oldVal = fd.ttDieuChinh.trim();
+    const origNum = parseNum(fd.originalValue, 0);
+    const newNum = parseNum(newVal, 0);
+    const isDiffFromOrig = Math.abs(newNum - origNum) >= 0.01;
+
+    if (newVal !== oldVal || (isDiffFromOrig && !fd.lyDoDieuChinh.trim())) {
+      if (newVal !== oldVal) changed = true;
+      return {
+        ...fd,
+        ttGoc: fd.ttGoc || fd.originalValue,
+        ttDieuChinh: newVal,
+        lyDoDieuChinh: isDiffFromOrig
+          ? fd.lyDoDieuChinh.trim() || existingRowReason
+          : fd.lyDoDieuChinh,
+      };
+    }
+    return fd;
+  });
+
+  return {
+    nextRow: {
+      ...costRow,
+      fieldDrafts: nextFieldDrafts,
+    },
+    changed,
+  };
+}
+
+/**
+ * Đồng bộ & Tính toán lại toàn bộ Giá -> Thành tiền từng dịch vụ/thuốc (XML2, XML3) -> Tổng chi phí hồ sơ (XML1)
+ * cho 1 Hồ sơ Mẫu 09/BH:
+ * 1. Tính lại THANH_TIEN_BV, THANH_TIEN_BH, T_BHTT, T_BNCCT, T_BNTT cho các dòng XML2/XML3 có thay đổi giá/số lượng/tỷ lệ/mức hưởng.
+ * 2. Cộng tổng các dòng XML2 & XML3 còn hiệu lực (trừ các dòng bị đánh dấu Thu hồi/Hủy TRANGTHAI=2) để cập nhật
+ *    T_THUOC, T_VTYT, T_TONGCHI_BV, T_TONGCHI_BH, T_BHTT, T_BNCCT, T_BNTT, T_NGUONKHAC trên Bảng 1 (XML1).
+ */
+export function recalculateAndSyncMau09Prices(
+  record: Mau09BhRecord,
+  options?: {
+    syncXml1TotalsToDsXml1Dc?: boolean;
+    customReason?: string;
+  }
+): {
+  updatedRecord: Mau09BhRecord;
+  changedCostRowsCount: number;
+  changedXml1TotalsCount: number;
+  totalsComparison: {
+    T_THUOC: { goc: number; dc: number };
+    T_VTYT: { goc: number; dc: number };
+    T_TONGCHI_BV: { goc: number; dc: number };
+    T_TONGCHI_BH: { goc: number; dc: number };
+    T_BHTT: { goc: number; dc: number };
+    T_BNCCT: { goc: number; dc: number };
+    T_BNTT: { goc: number; dc: number };
+    T_NGUONKHAC: { goc: number; dc: number };
+  };
+} {
+  const syncXml1 = options?.syncXml1TotalsToDsXml1Dc ?? true;
+  const reasonText =
+    options?.customReason?.trim() ||
+    'Đồng bộ thành tiền và tổng chi phí hồ sơ sau khi điều chỉnh/thu hồi chi phí';
+
+  let changedCostRowsCount = 0;
+  const nextCostRows = record.costRowsDraft.map(cr => {
+    if (cr.tableId !== 'XML2' && cr.tableId !== 'XML3') return cr;
+    // Chỉ tính lại thành tiền những dòng có sửa thông tin hoặc được người dùng điều chỉnh
+    const hasAnyFieldChange = cr.fieldDrafts.some(
+      fd => fd.ttDieuChinh.trim() !== fd.originalValue.trim()
+    );
+    if (!hasAnyFieldChange && !cr.withdrawEntireRow && cr.trangThai !== '2') {
+      return cr;
+    }
+    const { nextRow, changed } = recalculateSingleMau09CostRow(cr, reasonText);
+    if (changed || cr.withdrawEntireRow || cr.trangThai === '2') {
+      changedCostRowsCount++;
+    }
+    return nextRow;
+  });
+
+  // Cộng tổng chi phí từ tất cả dòng XML2 & XML3
+  let sumThuocDc = 0;
+  let sumVtytDc = 0;
+  let sumTongChiBvDc = 0;
+  let sumTongChiBhDc = 0;
+  let sumBhttDc = 0;
+  let sumBncctDc = 0;
+  let sumBnttDc = 0;
+  let sumNguonKhacDc = 0;
+
+  const hasCostRows = nextCostRows.some(r => r.tableId === 'XML2' || r.tableId === 'XML3');
+
+  for (const cr of nextCostRows) {
+    if (cr.tableId !== 'XML2' && cr.tableId !== 'XML3') continue;
+    if (cr.withdrawEntireRow || cr.trangThai === '2') {
+      // Dòng chi phí bị thu hồi / hủy -> không cộng vào tổng đề nghị thanh toán sau điều chỉnh
+      continue;
+    }
+    const getVal = (name: string) =>
+      parseNum(cr.fieldDrafts.find(f => f.field === name)?.ttDieuChinh, 0);
+    const getStr = (name: string) =>
+      (cr.fieldDrafts.find(f => f.field === name)?.ttDieuChinh || '').trim();
+
+    const ttBv = getVal('THANH_TIEN_BV');
+    const ttBh = getVal('THANH_TIEN_BH');
+    const bhtt = getVal('T_BHTT');
+    const bncct = getVal('T_BNCCT');
+    const bntt = getVal('T_BNTT');
+    const nk = getVal('T_NGUONKHAC');
+
+    sumTongChiBvDc += ttBv;
+    sumTongChiBhDc += ttBh;
+    sumBhttDc += bhtt;
+    sumBncctDc += bncct;
+    sumBnttDc += bntt;
+    sumNguonKhacDc += nk;
+
+    if (cr.tableId === 'XML2') {
+      sumThuocDc += ttBv;
+    } else if (cr.tableId === 'XML3') {
+      const maNhom = getStr('MA_NHOM');
+      const maVatTu = getStr('MA_VAT_TU');
+      if (maNhom === '10' || maNhom === '11' || maVatTu !== '') {
+        sumVtytDc += ttBv;
+      }
+    }
+  }
+
+  const getXml1Orig = (name: string) =>
+    parseNum(record.xml1FieldsDraft.find(f => f.field === name)?.originalValue, 0);
+
+  const totalsComparison = {
+    T_THUOC: { goc: getXml1Orig('T_THUOC'), dc: hasCostRows ? sumThuocDc : getXml1Orig('T_THUOC') },
+    T_VTYT: { goc: getXml1Orig('T_VTYT'), dc: hasCostRows ? sumVtytDc : getXml1Orig('T_VTYT') },
+    T_TONGCHI_BV: {
+      goc: getXml1Orig('T_TONGCHI_BV'),
+      dc: hasCostRows ? sumTongChiBvDc : getXml1Orig('T_TONGCHI_BV'),
+    },
+    T_TONGCHI_BH: {
+      goc: getXml1Orig('T_TONGCHI_BH'),
+      dc: hasCostRows ? sumTongChiBhDc : getXml1Orig('T_TONGCHI_BH'),
+    },
+    T_BHTT: { goc: getXml1Orig('T_BHTT'), dc: hasCostRows ? sumBhttDc : getXml1Orig('T_BHTT') },
+    T_BNCCT: { goc: getXml1Orig('T_BNCCT'), dc: hasCostRows ? sumBncctDc : getXml1Orig('T_BNCCT') },
+    T_BNTT: { goc: getXml1Orig('T_BNTT'), dc: hasCostRows ? sumBnttDc : getXml1Orig('T_BNTT') },
+    T_NGUONKHAC: {
+      goc: getXml1Orig('T_NGUONKHAC'),
+      dc: hasCostRows ? sumNguonKhacDc : getXml1Orig('T_NGUONKHAC'),
+    },
+  };
+
+  let changedXml1TotalsCount = 0;
+  const nextXml1Fields = record.xml1FieldsDraft.map(f => {
+    if (!hasCostRows || !(f.field in totalsComparison)) return f;
+    const item = totalsComparison[f.field as keyof typeof totalsComparison];
+    const isDiff = Math.abs(item.dc - item.goc) >= 0.01;
+    const newStr = fmtMoneyXml(item.dc);
+
+    if (syncXml1 && isDiff) {
+      changedXml1TotalsCount++;
+      return {
+        ...f,
+        ttGoc: f.ttGoc || f.originalValue,
+        ttDieuChinh: newStr,
+        lyDoDieuChinh: f.lyDoDieuChinh.trim() || reasonText,
+      };
+    } else if (!isDiff && f.ttDieuChinh !== f.originalValue && f.lyDoDieuChinh === reasonText) {
+      // Nếu tổng tiền quay về đúng bằng giá trị gốc thì khôi phục trường tổng XML1 về gốc
+      return {
+        ...f,
+        ttGoc: '',
+        ttDieuChinh: f.originalValue,
+        lyDoDieuChinh: '',
+      };
+    }
+    return f;
+  });
+
+  const compiled = compileMau09Adjustments(nextXml1Fields, nextCostRows);
+  const updatedRecord: Mau09BhRecord = {
+    ...record,
+    xml1FieldsDraft: nextXml1Fields,
+    costRowsDraft: nextCostRows,
+    dsXml1Dc: compiled.dsXml1Dc,
+    dscpDc: compiled.dscpDc,
+    updatedAt: new Date().toISOString(),
+    isSigned: false,
+    signedXml: undefined,
+  };
+
+  return {
+    updatedRecord,
+    changedCostRowsCount,
+    changedXml1TotalsCount,
+    totalsComparison,
+  };
+}
+
 /**
  * Mở cửa sổ In / Xuất PDF Bảng kê chi tiết điều chỉnh Mẫu số 09/BH (đúng biểu mẫu trang 16 Tài liệu HDSD)
  */

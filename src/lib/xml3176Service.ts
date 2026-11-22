@@ -1206,3 +1206,171 @@ export function mergeXml3176Docs(docs: Xml3176ParsedDoc[], mergedName?: string):
   merged.errors = validateXml3176Doc(merged);
   return merged;
 }
+
+function parseMoney3176(v: any, fallback = 0): number {
+  if (v === null || v === undefined) return fallback;
+  const s = String(v).trim().replace(/,/g, '.');
+  if (!s) return fallback;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function formatMoney3176(n: number): string {
+  const rounded = Math.round((n + Number.EPSILON) * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(2).replace(/\.?0+$/, '');
+}
+
+/**
+ * Tự động tính toán & đồng bộ lại Thành tiền chi tiết (Bảng 2 XML2, Bảng 3 XML3)
+ * và cộng dồn lên Tổng chi phí hồ sơ ở Bảng 1 (XML1: T_THUOC, T_VTYT, T_TONGCHI_BV, T_TONGCHI_BH, T_BHTT, T_BNCCT, T_BNTT, T_NGUONKHAC)
+ */
+export function recalculateXml3176HosoCosts(
+  doc: Xml3176ParsedDoc,
+  targetHosoIndices?: number[]
+): { nextDoc: Xml3176ParsedDoc; updatedHosoCount: number } {
+  const targetSet =
+    targetHosoIndices && targetHosoIndices.length > 0
+      ? new Set(targetHosoIndices)
+      : new Set(doc.tables.XML1.map(r => r.hosoIndex));
+
+  const nextXml2 = doc.tables.XML2.map(r => {
+    if (!targetSet.has(r.hosoIndex)) return r;
+    const f = { ...r.fields };
+    const sl = parseMoney3176(f.SO_LUONG, 0);
+    const dg = parseMoney3176(f.DON_GIA, 0);
+    const tyleBh = parseMoney3176(f.TYLE_TT_BH, 100);
+    const mucHuong = parseMoney3176(f.MUC_HUONG, 100);
+    const nk = parseMoney3176(f.T_NGUONKHAC, 0);
+
+    if (sl > 0 && dg > 0) {
+      const ttBv = Math.round((sl * dg + Number.EPSILON) * 100) / 100;
+      const ttBh = Math.round((sl * dg * (tyleBh / 100) + Number.EPSILON) * 100) / 100;
+      const baseBh = Math.max(0, ttBh - nk);
+      const bhtt = Math.round((baseBh * (mucHuong / 100) + Number.EPSILON) * 100) / 100;
+      const bncct = Math.max(0, Math.round((baseBh - bhtt + Number.EPSILON) * 100) / 100);
+      const bntt = Math.max(0, Math.round((ttBv - ttBh + Number.EPSILON) * 100) / 100);
+
+      f.THANH_TIEN_BV = formatMoney3176(ttBv);
+      f.THANH_TIEN_BH = formatMoney3176(ttBh);
+      f.T_BHTT = formatMoney3176(bhtt);
+      f.T_BNCCT = formatMoney3176(bncct);
+      f.T_BNTT = formatMoney3176(bntt);
+    }
+    return { ...r, fields: f };
+  });
+
+  const nextXml3 = doc.tables.XML3.map(r => {
+    if (!targetSet.has(r.hosoIndex)) return r;
+    const f = { ...r.fields };
+    const sl = parseMoney3176(f.SO_LUONG, 0);
+    const dgBv = parseMoney3176(f.DON_GIA_BV, 0);
+    const dgBh = parseMoney3176(f.DON_GIA_BH, dgBv);
+    const tyleDv = parseMoney3176(f.TYLE_TT_DV, 100);
+    const tyleBh = parseMoney3176(f.TYLE_TT_BH, 100);
+    const mucHuong = parseMoney3176(f.MUC_HUONG, 100);
+    const tTranTt = parseMoney3176(f.T_TRANTT, 0);
+    const nk = parseMoney3176(f.T_NGUONKHAC, 0);
+
+    if (sl > 0 && (dgBv > 0 || dgBh > 0)) {
+      const effTyleDv = tyleDv > 0 && tyleDv < 100 ? tyleDv / 100 : 1;
+      const effTyleBh = effTyleDv * (tyleBh > 0 && tyleBh < 100 ? tyleBh / 100 : 1);
+      const ttBv = Math.round((sl * dgBv * effTyleDv + Number.EPSILON) * 100) / 100;
+      let ttBh = Math.round((sl * dgBh * effTyleBh + Number.EPSILON) * 100) / 100;
+      if (tTranTt > 0 && ttBh > tTranTt) ttBh = tTranTt;
+
+      const baseBh = Math.max(0, ttBh - nk);
+      const bhtt = Math.round((baseBh * (mucHuong / 100) + Number.EPSILON) * 100) / 100;
+      const bncct = Math.max(0, Math.round((baseBh - bhtt + Number.EPSILON) * 100) / 100);
+      const bntt = Math.max(0, Math.round((ttBv - ttBh + Number.EPSILON) * 100) / 100);
+
+      f.THANH_TIEN_BV = formatMoney3176(ttBv);
+      f.THANH_TIEN_BH = formatMoney3176(ttBh);
+      f.T_BHTT = formatMoney3176(bhtt);
+      f.T_BNCCT = formatMoney3176(bncct);
+      f.T_BNTT = formatMoney3176(bntt);
+    }
+    return { ...r, fields: f };
+  });
+
+  let updatedHosoCount = 0;
+  const nextHosoSignStates = { ...doc.hosoSignStates };
+
+  const nextXml1 = doc.tables.XML1.map(r => {
+    if (!targetSet.has(r.hosoIndex)) return r;
+    const rows2 = nextXml2.filter(x => x.hosoIndex === r.hosoIndex);
+    const rows3 = nextXml3.filter(x => x.hosoIndex === r.hosoIndex);
+    if (rows2.length === 0 && rows3.length === 0) return r;
+
+    let sumThuoc = 0;
+    let sumVtyt = 0;
+    let sumTtBv = 0;
+    let sumTtBh = 0;
+    let sumBhtt = 0;
+    let sumBncct = 0;
+    let sumBntt = 0;
+    let sumNk = 0;
+
+    for (const r2 of rows2) {
+      const ttBv = parseMoney3176(r2.fields.THANH_TIEN_BV, 0);
+      sumThuoc += ttBv;
+      sumTtBv += ttBv;
+      sumTtBh += parseMoney3176(r2.fields.THANH_TIEN_BH, 0);
+      sumBhtt += parseMoney3176(r2.fields.T_BHTT, 0);
+      sumBncct += parseMoney3176(r2.fields.T_BNCCT, 0);
+      sumBntt += parseMoney3176(r2.fields.T_BNTT, 0);
+      sumNk += parseMoney3176(r2.fields.T_NGUONKHAC, 0);
+    }
+
+    for (const r3 of rows3) {
+      const ttBv = parseMoney3176(r3.fields.THANH_TIEN_BV, 0);
+      const maNhom = (r3.fields.MA_NHOM || '').trim();
+      const maVatTu = (r3.fields.MA_VAT_TU || '').trim();
+      if (maNhom === '10' || maNhom === '11' || maVatTu !== '') {
+        sumVtyt += ttBv;
+      }
+      sumTtBv += ttBv;
+      sumTtBh += parseMoney3176(r3.fields.THANH_TIEN_BH, 0);
+      sumBhtt += parseMoney3176(r3.fields.T_BHTT, 0);
+      sumBncct += parseMoney3176(r3.fields.T_BNCCT, 0);
+      sumBntt += parseMoney3176(r3.fields.T_BNTT, 0);
+      sumNk += parseMoney3176(r3.fields.T_NGUONKHAC, 0);
+    }
+
+    const f = {
+      ...r.fields,
+      T_THUOC: formatMoney3176(sumThuoc),
+      T_VTYT: formatMoney3176(sumVtyt),
+      T_TONGCHI_BV: formatMoney3176(sumTtBv),
+      T_TONGCHI_BH: formatMoney3176(sumTtBh),
+      T_BHTT: formatMoney3176(sumBhtt),
+      T_BNCCT: formatMoney3176(sumBncct),
+      T_BNTT: formatMoney3176(sumBntt),
+      T_NGUONKHAC: formatMoney3176(sumNk),
+    };
+
+    updatedHosoCount++;
+    nextHosoSignStates[r.hosoIndex] = {
+      ...(nextHosoSignStates[r.hosoIndex] || { hosoIndex: r.hosoIndex }),
+      isSigned: false,
+      isModified: true,
+    };
+
+    return { ...r, fields: f };
+  });
+
+  const nextDoc: Xml3176ParsedDoc = {
+    ...doc,
+    tables: {
+      ...doc.tables,
+      XML1: nextXml1,
+      XML2: nextXml2,
+      XML3: nextXml3,
+    },
+    hosoSignStates: nextHosoSignStates,
+    signature: { ...doc.signature, isSigned: false },
+  };
+  nextDoc.errors = validateXml3176Doc(nextDoc);
+
+  return { nextDoc, updatedHosoCount };
+}

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import {
   Upload, Download, ShieldCheck, FileCode2, AlertTriangle, CheckCircle2,
   Search, Edit3, Plus, Trash2, Eye, Settings, RefreshCw, FileSpreadsheet,
-  KeyRound, Usb, Smartphone, Check, X, Filter, Layers, CheckSquare, Square, Printer
+  KeyRound, Usb, Smartphone, Check, X, Filter, Layers, CheckSquare, Square, Printer, Calculator
 } from 'lucide-react';
 import {
   XML3176_TABLES,
@@ -16,6 +16,7 @@ import {
   buildXml3176,
   buildInnerFileHosoXml,
   validateXml3176Doc,
+  recalculateXml3176HosoCosts,
 } from '../lib/xml3176Service';
 import {
   getSmartCAConfig,
@@ -401,8 +402,11 @@ export default function Xml3176Module() {
       const nextTables = { ...doc.tables };
       const nextHosoSignStates = { ...doc.hosoSignStates };
       let anyChanged = false;
+      const affectedHosoSet = new Set<number>();
 
       for (const rec of savedDrafts) {
+        let recCostChanged = false;
+
         // 1. Đồng bộ các trường XML1 đã sửa
         const modifiedXml1 = rec.xml1FieldsDraft.filter(isXml1FieldAdjusted);
         if (modifiedXml1.length > 0) {
@@ -422,11 +426,27 @@ export default function Xml3176Module() {
           });
         }
 
-        // 2. Đồng bộ các trường chi phí XML2..XML15 đã sửa
+        // 2. Đồng bộ các trường chi phí XML2..XML15 đã sửa hoặc thu hồi/hủy chi phí
         for (const cRow of rec.costRowsDraft) {
+          const isWithdrawn = cRow.withdrawEntireRow || cRow.trangThai === '2';
+          if (isWithdrawn) {
+            anyChanged = true;
+            recCostChanged = true;
+            affectedHosoSet.add(rec.hosoIndex);
+            // Khi thu hồi đề nghị thanh toán 1 dịch vụ / thuốc, loại bỏ dòng đó khỏi bảng XML2/XML3 đang mở (hoặc đưa tiền về 0) để tổng đơn khớp
+            nextTables[cRow.tableId] = (nextTables[cRow.tableId] || []).filter(
+              r => r.rowId !== cRow.sourceRowId
+            );
+            continue;
+          }
+
           const modFields = cRow.fieldDrafts.filter(isCostFieldAdjusted);
           if (modFields.length > 0) {
             anyChanged = true;
+            if (cRow.tableId === 'XML2' || cRow.tableId === 'XML3') {
+              recCostChanged = true;
+              affectedHosoSet.add(rec.hosoIndex);
+            }
             nextTables[cRow.tableId] = (nextTables[cRow.tableId] || []).map(r => {
               if (r.rowId !== cRow.sourceRowId) return r;
               const nextFields = { ...r.fields };
@@ -441,7 +461,7 @@ export default function Xml3176Module() {
           }
         }
 
-        if (anyChanged) {
+        if (anyChanged || recCostChanged) {
           nextHosoSignStates[rec.hosoIndex] = {
             ...(nextHosoSignStates[rec.hosoIndex] || { hosoIndex: rec.hosoIndex }),
             isSigned: false,
@@ -451,13 +471,17 @@ export default function Xml3176Module() {
       }
 
       if (anyChanged) {
-        const nextDoc: Xml3176ParsedDoc = {
+        let nextDoc: Xml3176ParsedDoc = {
           ...doc,
           tables: nextTables,
           hosoSignStates: nextHosoSignStates,
           signature: { ...doc.signature, isSigned: false },
         };
-        nextDoc.errors = validateXml3176Doc(nextDoc);
+        if (affectedHosoSet.size > 0) {
+          nextDoc = recalculateXml3176HosoCosts(nextDoc, Array.from(affectedHosoSet));
+        } else {
+          nextDoc.errors = validateXml3176Doc(nextDoc);
+        }
         setDoc(nextDoc);
       }
     }
@@ -2168,9 +2192,46 @@ export default function Xml3176Module() {
                         <AlertTriangle className="w-3 h-3" />
                         Thu hồi ĐNTT BH09 ({selectedHosoIndices.size} HS)
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!doc) return;
+                          const targetIndices = Array.from(selectedHosoIndices);
+                          const updatedDoc = recalculateXml3176HosoCosts(doc, targetIndices);
+                          setDoc(updatedDoc);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
+                        title="Tính toán lại Thành tiền từng thuốc/DVKT (Bảng 2, Bảng 3) và đồng bộ Tổng tiền (T_THUOC, T_VTYT, T_TONGCHI_BV, T_TONGCHI_BH, T_BHTT, T_BNCCT, T_BNTT) lên Bảng 1 cho các hồ sơ đang chọn"
+                      >
+                        <Calculator className="w-3 h-3" />
+                        Đồng bộ &amp; Tính lại Giá ({selectedHosoIndices.size} HS)
+                      </button>
                     </>
                   )}
                 </div>
+              )}
+
+              {(activeTab === 'XML2' || activeTab === 'XML3') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!doc) return;
+                    const targetIndices =
+                      selectedHosoFilter !== 'ALL'
+                        ? [Number(selectedHosoFilter)]
+                        : selectedHosoIndices.size > 0
+                        ? Array.from(selectedHosoIndices)
+                        : undefined;
+                    const updatedDoc = recalculateXml3176HosoCosts(doc, targetIndices);
+                    setDoc(updatedDoc);
+                  }}
+                  className="ml-2 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
+                  title="Sau khi sửa Đơn giá / Số lượng / Tỷ lệ ở Bảng 2 hoặc Bảng 3, bấm nút này để tính lại Thành tiền dòng và đồng bộ Tổng chi phí lên Bảng 1 (XML1)"
+                >
+                  <Calculator className="w-3 h-3" />
+                  Đồng bộ &amp; Tính lại Giá / Tổng tiền (XML2,3 ➔ XML1)
+                </button>
               )}
             </div>
 
