@@ -182,6 +182,42 @@ export async function makeSignatureBackgroundTransparent(
   }
 
   ctx.putImageData(imgData, 0, 0);
+
+  // Tự động cắt bỏ phần viền trống trong suốt xung quanh chữ ký/con dấu để ảnh hiển thị rõ và gọn nhất
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      const alpha = data[(y * canvas.width + x) * 4 + 3];
+      if (alpha > 20) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (maxX >= minX && maxY >= minY) {
+    const pad = 4;
+    const cropX = Math.max(0, minX - pad);
+    const cropY = Math.max(0, minY - pad);
+    const cropW = Math.min(canvas.width - cropX, maxX - minX + 1 + pad * 2);
+    const cropH = Math.min(canvas.height - cropY, maxY - minY + 1 + pad * 2);
+    if (cropW > 10 && cropH > 10) {
+      const croppedCanvas = document.createElement('canvas');
+      croppedCanvas.width = cropW;
+      croppedCanvas.height = cropH;
+      const croppedCtx = croppedCanvas.getContext('2d');
+      if (croppedCtx) {
+        croppedCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+        return croppedCanvas;
+      }
+    }
+  }
+
   return canvas;
 }
 
@@ -245,29 +281,34 @@ export async function createCompositeSignatureStamp(options: {
   // Nền trong suốt hoàn toàn
   ctx.clearRect(0, 0, width, height);
 
-  // 1. Vẽ ảnh chữ ký tay nằm ở dưới (nếu có)
+  let hasSignatureImage = false;
+  let textStartX = 24;
+
+  // 1. Vẽ ảnh chữ ký tay / con dấu nằm ở bên trái (không bị chữ CKS đè lên)
   if (options.signatureImageBase64 && options.signatureImageBase64.trim()) {
     try {
       const transparentSigCanvas = await makeSignatureBackgroundTransparent(
         options.signatureImageBase64.trim()
       );
-      const maxImgW = width * 0.95;
-      const maxImgH = height * 0.95;
+      const maxImgW = Math.round(width * 0.5);
+      const maxImgH = height - 16;
       const ratio = Math.min(
         maxImgW / transparentSigCanvas.width,
         maxImgH / transparentSigCanvas.height
       );
       const newW = Math.round(transparentSigCanvas.width * ratio);
       const newH = Math.round(transparentSigCanvas.height * ratio);
-      const posX = Math.round((width - newW) / 2);
+      const posX = Math.max(12, Math.round((maxImgW - newW) / 2) + 8);
       const posY = Math.round((height - newH) / 2);
       ctx.drawImage(transparentSigCanvas, posX, posY, newW, newH);
+      hasSignatureImage = true;
+      textStartX = Math.max(posX + newW + 20, Math.round(width * 0.44));
     } catch (e) {
       console.warn('Bỏ qua ảnh chữ ký lỗi:', e);
     }
   }
 
-  // 2. Vẽ chữ đỏ nằm đè lên trên ảnh chữ ký
+  // 2. Vẽ chữ đỏ thông tin CKS nhỏ gọn nằm bên cạnh phải ảnh chữ ký (không che lấp ảnh chữ ký)
   const d = options.signDate || new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const dateStr = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
@@ -277,22 +318,23 @@ export async function createCompositeSignatureStamp(options: {
     `Ngày ký: ${dateStr}\n` +
     `Tổ chức xác thực: ${options.orgName}`;
 
-  const margin = 24;
-  const maxTextW = width - margin * 2;
-  const maxTextH = height - margin * 2;
+  const rightMargin = 14;
+  const maxTextW = Math.max(320, width - textStartX - rightMargin);
+  const maxTextH = hasSignatureImage ? Math.round(height * 0.64) : height - 48;
 
-  let fontSize = 44;
+  let fontSize = hasSignatureImage ? 20 : 26;
+  const minFontSize = hasSignatureImage ? 13 : 15;
   let wrappedLines: string[] = [];
-  let lineHeight = fontSize * 1.28;
+  let lineHeight = Math.round(fontSize * 1.26);
 
-  while (fontSize > 20) {
+  while (fontSize > minFontSize) {
     ctx.font = `bold ${fontSize}px Arial, sans-serif`;
     wrappedLines = wrapTextLines(ctx, rawText, maxTextW);
-    lineHeight = Math.round(fontSize * 1.28);
+    lineHeight = Math.round(fontSize * 1.26);
     if (wrappedLines.length * lineHeight <= maxTextH) {
       break;
     }
-    fontSize -= 2;
+    fontSize -= 1;
   }
 
   const totalTextHeight = wrappedLines.length * lineHeight;
@@ -301,7 +343,7 @@ export async function createCompositeSignatureStamp(options: {
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.fillStyle = 'rgb(210, 0, 0)';
   for (const line of wrappedLines) {
-    ctx.fillText(line, margin, startY);
+    ctx.fillText(line, textStartX, startY);
     startY += lineHeight;
   }
 

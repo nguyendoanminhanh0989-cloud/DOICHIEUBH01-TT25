@@ -362,6 +362,7 @@ export default function ChungTuTt12Module() {
   // Ảnh chữ ký tay (DataURL / Base64)
   const [signatureImageB64, setSignatureImageB64] = useState<string>(() => getSavedSignatureImage());
   const [stampPreviewUrl, setStampPreviewUrl] = useState<string>('');
+  const [lastCertDisplay, setLastCertDisplay] = useState<{ signerName: string; orgName: string } | null>(null);
 
   // Tọa độ tương đối của khung chữ ký trên trang PDF (0..1)
   const [sigBox, setSigBox] = useState<PdfRelativeBox>(() =>
@@ -486,12 +487,12 @@ export default function ChungTuTt12Module() {
     }
   };
 
-  // Tự động tạo bản xem trước con dấu chữ ký (ảnh chữ ký tay trong suốt + chữ đỏ)
+  // Tự động tạo bản xem trước con dấu chữ ký (ảnh chữ ký tay bên trái + thông tin CKS nhỏ gọn bên phải)
   useEffect(() => {
     let cancelled = false;
     const cfg = getSmartCAConfig();
     const subject = cfg.subjectDN || DEFAULT_VNPT_SUBJECT;
-    const { signerName, orgName } = extractCertDisplayInfo(subject);
+    const { signerName, orgName } = lastCertDisplay || extractCertDisplayInfo(subject);
 
     createCompositeSignatureStamp({
       signerName,
@@ -506,7 +507,7 @@ export default function ChungTuTt12Module() {
     return () => {
       cancelled = true;
     };
-  }, [signatureImageB64, showConfigModal]);
+  }, [signatureImageB64, showConfigModal, lastCertDisplay]);
 
   // Render trang PDF lên Canvas mỗi khi pdfBytes hoặc pdfPageNumber thay đổi
   useEffect(() => {
@@ -1158,6 +1159,7 @@ export default function ChungTuTt12Module() {
       const nextCount = pdfSignedCount + 1;
       setPdfBytes(res.signedPdfBytes);
       setPdfSignedCount(nextCount);
+      setLastCertDisplay({ signerName: res.signerName, orgName: res.orgName });
 
       // Tự động dịch nhẹ khung chữ ký để nếu người dùng muốn ký tiếp chữ ký thứ 2, 3 thì không bị đè lên nhau
       setSigBox(prev => ({
