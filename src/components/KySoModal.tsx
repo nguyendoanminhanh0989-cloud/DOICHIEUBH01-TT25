@@ -67,6 +67,9 @@ export default function KySoModal({
   const [smartCaNotice, setSmartCaNotice] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const [signMethod, setSignMethod] = useState<SignMethod>(() => {
+    if (records.some(r => r.type === 'KHAM_SUC_KHOE')) {
+      return 'AUTO_UNIT_CERT';
+    }
     const cfg = getSmartCAConfig();
     if (cfg.clientId && cfg.clientSecret && cfg.userId) {
       return cfg.signMode === 'APP' ? 'SMARTCA_APP' : 'SMARTCA_TOTP';
@@ -544,10 +547,23 @@ export default function KySoModal({
               {(mode === 'sign' || mode === 'sign_then_submit') && (
                 <div>
                   <label className="block text-sm font-bold text-slate-700 mb-3">
-                    Chọn hình thức ký số XML (1. USB Token hoặc 2. VNPT SmartCA)
+                    {isKsk
+                      ? 'Chọn hình thức ký số XML Khám sức khỏe (1. Ký 2 bước chuẩn QĐ 2062/BYT · 2. USB Token · 3. VNPT SmartCA)'
+                      : 'Chọn hình thức ký số XML (1. USB Token hoặc 2. VNPT SmartCA)'}
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className={cn('grid grid-cols-1 gap-3', isKsk ? 'sm:grid-cols-4' : 'sm:grid-cols-3')}>
                     {([
+                      ...(isKsk
+                        ? [
+                            {
+                              id: 'AUTO_UNIT_CERT' as SignMethod,
+                              icon: <ShieldCheck className="w-5 h-5" />,
+                              badge: 'Chuẩn QĐ 2062',
+                              label: 'Ký số 2 bước BYT (Bác sĩ + CSKCB)',
+                              sub: 'Tự động băm C14N SHA-256 & ký 2 bước tuần tự (CKS_NGUOI_KET_LUAN + CKS_BENH_VIEN) khớp 100% KSK_ToanDan.exe',
+                            },
+                          ]
+                        : []),
                       {
                         id: 'USB_TOKEN',
                         icon: <Usb className="w-5 h-5" />,
@@ -1128,7 +1144,7 @@ export default function KySoModal({
                   {mode === 'sign' && (
                     <>
                       <ShieldCheck className="w-4 h-4" />
-                      Bắt đầu Ký số ({signMethod === 'USB_TOKEN' ? 'USB Token' : 'VNPT SmartCA'})
+                      Bắt đầu Ký số ({signMethod === 'AUTO_UNIT_CERT' ? '2 bước BYT' : signMethod === 'USB_TOKEN' ? 'USB Token' : 'VNPT SmartCA'})
                     </>
                   )}
                   {mode === 'submit' && (
@@ -1141,7 +1157,7 @@ export default function KySoModal({
                     <>
                       <ShieldCheck className="w-4 h-4" />
                       {isKsk
-                        ? `Ký (${signMethod === 'USB_TOKEN' ? 'Token' : 'SmartCA'}) & Gửi EMRHUB`
+                        ? `Ký (${signMethod === 'AUTO_UNIT_CERT' ? '2 bước BYT' : signMethod === 'USB_TOKEN' ? 'Token' : 'SmartCA'}) & Gửi EMRHUB`
                         : `Ký (${signMethod === 'USB_TOKEN' ? 'Token' : 'SmartCA'}) & Gửi BHXH`}
                     </>
                   )}

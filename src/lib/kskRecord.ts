@@ -9,8 +9,8 @@
  */
 
 import type { HoSoRecord } from './signAndSubmitService';
-import { buildKskXml } from './kskXmlBuilder';
-import { KskType, KskField, getAllFields, KSK_SCHEMAS, calcAgeYears } from './kskSchemas';
+import { buildKskXml, normalizeDoiTuongCode } from './kskXmlBuilder';
+import { KskType, KskField, getAllFields, KSK_SCHEMAS, calcAgeYears, ADULT_TSBT } from './kskSchemas';
 import { COMMUNES_BY_PROVINCE } from './diaPhuong';
 import { normalizeKskColumnKey, KSK_COLUMN_ALIASES } from './kskExcelTemplates';
 
@@ -312,15 +312,18 @@ export function finalizeKskRecord(
     }
   }
 
-  // 5. Ngày tháng
+  // 5. Ngày tháng theo đúng chuẩn QĐ 2062/QĐ-BYT (KSK_ToanDan.exe):
+  // - NGAY_SINH, NGAYCAP_CCCD: YYYYMMDD (8 ký tự)
+  // - NGAY_VAO: ChildUnder dùng YYYYMMDDHHmm (12 ký tự), Adult và Minor dùng YYYYMMDD (8 ký tự)
   const fixDate = (key: string, mode: '8' | '12') => {
     const val = data[key];
     if (val === undefined) return;
     const s = String(val).trim();
     if (mode === '12' && /^\d{12}$/.test(s)) { data[key] = s; return; }
+    if (mode === '12' && /^\d{14}$/.test(s)) { data[key] = s.slice(0, 12); return; }
     if (mode === '12' && /^\d{8}$/.test(s)) { data[key] = `${s}0000`; return; }
     if (mode === '8' && /^\d{8}$/.test(s)) { data[key] = s; return; }
-    if (mode === '8' && /^\d{12}$/.test(s)) { data[key] = s.slice(0, 8); return; }
+    if (mode === '8' && /^\d{12,14}$/.test(s)) { data[key] = s.slice(0, 8); return; }
     const dObj = parseDateValue(val);
     if (dObj && !isNaN(dObj.getTime())) {
       data[key] = mode === '12' ? toYmdHm(dObj) : toYmd(dObj);
@@ -329,14 +332,21 @@ export function finalizeKskRecord(
       err(`Định dạng ${key} không hợp lệ`, key);
     }
   };
-  fixDate('NGAY_VAO', '12');
-  fixDate('NGAY_SINH', '12'); // theo "sample xml (final).xml": yyyymmddHHMM
+  fixDate('NGAY_VAO', type === 'ChildUnder' ? '12' : '8');
+  fixDate('NGAY_SINH', '8');
   fixDate('NGAYCAP_CCCD', '8');
 
-  // 6. BMI tự tính (1 chữ số lẻ theo đặc tả)
+  // 5b. Chuẩn hóa DOI_TUONG (trích mã số 1..16 phân cách bằng ';', mặc định '16')
+  if (data.DOI_TUONG !== undefined) {
+    data.DOI_TUONG = normalizeDoiTuongCode(data.DOI_TUONG);
+  } else {
+    data.DOI_TUONG = '16';
+  }
+
+  // 6. BMI tự tính (0.## theo KSK_ToanDan.exe)
   if (data.CHI_SO_BMI === undefined && data.BMI === undefined) {
     const h = parseFloat(data.CHIEU_CAO), w = parseFloat(data.CAN_NANG);
-    if (h > 0 && w > 0) data.CHI_SO_BMI = (w / Math.pow(h / 100, 2)).toFixed(1);
+    if (h > 0 && w > 0) data.CHI_SO_BMI = Number((w / Math.pow(h / 100, 2)).toFixed(2)).toString();
   }
 
   // 7. Mã liên kết
@@ -399,7 +409,7 @@ export function finalizeKskRecord(
     data.CAC_VAN_DE_SUC_KHOE = data.CAC_BENH_TAT_NEU_CO;
   }
 
-  // 9. Kiểm tra
+  // 9. Kiểm tra theo đúng bộ Validator 0x0200008A & 0x020000A3..0x020000A5 của KSK_ToanDan.exe (QĐ 2062/QĐ-BYT)
   for (const f of fields) {
     if (f.required && (data[f.key] === undefined || data[f.key] === '')) {
       err(`Thiếu ${f.label}`, f.key);
@@ -411,33 +421,307 @@ export function finalizeKskRecord(
   if (data.MA_CSKCB && !/^\d{5}$/.test(data.MA_CSKCB)) {
     err('Mã cơ sở KCB phải gồm đúng 5 ký tự số', 'MA_CSKCB');
   }
+
+  // Kiểm tra cấu trúc CCCD 12 số đối chiếu với Năm sinh (thế kỷ 20/21) & Giới tính (hàm 0x060010EC)
   if (data.SO_CCCD) {
-    if (type === 'Adult') {
-      if (!/^\d{12}$/.test(data.SO_CCCD)) err('Số CCCD phải gồm đúng 12 chữ số, không chứa khoảng trắng', 'SO_CCCD');
-    } else if (!/^(\d{9}|\d{12})$/.test(data.SO_CCCD)) {
-      warn('Số CMND/CCCD nên gồm 9 hoặc 12 chữ số', 'SO_CCCD');
+    const cccd = String(data.SO_CCCD).trim();
+    if (!/^\d{12}$/.test(cccd)) {
+      if (type === 'Adult') {
+        err(`Số CCCD phải bao gồm đúng 12 chữ số (Hiện tại: ${cccd.length} ký tự)`, 'SO_CCCD');
+      } else if (!/^\d{9}$/.test(cccd)) {
+        warn(`Số CCCD/Mã định danh nên gồm 12 chữ số (Hiện tại: ${cccd.length} ký tự)`, 'SO_CCCD');
+      }
+    } else if (data.NGAY_SINH && /^\d{4}/.test(String(data.NGAY_SINH))) {
+      const birthYear = parseInt(String(data.NGAY_SINH).slice(0, 4), 10);
+      const yy = String(birthYear).slice(-2);
+      const cccdYy = cccd.slice(4, 6);
+      if (cccdYy !== yy) {
+        warn(`Số thứ 5 và 6 của CCCD là '${cccdYy}' không khớp với 2 số cuối của Năm sinh '${birthYear}' (kỳ vọng là '${yy}')`, 'SO_CCCD');
+      }
+      if (data.GIOI_TINH === '1' || data.GIOI_TINH === '2') {
+        const isMale = data.GIOI_TINH === '1';
+        const expectedDigit4 =
+          birthYear >= 2000 && birthYear <= 2099
+            ? isMale ? '2' : '3'
+            : birthYear >= 1900 && birthYear <= 1999
+            ? isMale ? '0' : '1'
+            : null;
+        if (expectedDigit4 && cccd[3] !== expectedDigit4) {
+          const gtLabel = isMale ? 'Nam' : 'Nữ';
+          const tkLabel = birthYear >= 2000 ? 'Thế kỷ 21 (2000-2099)' : 'Thế kỷ 20 (1900-1999)';
+          warn(`Số thứ 4 của CCCD là '${cccd[3]}' không khớp với Năm sinh ${birthYear} (${tkLabel}) và Giới tính ${gtLabel} (kỳ vọng là '${expectedDigit4}')`, 'SO_CCCD');
+        }
+      }
     }
   }
+
   if (data.NGAYCAP_CCCD && !/^\d{8}$/.test(data.NGAYCAP_CCCD)) {
     err('Ngày cấp CCCD phải theo định dạng YYYYMMDD', 'NGAYCAP_CCCD');
   }
-  if (data.DIEN_THOAI && !/^\d{10}$/.test(String(data.DIEN_THOAI).replace(/\s/g, ''))) {
+  if (data.DIEN_THOAI && !/^\d{10,11}$/.test(String(data.DIEN_THOAI).replace(/\s/g, ''))) {
     warn('Số điện thoại nên gồm 10 chữ số', 'DIEN_THOAI');
   }
   if (data.PHAN_LOAI_SK && !['1', '2', '3', '4', '5'].includes(data.PHAN_LOAI_SK)) {
-    err('Phân loại sức khỏe phải từ 1 đến 5', 'PHAN_LOAI_SK');
+    err('Phân loại sức khỏe phải nằm trong khoảng từ Loại 1 đến Loại 5', 'PHAN_LOAI_SK');
   }
+
+  // Kiểm tra ngày sinh <= ngày khám và kiểm tra độ tuổi theo đúng loại phiếu (0x060011DE, 0x060011E2, 0x060011E6)
   if (data.NGAY_SINH) {
-    const age = calcAgeYears(data.NGAY_SINH, parseDateValue(data.NGAY_VAO) || new Date());
+    const dSinh = parseDateValue(data.NGAY_SINH);
+    const dKham = parseDateValue(data.NGAY_VAO) || new Date();
+    if (dSinh && dKham && dSinh.getTime() > dKham.getTime()) {
+      err('Ngày sinh không được lớn hơn ngày khám', 'NGAY_SINH');
+    }
+    const age = calcAgeYears(data.NGAY_SINH, dKham);
     if (age !== null) {
-      const ok = type === 'ChildUnder' ? age < 6 : type === 'Minor' ? age >= 6 && age < 18 : age >= 18;
-      if (!ok) warn(`Tuổi ${age} không phù hợp mẫu "${KSK_SCHEMAS[type].title}"`, 'NGAY_SINH');
+      if (type === 'ChildUnder') {
+        const months = dSinh
+          ? (dKham.getFullYear() - dSinh.getFullYear()) * 12 + (dKham.getMonth() - dSinh.getMonth())
+          : age * 12;
+        if (months >= 72) {
+          warn(`Trẻ đã đủ 6 tuổi (${months} tháng). Vui lòng sử dụng phiếu khám từ 6 đến dưới 18 tuổi`, 'NGAY_SINH');
+        }
+        if (data.NGUY_CO_TU_KY === '1' && (months < 16 || months > 30)) {
+          warn('Nguy cơ tự kỷ chỉ đánh giá cho trẻ 16-30 tháng tuổi', 'NGUY_CO_TU_KY');
+        }
+      } else if (type === 'Minor') {
+        if (age < 6) {
+          warn(`Người khám chưa đủ 6 tuổi (${age} tuổi). Vui lòng sử dụng phiếu khám trẻ dưới 6 tuổi`, 'NGAY_SINH');
+        } else if (age >= 18) {
+          warn(`Người khám đã từ 18 tuổi trở lên (${age} tuổi). Vui lòng sử dụng phiếu khám người lớn`, 'NGAY_SINH');
+        }
+      } else if (age < 18) {
+        warn(`Tuổi ${age} không phù hợp mẫu "${KSK_SCHEMAS[type].title}"`, 'NGAY_SINH');
+      }
     }
   }
+
+  // Kiểm tra giới tính Nam và các điều kiện ràng buộc chuyên môn ở Người lớn (0x060011DE)
+  if (type === 'Adult') {
+    if (data.GIOI_TINH === '1') {
+      if (data.KET_QUA_KHAM_SAN_PHU_KHOA || data.KHAM_SAN_PHU_KHOA_PL || data.CKDT_KHAM_SAN_PHU_KHOA) {
+        err('Bệnh nhân là Nam giới: Không được có bất kỳ thông tin nào của khám Sản phụ khoa', 'KET_QUA_KHAM_SAN_PHU_KHOA');
+      }
+      if (data.TSBT_THAI_SAN === '1') {
+        err("Bệnh nhân là Nam giới: Tiền sử thai sản phải là 'Không'", 'TSBT_THAI_SAN');
+      }
+    }
+    if (data.TSBT_THAI_SAN === '1' && !data.TSBT_MA_BENH_THAI_SAN && !data.TSBT_TEN_THUOC_THAI_SAN) {
+      warn('Có tiền sử thai sản: Vui lòng nhập mã bệnh thai sản hoặc thuốc đang dùng', 'TSBT_MA_BENH_THAI_SAN');
+    }
+    if (data.TSGD_MAC_BENH === '1' && !data.TSGD_MA_BENH) {
+      warn('Đã chọn Có tiền sử bệnh gia đình, vui lòng nhập mã bệnh hoặc mô tả', 'TSGD_MA_BENH');
+    }
+    if (data.TSBT_BENH_KHAC === '1' && !data.TSBT_MA_BENH_KHAC) {
+      warn('Đã chọn Có bệnh khác trong tiền sử bản thân, vui lòng nhập mã/tên bệnh khác', 'TSBT_MA_BENH_KHAC');
+    }
+    if (data.TSBT_DANG_DIEU_TRI_BENH === '1' && !data.TSBT_MA_BENH && !data.TSBT_TEN_THUOC_LIEU_LUONG) {
+      warn('Đang điều trị bệnh: Vui lòng nhập mã bệnh hoặc tên thuốc và liều lượng đang dùng', 'TSBT_MA_BENH');
+    }
+    if (data.CHIEU_CAO !== undefined && data.CHIEU_CAO !== '') {
+      const h = parseFloat(data.CHIEU_CAO);
+      if (isNaN(h) || h < 50 || h > 250) {
+        err('Chiều cao không hợp lệ (nằm ngoài khoảng 50 - 250 cm)', 'CHIEU_CAO');
+      }
+    }
+    if (data.CAN_NANG !== undefined && data.CAN_NANG !== '') {
+      const w = parseFloat(data.CAN_NANG);
+      if (isNaN(w) || w < 20 || w > 300) {
+        err('Cân nặng không hợp lệ (nằm ngoài khoảng 20 - 300 kg)', 'CAN_NANG');
+      }
+    }
+    if (data.MACH !== undefined && data.MACH !== '') {
+      const m = parseFloat(data.MACH);
+      if (isNaN(m) || m < 30 || m > 250) {
+        err('Mạch không hợp lệ (nằm ngoài khoảng 30 - 250 lần/phút)', 'MACH');
+      }
+    }
+  }
+
+  // Kiểm tra danh sách Cận lâm sàng (0x060011DE & 0x060011E6)
+  if (Array.isArray(data.CLS) && data.CLS.length > 0) {
+    data.CLS.forEach((c: KskClsItem, idx: number) => {
+      if (!c.MA_DICH_VU) warn(`Dòng CLS thứ ${idx + 1} chưa nhập Mã dịch vụ (MA_DICH_VU)`, 'CLS');
+      if (!c.MA_CHI_SO) warn(`Dòng CLS thứ ${idx + 1} chưa nhập Mã chỉ số (MA_CHI_SO)`, 'CLS');
+      if (!c.GIA_TRI) warn(`Dòng CLS thứ ${idx + 1} chưa nhập Giá trị kết quả (GIA_TRI)`, 'CLS');
+    });
+  }
+
   const the = String(data.MA_THE_BHYT || data.MA_THE || '').trim();
   if (the && the.length !== 15 && the.length !== 17) err('Mã thẻ nhận diện phải 15 hoặc 17 ký tự');
 
   return { data, issues };
+}
+
+/**
+ * Điền nhanh giá trị "Bình thường" chuẩn QĐ 2062/QĐ-BYT (khớp 100% các hàm SetNormal 0x0600020A..0x0600020C của KSK_ToanDan.exe)
+ */
+export function buildNormalKskDefaults(type: KskType, current: Record<string, any> = {}): Record<string, any> {
+  const next: Record<string, any> = { ...current, TYPE: type };
+  const setIfEmpty = (k: string, v: string) => {
+    if (next[k] === undefined || next[k] === null || String(next[k]).trim() === '') {
+      next[k] = v;
+    }
+  };
+
+  setIfEmpty('MA_DAN_TOC', '01');
+  setIfEmpty('DOI_TUONG', type === 'ChildUnder' ? '10' : type === 'Minor' ? '11' : '16');
+  setIfEmpty('NGUON_CHI_TRA', '4');
+  setIfEmpty('MA_LOAI_KCB', '01');
+  setIfEmpty('LY_DO_VV', 'Khám sức khỏe định kỳ');
+
+  if (type === 'Adult') {
+    setIfEmpty('TSGD_MAC_BENH', '0');
+    for (const [k] of ADULT_TSBT) setIfEmpty(k, '0');
+    setIfEmpty('TSBT_DANG_DIEU_TRI_BENH', '0');
+    setIfEmpty('TSBT_THAI_SAN', '0');
+    setIfEmpty('CHIEU_CAO', '165');
+    setIfEmpty('CAN_NANG', '60');
+    const h = parseFloat(String(next.CHIEU_CAO || '165').replace(',', '.'));
+    const w = parseFloat(String(next.CAN_NANG || '60').replace(',', '.'));
+    if (h > 0 && w > 0) setIfEmpty('CHI_SO_BMI', Number((w / Math.pow(h / 100, 2)).toFixed(2)).toString());
+    setIfEmpty('MACH', '75');
+    setIfEmpty('HUYET_AP', '120/80');
+    setIfEmpty('KHAM_THE_LUC_PL', '1');
+
+    const noiKhoaList = [
+      ['NOI_KHOA_TUAN_HOAN', 'NOI_KHOA_TUAN_HOAN_PL'],
+      ['NOI_KHOA_HO_HAP', 'NOI_KHOA_HO_HAP_PL'],
+      ['NOI_KHOA_TIEU_HOA', 'NOI_KHOA_TIEU_HOA_PL'],
+      ['NOI_KHOA_THAN_TN_SD', 'NOI_KHOA_THAN_TN_SD_PL'],
+      ['NOI_KHOA_NOI_TIET', 'NOI_KHOA_NOI_TIET_PL'],
+      ['NOI_KHOA_CO_XUONG_KHOP', 'NOI_KHOA_CO_XUONG_KHOP_PL'],
+      ['NOI_KHOA_THAN_KINH', 'NOI_KHOA_THAN_KINH_PL'],
+      ['NOI_KHOA_TAM_THAN', 'NOI_KHOA_TAM_THAN_PL'],
+      ['KET_QUA_KHAM_NGOAI_KHOA', 'KHAM_NGOAI_KHOA_PL'],
+      ['KET_QUA_KHAM_DA_LIEU', 'KHAM_DA_LIEU_PL'],
+    ] as const;
+    for (const [kqKey, plKey] of noiKhoaList) {
+      setIfEmpty(kqKey, 'Bình thường');
+      setIfEmpty(plKey, '1');
+    }
+    if (String(next.GIOI_TINH) === '1') {
+      next.KET_QUA_KHAM_SAN_PHU_KHOA = '';
+      next.KHAM_SAN_PHU_KHOA_PL = '';
+      next.CKDT_KHAM_SAN_PHU_KHOA = '';
+      next.TSBT_THAI_SAN = '0';
+    } else if (String(next.GIOI_TINH) === '2') {
+      setIfEmpty('KET_QUA_KHAM_SAN_PHU_KHOA', 'Bình thường');
+      setIfEmpty('KHAM_SAN_PHU_KHOA_PL', '1');
+    }
+    setIfEmpty('KHONG_KINH_MAT_PHAI', '10/10');
+    setIfEmpty('KHONG_KINH_MAT_TRAI', '10/10');
+    setIfEmpty('BENH_KHAC_MAT', 'Không');
+    setIfEmpty('KHAM_MAT_PL', '1');
+    setIfEmpty('TAI_TRAI_NOI_THUONG', '5');
+    setIfEmpty('TAI_TRAI_NOI_THAM', '0.5');
+    setIfEmpty('TAI_PHAI_NOI_THUONG', '5');
+    setIfEmpty('TAI_PHAI_NOI_THAM', '0.5');
+    setIfEmpty('BENH_TAI_MUI_HONG', 'Không');
+    setIfEmpty('BENH_KHAC_TAI_MUI_HONG', 'Không');
+    setIfEmpty('KHAM_TAI_MUI_HONG_PL', '1');
+    setIfEmpty('HAM_TREN', 'Bình thường');
+    setIfEmpty('HAM_DUOI', 'Bình thường');
+    setIfEmpty('BENH_RANG_HAM_MAT', 'Không');
+    setIfEmpty('BENH_KHAC_RANG_HAM_MAT', 'Không');
+    setIfEmpty('KHAM_RANG_HAM_MAT_PL', '1');
+    setIfEmpty('BINH_THUONG', '1');
+    setIfEmpty('NGUY_CO_MAC_LAO', '0');
+    setIfEmpty('VAN_DE_SUC_KHOE', '0');
+    setIfEmpty('PHAN_LOAI_SK', '1');
+    setIfEmpty('KET_LUAN_BENH', 'Z00.0');
+    setIfEmpty('CAC_VAN_DE_SUC_KHOE', 'Sức khỏe bình thường');
+    setIfEmpty('CAC_BENH_TAT_NEU_CO', 'Sức khỏe bình thường');
+    setIfEmpty('HEN_KHAM_LAN_SAU', '0');
+    setIfEmpty('CHUYEN_CSKCB', '0');
+  } else if (type === 'ChildUnder') {
+    setIfEmpty('TUAN_THAI', '39');
+    setIfEmpty('SINH_NON', '0');
+    setIfEmpty('TSBT_MAC_BENH', '0');
+    setIfEmpty('TSGD_MAC_BENH', '0');
+    setIfEmpty('TS_TIEP_XUC_LAO', '0');
+    setIfEmpty('NHIET_DO', '37');
+    setIfEmpty('DGDHST_NHIET_DO', '1');
+    setIfEmpty('MACH', '80');
+    setIfEmpty('DGDHST_MACH', '1');
+    setIfEmpty('NHIP_THO', '25');
+    setIfEmpty('DGDHST_NHIP_THO', '1');
+    setIfEmpty('DG_VONG_DAU', '1');
+    setIfEmpty('DGDD_BINH_THUONG', '1');
+    setIfEmpty('PHU_DINH_DUONG', '0');
+    setIfEmpty('DGDD_THIEU_MAU', '0');
+    setIfEmpty('DGDD_COI_XUONG', '0');
+    setIfEmpty('SUY_DINH_DUONG', '0');
+    setIfEmpty('THUA_CAN_BEO_PHI', '0');
+    setIfEmpty('PT_TTBT_THEO_DO_TUOI', '1');
+    setIfEmpty('PT_VDBT_THEO_DO_TUOI', '1');
+    setIfEmpty('NGUY_CO_TU_KY', '0');
+    setIfEmpty('TIEM_CHUNG_BCG_SS', '1');
+    setIfEmpty('TIEM_CHUNG_VGB_SS_MUI1', '1');
+    setIfEmpty('TIEM_CHUNG_DAY_DU_THEO_DO_TUOI', '1');
+    const oneFields = [
+      'MAU_SAC_DA', 'LONG_BAN_TAY', 'THOP', 'HINH_DANG_DAU', 'VAN_DONG_CO',
+      'VI_TRI_HAI_MAT', 'MI_MAT_KET_MAC', 'DONG_TU', 'TAI_MANG_NHI', 'DAP_UNG_AM_THANH',
+      'HINH_DANG_MUI', 'HONG', 'HINH_DANG_MIENG', 'HINH_DANG_LUOI', 'NGHE_PHOI',
+      'VI_TRI_MOM_TIM', 'MACH_NGOAI_VI', 'HINH_DANG_BUNG_RON', 'LO_HAU_MON', 'CO_QUAN_SINH_DUC_NGOAI',
+      'PHAN_XA_BU', 'PHAN_XA_NAM', 'PHAN_XA_MORO', 'TRUONG_LUC_CO', 'KHOP_HANG',
+      'PHAN_XA_CO', 'KIEM_TRA_LUNG_COT_SONG', 'TU_CHI_KHOP', 'QUAN_SAT_DANG_DI',
+    ];
+    const zeroFields = [
+      'KHOI_BAT_THUONG_DAU_CO', 'LAC_MAT', 'KHOI_SUNG_SAU_TAI', 'CHAY_MU_NUOC_TAI',
+      'CHAY_NUOC_MUI', 'NGHET_MUI', 'RANG_SUA_SO_SINH', 'DINH_THANG_LUOI', 'NAM_MIENG',
+      'CAM_NHO_TUT_VE_SAU', 'SAU_MANG_BAM_LO', 'NHIP_THO_KHONG_DEU', 'THO_RUT_LOM_LONG_NGUC',
+      'TIENG_THO_BAT_THUONG', 'SUY_HO_HAP', 'TIENG_TIM', 'GAN_LACH_TO', 'KHOI_BAT_THUONG',
+      'VAN_DONG_KHONG_DOI_XUNG',
+    ];
+    for (const k of oneFields) setIfEmpty(k, '1');
+    for (const k of zeroFields) setIfEmpty(k, '0');
+    setIfEmpty('BINH_THUONG', '1');
+    setIfEmpty('NGUY_CO_MAC_LAO', '0');
+    setIfEmpty('VAN_DE_SUC_KHOE', '0');
+    setIfEmpty('KET_LUAN_BENH', 'Z00.1');
+    setIfEmpty('HEN_KHAM_LAN_SAU', '0');
+    setIfEmpty('CHUYEN_CSKCB', '0');
+  } else {
+    // Minor (6 - <18 tuổi) theo 0x0600020C
+    setIfEmpty('TSGD_MAC_BENH', '0');
+    setIfEmpty('SAN_KHOA', '1');
+    setIfEmpty('TIEM_CHUNG_BCG', '1');
+    setIfEmpty('TIEM_CHUNG_BH_HG_UV', '1');
+    setIfEmpty('TIEM_CHUNG_SOI', '1');
+    setIfEmpty('TIEM_CHUNG_BAI_LIET', '1');
+    setIfEmpty('TIEM_CHUNG_VNNB_B', '1');
+    setIfEmpty('TIEM_CHUNG_VGB', '1');
+    setIfEmpty('TIEM_CHUNG_CAC_LOAI_KHAC', '1');
+    setIfEmpty('TSBT_MAC_BENH', '0');
+    setIfEmpty('TSBT_DANG_DIEU_TRI_BENH', '0');
+    setIfEmpty('CHIEU_CAO', '150');
+    setIfEmpty('CAN_NANG', '45');
+    setIfEmpty('CHI_SO_BMI', '20');
+    setIfEmpty('MACH', '80');
+    setIfEmpty('HUYET_AP', '110/70');
+    setIfEmpty('KHAM_THE_LUC_PL', '1');
+    const nhiList = [
+      'NHI_KHOA_TUAN_HOAN', 'NHI_KHOA_HO_HAP', 'NHI_KHOA_TIEU_HOA',
+      'NHI_KHOA_THAN_TN_SD', 'NHI_KHOA_THAN_KINH', 'NHI_KHOA_TAM_THAN', 'NHI_KHOA_LAM_SANG_KHAC',
+    ];
+    for (const k of nhiList) setIfEmpty(k, 'Bình thường');
+    setIfEmpty('KHONG_KINH_MAT_PHAI', '10/10');
+    setIfEmpty('KHONG_KINH_MAT_TRAI', '10/10');
+    setIfEmpty('CO_KINH_MAT_PHAI', '10/10');
+    setIfEmpty('CO_KINH_MAT_TRAI', '10/10');
+    setIfEmpty('TAI_TRAI_NOI_THUONG', '5');
+    setIfEmpty('TAI_TRAI_NOI_THAM', '0.5');
+    setIfEmpty('TAI_PHAI_NOI_THUONG', '5');
+    setIfEmpty('TAI_PHAI_NOI_THAM', '0.5');
+    setIfEmpty('HAM_TREN', 'Bình thường');
+    setIfEmpty('HAM_DUOI', 'Bình thường');
+    setIfEmpty('PHAN_LOAI_SK', '1');
+    setIfEmpty('KET_LUAN_BENH', 'Z00.0');
+    setIfEmpty('CAC_VAN_DE_SUC_KHOE', 'Bình thường');
+  }
+
+  return next;
 }
 
 /** Chuỗi lỗi hiển thị trong bảng (cảnh báo có tiền tố ⚠) */

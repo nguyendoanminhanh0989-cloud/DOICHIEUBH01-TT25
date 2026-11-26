@@ -986,11 +986,32 @@ export function getDefaultKskFormData(type: KskType): Record<string, any> {
   return defaults;
 }
 
-/** Xác định loại mẫu từ tên sheet Excel */
+/** Xác định loại mẫu từ tên sheet Excel (hỗ trợ cả mẫu Excel gốc và mẫu của KSK_ToanDan.exe QĐ 2062/QĐ-BYT) */
 export function detectKskTypeFromSheet(sheetName: string): KskType {
   const n = sheetName.trim().toLowerCase();
-  if (/^6\s*>/.test(n) || n.includes('6>') || n.includes('6 đến') || n.includes('6 den')) return 'Minor';
-  if (n.includes('duoi 6') || n.includes('dưới 6')) return 'ChildUnder';
+  if (
+    /^6\s*>/.test(n) ||
+    n.includes('6>') ||
+    n.includes('6 đến') ||
+    n.includes('6 den') ||
+    n.includes('tu6denduoi18') ||
+    n.includes('87 ct') ||
+    n.includes('87 chỉ tiêu') ||
+    n.includes('6-18')
+  ) {
+    return 'Minor';
+  }
+  if (
+    n.includes('duoi 6') ||
+    n.includes('dưới 6') ||
+    n.includes('treduoi6') ||
+    n.includes('dưới 6t') ||
+    n.includes('duoi 6t') ||
+    n.includes('109 chỉ tiêu') ||
+    n.includes('109 ct')
+  ) {
+    return 'ChildUnder';
+  }
   return 'Adult';
 }
 

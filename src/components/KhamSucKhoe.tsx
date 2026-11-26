@@ -6,8 +6,8 @@ import {
   Trash2, FileText, Send, User, Check, ShieldCheck, Cpu, FileSpreadsheet, Printer, KeyRound
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { buildKskXml } from '../lib/kskXmlBuilder';
-import { createKskHoSoRecord } from '../lib/kskRecord';
+import { buildKskXml, parseKskXmlToRecords, signKskXmlByt2Steps } from '../lib/kskXmlBuilder';
+import { createKskHoSoRecord, buildNormalKskDefaults } from '../lib/kskRecord';
 import { buildKskExportAoa, buildKskClsExportAoa, KSK_EXCEL_TEMPLATES, CLS_EXCEL_TEMPLATE } from '../lib/kskExcelTemplates';
 import type { KskType } from '../lib/kskSchemas';
 import KskConfigModal, { KskConfig } from './KskConfigModal';
@@ -93,65 +93,141 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
       const bstr = evt.target?.result;
       const wb = XLSX.read(bstr, { type: 'binary' });
 
-      // Đọc thêm sheet DM_CanLamSang (nếu có) để gắn kết quả CLS vào đúng bệnh nhân
+      // Đọc thêm sheet DM_CanLamSang / CLS Người lớn / CLS 6-18T (nếu có) để gắn kết quả CLS vào đúng bệnh nhân (theo cả MA_LK, SO_CCCD và HO_TEN)
+      const clsByMaLk = new Map<string, any[]>();
       const clsByCccd = new Map<string, any[]>();
       const clsByName = new Map<string, any[]>();
-      const clsSheetName = wb.SheetNames.find(n => n.toLowerCase().includes('canlamsang'));
-      if (clsSheetName && wb.Sheets[clsSheetName]) {
-        const clsRaw = XLSX.utils.sheet_to_json(wb.Sheets[clsSheetName], { header: 1, defval: '' }) as any[][];
-        if (clsRaw.length > 2) {
-          clsRaw.slice(2).forEach(cRow => {
-            const hoTen = String(cRow[1] ?? '').trim();
-            const soCccd = String(cRow[2] ?? '').trim();
-            const col3 = String(cRow[3] ?? '').trim(); // Tên chỉ số hoặc Mã chỉ số
-            const col4 = String(cRow[4] ?? '').trim(); // DV Cận lâm sàng / Mã chỉ số
-            const donViDo = String(cRow[5] ?? '').trim();
-            const giaTri = String(cRow[6] ?? '').trim();
-            const moTa = String(cRow[7] ?? '').trim();
-            const ketLuan = String(cRow[8] ?? '').trim();
-            if ((!hoTen && !soCccd) || (!giaTri && !moTa && !ketLuan)) return;
-            const item = {
-              MA_DICH_VU: col4 || col3,
-              MA_CHI_SO: col4 || col3,
-              TEN_CHI_SO: col3,
-              DON_VI_DO: donViDo,
-              GIA_TRI: giaTri,
-              MO_TA: moTa,
-              KET_LUAN: ketLuan,
-            };
-            if (soCccd) {
-              const list = clsByCccd.get(soCccd) || [];
-              list.push(item);
-              clsByCccd.set(soCccd, list);
-            }
-            if (hoTen) {
-              const keyName = hoTen.toUpperCase();
-              const list = clsByName.get(keyName) || [];
-              list.push(item);
-              clsByName.set(keyName, list);
-            }
-          });
-        }
-      }
+      const clsSheetNames = wb.SheetNames.filter(n => {
+        const l = n.toLowerCase();
+        return l.includes('canlamsang') || l.startsWith('cls ') || l.includes('cls_');
+      });
+      clsSheetNames.forEach(clsSheetName => {
+        const wsCls = wb.Sheets[clsSheetName];
+        if (!wsCls) return;
+        const clsRaw = XLSX.utils.sheet_to_json(wsCls, { header: 1, defval: '' }) as any[][];
+        if (clsRaw.length < 2) return;
 
-      // Hàm nhận diện loại KskType từ tên sheet hoặc các cột trong sheet
+        // Tự động nhận diện cấu trúc cột sheet CLS (cả mẫu DM_CanLamSang 9 cột và mẫu CLS Người lớn / CLS 6-18T 18 cột của KSK_ToanDan.exe)
+        let headerIdx = 0;
+        for (let rIdx = 0; rIdx < Math.min(clsRaw.length, 6); rIdx++) {
+          const rowStr = clsRaw[rIdx].map(c => String(c || '').toLowerCase()).join('|');
+          if (rowStr.includes('mã dịch vụ') || rowStr.includes('ma_dich_vu') || rowStr.includes('dv cận lâm sàng')) {
+            headerIdx = rIdx;
+            break;
+          }
+        }
+        const hRow = clsRaw[headerIdx].map(c => String(c || '').trim().toLowerCase());
+        const is2062ClsFormat = hRow.some(h => h.includes('mã liên kết') || h.includes('ma_lk') || h.includes('stt dịch vụ'));
+
+        const startRow = is2062ClsFormat ? headerIdx + 1 : Math.max(headerIdx + 1, 2);
+        clsRaw.slice(startRow).forEach(cRow => {
+          let maLk = '';
+          let hoTen = '';
+          let soCccd = '';
+          let maDichVu = '';
+          let maChiSo = '';
+          let tenChiSo = '';
+          let donViDo = '';
+          let giaTri = '';
+          let moTa = '';
+          let ketLuan = '';
+          let ckdt = '';
+
+          if (is2062ClsFormat) {
+            // Cấu trúc KSK_ToanDan.exe: [0]STT, [1]STT CLS, [2]Mã liên kết, [3]Họ và tên, [4]Ngày sinh, [5]Giới tính, [6]CCCD, [7]Ngày vào, [8]Trạng thái, [9]STT DV, [10]Mã DV, [11]Mã chỉ số, [12]Tên chỉ số, [13]Giá trị, [14]Đơn vị đo, [15]Mô tả, [16]Kết luận, [17]Người thực hiện
+            maLk = String(cRow[2] ?? '').trim();
+            hoTen = String(cRow[3] ?? '').trim();
+            soCccd = String(cRow[6] ?? '').trim();
+            maDichVu = String(cRow[10] ?? '').trim();
+            maChiSo = String(cRow[11] ?? '').trim();
+            tenChiSo = String(cRow[12] ?? '').trim();
+            giaTri = String(cRow[13] ?? '').trim();
+            donViDo = String(cRow[14] ?? '').trim();
+            moTa = String(cRow[15] ?? '').trim();
+            ketLuan = String(cRow[16] ?? '').trim();
+            ckdt = String(cRow[17] ?? '').trim();
+          } else {
+            hoTen = String(cRow[1] ?? '').trim();
+            soCccd = String(cRow[2] ?? '').trim();
+            const col3 = String(cRow[3] ?? '').trim();
+            const col4 = String(cRow[4] ?? '').trim();
+            donViDo = String(cRow[5] ?? '').trim();
+            giaTri = String(cRow[6] ?? '').trim();
+            moTa = String(cRow[7] ?? '').trim();
+            ketLuan = String(cRow[8] ?? '').trim();
+            maDichVu = col4 || col3;
+            maChiSo = col4 || col3;
+            tenChiSo = col3;
+          }
+
+          if (maDichVu === '(Không có CLS)' || (!maLk && !hoTen && !soCccd) || (!giaTri && !moTa && !ketLuan && !maDichVu && !maChiSo)) {
+            return;
+          }
+          const item = {
+            MA_DICH_VU: maDichVu || maChiSo,
+            MA_CHI_SO: maChiSo || maDichVu,
+            TEN_CHI_SO: tenChiSo,
+            DON_VI_DO: donViDo,
+            GIA_TRI: giaTri,
+            MO_TA: moTa,
+            KET_LUAN: ketLuan,
+            CKDT_KET_QUA_CLS: ckdt,
+          };
+          if (maLk) {
+            const list = clsByMaLk.get(maLk) || [];
+            list.push(item);
+            clsByMaLk.set(maLk, list);
+          }
+          if (soCccd) {
+            const list = clsByCccd.get(soCccd) || [];
+            list.push(item);
+            clsByCccd.set(soCccd, list);
+          }
+          if (hoTen) {
+            const keyName = hoTen.toUpperCase();
+            const list = clsByName.get(keyName) || [];
+            list.push(item);
+            clsByName.set(keyName, list);
+          }
+        });
+      });
+
+      // Hàm nhận diện loại KskType từ tên sheet hoặc các cột trong sheet (hỗ trợ cả mẫu Excel gốc và mẫu KSK_ToanDan.exe QĐ 2062/QĐ-BYT)
       const detectKskTypeFromSheet = (sheetName: string, keys: any[]): KskType => {
         if (templateLabel === 'Trên 18') return 'Adult';
         if (templateLabel === 'Từ 6-18') return 'Minor';
         if (templateLabel === 'Dưới 6') return 'ChildUnder';
         const lower = sheetName.toLowerCase();
-        if (lower.includes('duoi 6') || lower.includes('dưới 6') || (lower.includes('duoi') && !lower.includes('18'))) {
+        if (
+          lower.includes('duoi 6') ||
+          lower.includes('dưới 6') ||
+          lower.includes('treduoi6') ||
+          lower.includes('109 chỉ tiêu') ||
+          lower.includes('109 ct') ||
+          (lower.includes('duoi') && !lower.includes('18'))
+        ) {
           return 'ChildUnder';
         }
-        if (lower.includes('6') && (lower.includes('18') || lower.includes('duoi') || lower.includes('dưới'))) {
+        if (
+          lower.includes('tu6denduoi18') ||
+          lower.includes('87 ct') ||
+          lower.includes('87 chỉ tiêu') ||
+          (lower.includes('6') && (lower.includes('18') || lower.includes('duoi') || lower.includes('dưới')))
+        ) {
           return 'Minor';
         }
-        if (lower.includes('trên 18') || lower.includes('tren 18')) {
+        if (
+          lower.includes('trên 18') ||
+          lower.includes('tren 18') ||
+          lower.includes('nguoilon') ||
+          lower.includes('người lớn') ||
+          lower.includes('123 chỉ tiêu')
+        ) {
           return 'Adult';
         }
         const keySet = new Set(keys.map(k => String(k || '').trim()));
         if (keySet.has('SINH_NON') || keySet.has('VONG_DAU') || keySet.has('MOI_QUAN_HE_VOI_TRE')) return 'ChildUnder';
-        if (keySet.has('NHI_KHOA_TUAN_HOAN') || keySet.has('SAN_KHOA') || keySet.has('HO_TEN_NGH')) return 'Minor';
+        if (keySet.has('NHI_KHOA_TUAN_HOAN') || keySet.has('SAN_KHOA') || keySet.has('HO_TEN_NGH') || keySet.has('NGUOI_GIAM_HO')) return 'Minor';
         return 'Adult';
       };
 
@@ -160,9 +236,9 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
       if (templateLabel !== 'AUTO') {
         const matched = wb.SheetNames.find(n => {
           const lower = n.toLowerCase();
-          if (templateLabel === 'Trên 18') return lower.includes('trên 18') || lower.includes('tren 18') || (n.includes('18') && !n.includes('Duoi') && !lower.includes('dưới'));
-          if (templateLabel === 'Từ 6-18') return n.includes('6') && (n.includes('18') || n.includes('Duoi') || lower.includes('dưới'));
-          if (templateLabel === 'Dưới 6') return lower.includes('duoi 6') || lower.includes('dưới 6') || (n.includes('Duoi') && !n.includes('18'));
+          if (templateLabel === 'Trên 18') return lower.includes('trên 18') || lower.includes('tren 18') || lower.includes('nguoilon') || lower.includes('người lớn') || (n.includes('18') && !n.includes('Duoi') && !lower.includes('dưới'));
+          if (templateLabel === 'Từ 6-18') return lower.includes('tu6denduoi18') || lower.includes('87 ct') || (n.includes('6') && (n.includes('18') || n.includes('Duoi') || lower.includes('dưới')));
+          if (templateLabel === 'Dưới 6') return lower.includes('duoi 6') || lower.includes('dưới 6') || lower.includes('treduoi6') || lower.includes('109 chỉ tiêu') || (n.includes('Duoi') && !n.includes('18'));
           return false;
         });
         if (matched) targetSheets = [matched];
@@ -172,13 +248,18 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
         // Tự động tìm mọi sheet dữ liệu KSK hợp lệ trong file Excel
         targetSheets = wb.SheetNames.filter(n => {
           const lower = n.toLowerCase();
-          if (lower.includes('canlamsang') || lower.includes('danhmuc') || lower.includes('dm_') || lower.includes('huongdan')) {
+          if (lower.includes('canlamsang') || lower.startsWith('cls ') || lower.includes('cls_') || lower.includes('danhmuc') || lower.includes('dm_') || lower.includes('huongdan')) {
             return false;
           }
           return (
             lower.includes('18') ||
             lower.includes('duoi 6') ||
             lower.includes('dưới 6') ||
+            lower.includes('nguoilon') ||
+            lower.includes('người lớn') ||
+            lower.includes('treduoi6') ||
+            lower.includes('tu6denduoi18') ||
+            lower.includes('chỉ tiêu') ||
             lower.includes('ksk') ||
             wb.SheetNames.length === 1
           );
@@ -196,19 +277,30 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
         const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][];
         if (rawData.length <= 1) return;
 
-        // Tự động tìm dòng chứa mã trường (MA_CSKCB / HO_TEN / SO_CCCD) ở dòng 1 hoặc dòng 2
+        // Tự động tìm dòng chứa mã trường (MA_CSKCB / HO_TEN / SO_CCCD) trong 5 dòng đầu (hỗ trợ cả file xuất từ KSK_ToanDan.exe có tiêu đề ở dòng 1-3)
         let keyRowIdx = 1;
-        if (
-          rawData[0]?.some((c: any) => ['MA_CSKCB', 'HO_TEN', 'HOTEN', 'HO_VA_TEN', 'SO_CCCD'].includes(String(c || '').trim())) &&
-          !rawData[1]?.some((c: any) => ['MA_CSKCB', 'HO_TEN', 'HOTEN', 'HO_VA_TEN', 'SO_CCCD'].includes(String(c || '').trim()))
-        ) {
-          keyRowIdx = 0;
+        for (let rIdx = 0; rIdx < Math.min(rawData.length, 6); rIdx++) {
+          const rowCells = (rawData[rIdx] || []).map((c: any) => String(c || '').trim().toUpperCase());
+          const hasCode = rowCells.some((c: string) =>
+            ['MA_CSKCB', 'HO_TEN', 'HOTEN', 'HO_VA_TEN', 'SO_CCCD', 'MA_LK'].includes(c) ||
+            c.includes('(MÃ: HO_TEN)') ||
+            c.includes('(MÃ: MA_CSKCB)')
+          );
+          if (hasCode) {
+            keyRowIdx = rIdx;
+            break;
+          }
         }
         const keys = rawData[keyRowIdx] || [];
-        const headerRow0 = rawData[0] || [];
-        const hasValidKeys = keys.some((c: any) =>
-          ['MA_CSKCB', 'HO_TEN', 'HOTEN', 'HO_VA_TEN', 'SO_CCCD', 'NGAY_SINH'].includes(String(c || '').trim())
-        );
+        const headerRow0 = rawData[Math.max(0, keyRowIdx - 1)] || rawData[0] || [];
+        const hasValidKeys = keys.some((c: any) => {
+          const s = String(c || '').trim().toUpperCase();
+          return (
+            ['MA_CSKCB', 'HO_TEN', 'HOTEN', 'HO_VA_TEN', 'SO_CCCD', 'NGAY_SINH', 'MA_LK', 'HỌ VÀ TÊN'].includes(s) ||
+            s.includes('HO_TEN') ||
+            s.includes('MA_CSKCB')
+          );
+        });
         if (!hasValidKeys) return;
 
         // Tìm cột Họ tên dự phòng từ dòng tiêu đề tiếng Việt nếu cột mã bị khuyết
@@ -258,9 +350,13 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
             obj.HO_TEN = row[fallbackHoTenColIdx];
           }
 
-          const cccdKey = String(obj.SO_CCCD ?? '').trim();
-          const nameKey = String(obj.HO_TEN ?? '').trim().toUpperCase();
-          const matchedCls = (cccdKey && clsByCccd.get(cccdKey)) || (nameKey && clsByName.get(nameKey));
+          const maLkKey = String(obj.MA_LK || obj['Lượt khám'] || '').trim();
+          const cccdKey = String(obj.SO_CCCD || obj['Mã định danh (CCCD)'] || obj['Mã định danh'] || '').trim();
+          const nameKey = String(obj.HO_TEN || obj['Họ và tên'] || obj['Ho va ten'] || '').trim().toUpperCase();
+          const matchedCls =
+            (maLkKey && clsByMaLk.get(maLkKey)) ||
+            (cccdKey && clsByCccd.get(cccdKey)) ||
+            (nameKey && clsByName.get(nameKey));
           if (matchedCls && matchedCls.length > 0) {
             obj.CLS = matchedCls;
             obj.HAS_CLS = '1';
@@ -304,6 +400,102 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const handleImportXmlFiles = async (e: React.ChangeEvent<HTMLInputElement>, append = true) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const imported: HoSoRecord[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      try {
+        const text = await f.text();
+        const parsedList = parseKskXmlToRecords(text);
+        parsedList.forEach((item, idx) => {
+          const rec = createKskHoSoRecord(item.rawData, item.type, {
+            id: `xml_${Date.now()}_${i}_${idx}`,
+            source: 'excel',
+          });
+          if (item.rawData.CKS_NGUOI_KET_LUAN || item.rawData.CKS_BENH_VIEN) {
+            rec.trangThai = 'SIGNED';
+            rec.xmlContent = text;
+            rec.signatureBase64 = item.rawData.CKS_BENH_VIEN || item.rawData.CKS_NGUOI_KET_LUAN;
+          }
+          imported.push(rec);
+        });
+      } catch {}
+    }
+    if (imported.length > 0) {
+      setFileName(files.length === 1 ? files[0].name : `${files.length} file XML KSK`);
+      setRecords(prev => {
+        const next = append ? [...prev, ...imported] : imported;
+        setSelectedIds(new Set(next.map(r => r.id)));
+        return next;
+      });
+      setActiveTab('preview');
+    } else {
+      alert('Không tìm thấy hồ sơ Khám sức khỏe (<KHAMSUCKHOE>) hợp lệ trong file XML đã chọn.');
+    }
+    e.target.value = '';
+  };
+
+  /** Ký số 2 bước chuẩn QĐ 2062/QĐ-BYT (Bác sĩ kết luận + Cơ sở KCB) trực tiếp giống [F10] Ký số của KSK_ToanDan.exe */
+  const handleQuickSign2StepsByt = async (signAll = false) => {
+    if (records.length === 0) return;
+    const targetIds = signAll
+      ? new Set(records.map(r => r.id))
+      : selectedIds.size > 0
+      ? selectedIds
+      : new Set(records.map(r => r.id));
+    if (signAll) setSelectedIds(targetIds);
+
+    const { getOrgConfig } = await import('../lib/signAndSubmitService');
+    const org = getOrgConfig();
+    const updated: HoSoRecord[] = [];
+
+    for (const r of records) {
+      if (!targetIds.has(r.id)) {
+        updated.push(r);
+        continue;
+      }
+      const kType = ((r as any).kskType || r.rawData?.TYPE || 'Adult') as KskType;
+      const freshXml = buildKskXml(
+        [{ ...r.rawData, TYPE: kType }],
+        r.rawData?.MA_CSKCB || r.rawData?.MA_GTIN_CSKCB || org.ma_cskcb || '00000'
+      );
+      const signed = await signKskXmlByt2Steps(freshXml, {
+        doctorName: r.rawData?.NGUOI_KET_LUAN || r.nguoiKy || 'BS. Trưởng khoa Khám bệnh',
+        orgName: org.ten_cskcb || r.rawData?.MA_CSKCB || org.ma_cskcb || 'CƠ SỞ KHÁM CHỮA BỆNH',
+        maCskcb: r.rawData?.MA_CSKCB || org.ma_cskcb,
+      });
+      updated.push({
+        ...r,
+        trangThai: 'SIGNED',
+        xmlContent: signed.signedXml,
+        signatureBase64: signed.cksBenhVien,
+        rawData: {
+          ...r.rawData,
+          CKS_NGUOI_KET_LUAN: signed.cksNguoiKetLuan,
+          CKS_BENH_VIEN: signed.cksBenhVien,
+        },
+        errorMessage: undefined,
+      });
+    }
+    setRecords(updated);
+  };
+
+  /** Đặt nhanh giá trị Bình thường (Chuẩn QĐ 2062/QĐ-BYT) cho các hồ sơ đang chọn */
+  const handleBatchSetNormal = () => {
+    if (records.length === 0) return;
+    const targetIds = selectedIds.size > 0 ? selectedIds : new Set(records.map(r => r.id));
+    setRecords(prev =>
+      prev.map(r => {
+        if (!targetIds.has(r.id)) return r;
+        const kType = ((r as any).kskType || r.rawData?.TYPE || 'Adult') as KskType;
+        const filled = buildNormalKskDefaults(kType, r.rawData);
+        return createKskHoSoRecord(filled, kType, { id: r.id, source: (r as any).kskSource || 'excel' });
+      })
+    );
   };
 
   const handleFileUpload = (
@@ -569,6 +761,22 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
             />
           </label>
 
+          {/* Nút Import XML KSK (đọc cả 3 mẫu Adult, ChildUnder, Minor từ KSK_ToanDan.exe hoặc hệ thống) */}
+          <label
+            className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2 shadow-xs cursor-pointer"
+            title="Đọc 1 hoặc nhiều file XML Khám sức khỏe (QĐ 2062/QĐ-BYT) vào danh sách"
+          >
+            <FileCode2 className="w-4 h-4" />
+            Đọc File XML KSK
+            <input
+              type="file"
+              className="hidden"
+              accept=".xml"
+              multiple
+              onChange={(e) => handleImportXmlFiles(e, true)}
+            />
+          </label>
+
           <label
             className="px-4 py-2 rounded-lg text-sm font-bold transition-all bg-amber-600 text-white hover:bg-amber-700 flex items-center gap-2 shadow-xs cursor-pointer"
             title="Import danh sách bệnh nhân đợi khám (chỉ cần thông tin hành chính theo mẫu Excel) vào cột bên trái để kích chọn khám từng ca"
@@ -738,6 +946,14 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
                   </div>
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => handleQuickSign2StepsByt(false)}
+                      disabled={selectedIds.size === 0}
+                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                      title="Ký số 2 bước chuẩn QĐ 2062/QĐ-BYT (Bác sĩ kết luận + Cơ sở KCB) ngay lập tức giống [F10] Ký số của KSK_ToanDan.exe"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5" /> Ký 2 bước BYT ({selectedIds.size})
+                    </button>
+                    <button
                       onClick={() => {
                         if (selectedIds.size === 0) {
                           alert('Vui lòng chọn ít nhất 1 hồ sơ để ký số XML.');
@@ -747,23 +963,10 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
                         setKySoMode('sign');
                       }}
                       disabled={selectedIds.size === 0}
-                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-                      title="Mở bảng Ký số XML (chọn USB Token hoặc VNPT SmartCA) cho các hồ sơ đã chọn"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5" /> Ký đã chọn ({selectedIds.size})
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (records.length === 0) return;
-                        setSelectedIds(new Set(records.map(r => r.id)));
-                        setKySoCustomRecords(records);
-                        setKySoMode('sign');
-                      }}
-                      disabled={records.length === 0}
                       className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50"
-                      title="Chọn tất cả và mở bảng Ký số XML (USB Token hoặc VNPT SmartCA)"
+                      title="Mở bảng chọn USB Token / VNPT SmartCA / Ký 2 bước BYT"
                     >
-                      Ký tất cả ({records.length})
+                      Token / SmartCA
                     </button>
                   </div>
                 </div>
@@ -831,6 +1034,16 @@ export default function KhamSucKhoe({ onGoHome }: { onGoHome: () => void }) {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleBatchSetNormal}
+                    disabled={records.length === 0}
+                    className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-bold text-xs hover:bg-emerald-700 flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                    title="Điền nhanh các chỉ tiêu Khám lâm sàng / Thể lực / Tiền sử đang trống thành 'Bình thường' theo chuẩn QĐ 2062/QĐ-BYT"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Đặt Bình thường (Chuẩn 2062)
+                  </button>
+
                   <button
                     onClick={() => {
                       const first = records.find(r => selectedIds.has(r.id)) || records[0];

@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { KskType, KSK_SCHEMAS, KskField, getAllFields, getDefaultKskFormData } from '../../lib/kskSchemas';
-import { mapOption, finalizeKskRecord } from '../../lib/kskRecord';
+import { mapOption, finalizeKskRecord, buildNormalKskDefaults } from '../../lib/kskRecord';
 import { buildKskXml } from '../../lib/kskXmlBuilder';
 import { COMMUNES_BY_PROVINCE } from '../../lib/diaPhuong';
 import SearchableSelect from '../SearchableSelect';
@@ -555,6 +555,14 @@ export default function KskDynamicForm({
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setFormData((prev: any) => buildNormalKskDefaults(type, prev))}
+            className="flex items-center gap-1.5 px-2.5 py-2 bg-teal-50 text-teal-800 border border-teal-200 rounded-lg hover:bg-teal-100 font-bold text-xs cursor-pointer"
+            title="Điền nhanh giá trị Bình thường theo chuẩn QĐ 2062/QĐ-BYT cho các mục đang trống"
+          >
+            <Check className="w-4 h-4" /> Đặt Bình thường (2062)
+          </button>
           <button
             type="button"
             onClick={() => exportKskToWord([{ rawData: formData, type }])}
