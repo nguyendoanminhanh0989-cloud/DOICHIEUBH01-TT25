@@ -1,9 +1,11 @@
 /**
- * MODULE ĐỌC, KIỂM TRA, CHỈNH SỬA & KÝ SỐ XML THEO QUYẾT ĐỊNH 3176/QĐ-BYT (VÀ 4750/130/QĐ-BYT)
- * Hỗ trợ đầy đủ Bảng lỗi và Bảng 1 -> Bảng 15 (XML1 -> XML15)
+ * MODULE ĐỌC, KIỂM TRA, CHỈNH SỬA & KÝ SỐ XML THEO QUYẾT ĐỊNH 3176/QĐ-BYT & QUYẾT ĐỊNH 3556/QĐ-BYT (18/11/2026)
+ * Hỗ trợ đầy đủ Bảng lỗi và Bảng 1 -> Bảng 15 (XML1 -> XML15), chạy song song 3176 & 3556
  * Giải mã & mã hóa lại Base64 UTF-8, bảo toàn cấu trúc CDATA, thứ tự thẻ và vị trí <CHUKYDONVI />
  * Không lưu trữ dữ liệu XML trên trình duyệt (F5 tự xóa sạch hoàn toàn)
  */
+
+export type XmlStandardVersion = '3176' | '3556';
 
 export type Xml3176TableId =
   | 'XML1' | 'XML2' | 'XML3' | 'XML4' | 'XML5'
@@ -273,6 +275,54 @@ export const XML3176_TABLES: Xml3176TableMeta[] = [
   }
 ];
 
+export const XML3556_TABLE_FIELDS: Partial<Record<Xml3176TableId, string[]>> = {
+  XML1: [
+    'MA_LK', 'STT', 'MA_BN', 'HO_TEN', 'SO_CCCD', 'NGAY_SINH', 'GIOI_TINH', 'NHOM_MAU',
+    'MA_QUOCTICH', 'MA_DANTOC', 'MA_NGHE_NGHIEP', 'DIA_CHI', 'MATINH_CU_TRU', 'MAHUYEN_CU_TRU',
+    'MAXA_CU_TRU', 'DIEN_THOAI', 'MA_THE_BHYT', 'MA_DKBD', 'GT_THE_TU', 'GT_THE_DEN',
+    'NGAY_MIEN_CCT', 'LY_DO_VV', 'LY_DO_VNT', 'MA_LY_DO_VNT', 'CHAN_DOAN_VAO', 'CHAN_DOAN_RV',
+    'MA_BENH_CHINH', 'MA_BENH_KT', 'MA_BENH_KHAC', 'MA_BENH_YHCT', 'MA_PTTT_QT', 'MA_DOITUONG_KCB',
+    'MA_NOI_DI', 'MA_NOI_DEN', 'MA_TAI_NAN', 'NGAY_VAO', 'NGAY_VAO_NOI_TRU', 'NGAY_RA',
+    'GIAY_CHUYEN_TUYEN', 'SO_NGAY_DTRI', 'PP_DIEU_TRI', 'KET_QUA_DTRI', 'MA_LOAI_RV',
+    'GHI_CHU', 'NGAY_TTOAN', 'T_THUOC', 'T_VTYT', 'T_TONGCHI_BV', 'T_TONGCHI_BH',
+    'T_BNTT', 'T_BNCCT_LK', 'T_BNCCT', 'T_BHTT', 'T_NGUONKHAC', 'T_BHTT_GDV', 'NAM_QT', 'THANG_QT',
+    'MA_LOAI_KCB', 'MA_KHOA', 'MA_CSKCB', 'MA_KHUVUC', 'CAN_NANG', 'CAN_NANG_CON',
+    'NAM_NAM_LIEN_TUC', 'NGAY_TAI_KHAM', 'MA_HSBA', 'MA_TTDV', 'DU_PHONG'
+  ],
+  XML7: [
+    'MA_LK', 'SO_LUU_TRU', 'MA_YTE', 'MA_KHOA_RV', 'NGAY_VAO', 'NGAY_VAO_NOI_TRU', 'NGAY_RA',
+    'MA_DINH_CHI_THAI', 'NGUYENNHAN_DINHCHI', 'THOIGIAN_DINHCHI', 'TUOI_THAI',
+    'CHAN_DOAN_RV', 'PP_DIEUTRI', 'GHI_CHU', 'MA_TTDV', 'MA_BS', 'TEN_BS', 'NGAY_CT',
+    'MA_CHA', 'MA_ME', 'MA_THE_TAM', 'HO_TEN_CHA', 'HO_TEN_ME',
+    'SO_NGAY_NGHI', 'NGOAITRU_TUNGAY', 'NGOAITRU_DENNGAY', 'DU_PHONG'
+  ],
+  XML13: [
+    'MA_LK', 'SO_HOSO', 'SO_CHUYENTUYEN', 'GIAY_CHUYEN_TUYEN', 'MA_CSKCB', 'MA_NOI_DI',
+    'MA_NOI_DEN', 'HO_TEN', 'NGAY_SINH', 'GIOI_TINH', 'MA_QUOCTICH', 'MA_DANTOC',
+    'MA_NGHE_NGHIEP', 'DIA_CHI', 'MA_THE_BHYT', 'GT_THE_DEN', 'NGAY_VAO', 'NGAY_VAO_NOI_TRU', 'NGAY_RA',
+    'DAU_HIEU_LS', 'CHAN_DOAN_RV', 'QT_BENHLY', 'TOMTAT_KQ', 'PP_DIEUTRI', 'MA_BENH_CHINH',
+    'MA_BENH_KT', 'MA_BENH_YHCT', 'TINH_TRANG_CT', 'MA_LOAI_RV', 'MA_LYDO_CT', 'HUONG_DIEU_TRI',
+    'PHUONGTIEN_VC', 'HOTEN_NGUOI_HT', 'CHUCDANH_NGUOI_HT', 'MA_BAC_SI', 'MA_TTDV', 'DU_PHONG'
+  ],
+  XML14: [
+    'MA_LK', 'SO_GIAYHEN_KL', 'MA_CSKCB', 'HO_TEN', 'NGAY_SINH', 'GIOI_TINH',
+    'DIA_CHI', 'MA_THE_BHYT', 'GT_THE_DEN', 'NGAY_VAO', 'NGAY_VAO_NOI_TRU',
+    'NGAY_RA', 'NGAY_HEN_KL', 'CHAN_DOAN_RV', 'MA_BENH_CHINH', 'MA_BENH_KT',
+    'MA_BENH_YHCT', 'MA_DOITUONG_KCB', 'MA_BAC_SI', 'MA_TTDV', 'NGAY_CT', 'DU_PHONG'
+  ],
+};
+
+export function getDefaultFieldsForStandard(
+  tableId: Xml3176TableId,
+  standard: XmlStandardVersion = '3176'
+): string[] {
+  if (standard === '3556' && XML3556_TABLE_FIELDS[tableId]) {
+    return [...XML3556_TABLE_FIELDS[tableId]!];
+  }
+  const meta = XML3176_TABLES.find(t => t.id === tableId);
+  return meta ? [...meta.defaultFields] : [];
+}
+
 export const FIELD_LABELS_3176: Record<string, string> = {
   MA_LK: 'Mã liên kết',
   STT: 'STT',
@@ -302,11 +352,14 @@ export const FIELD_LABELS_3176: Record<string, string> = {
   CHAN_DOAN_RV: 'Chẩn đoán ra viện',
   MA_BENH_CHINH: 'Mã bệnh chính (ICD-10)',
   MA_BENH_KT: 'Mã bệnh kèm theo',
+  MA_BENH_KHAC: 'Mã bệnh khác / loại trừ (3556)',
   MA_BENH_YHCT: 'Mã bệnh YHCT',
   MA_PTTT_QT: 'Mã PTTT quốc tế',
   MA_DOITUONG_KCB: 'Mã đối tượng KCB',
   MA_NOI_DI: 'Mã nơi chuyển đi',
   MA_NOI_DEN: 'Mã nơi chuyển đến',
+  MA_CSKCB_DI: 'Mã CSKCB chuyển đi',
+  MA_CSKCB_DEN: 'Mã CSKCB chuyển đến',
   MA_TAI_NAN: 'Mã tai nạn',
   NGAY_VAO: 'Ngày giờ vào viện',
   NGAY_VAO_NOI_TRU: 'Ngày giờ vào nội trú',
@@ -324,6 +377,7 @@ export const FIELD_LABELS_3176: Record<string, string> = {
   T_TONGCHI_BV: 'Tổng chi phí BV',
   T_TONGCHI_BH: 'Tổng chi phí BH',
   T_BNTT: 'Bệnh nhân tự trả',
+  T_BNCCT_LK: 'BN cùng CT lũy kế năm (3556)',
   T_BNCCT: 'BN cùng chi trả',
   T_BHTT: 'Quỹ BHYT thanh toán',
   T_NGUONKHAC: 'Nguồn khác',
@@ -398,6 +452,29 @@ export const FIELD_LABELS_3176: Record<string, string> = {
   MA_BS: 'Mã bác sĩ',
   TEN_BS: 'Tên bác sĩ',
   MAU_SO: 'Mẫu số',
+  TINH_TRANG_CT: 'Tình trạng người bệnh chuyển (3556)',
+  QT_BENHLY: 'Quá trình bệnh lý',
+  TOMTAT_KQ: 'Tóm tắt kết quả CLS',
+  DAU_HIEU_LS: 'Dấu hiệu lâm sàng',
+  HUONG_DIEU_TRI: 'Hướng điều trị',
+  PHUONGTIEN_VC: 'Phương tiện vận chuyển',
+  PHUONG_TIEN_VC: 'Phương tiện vận chuyển',
+  HOTEN_NGUOI_HT: 'Họ tên người hộ tống',
+  CHUCDANH_NGUOI_HT: 'Chức danh người hộ tống',
+  MA_LYDO_CT: 'Mã lý do chuyển',
+  SO_HOSO: 'Số hồ sơ',
+  SO_CHUYENTUYEN: 'Số chuyển tuyến',
+  MA_CHA: 'Mã định danh cha',
+  MA_ME: 'Mã định danh mẹ',
+  MA_THE_TAM: 'Mã thẻ tạm',
+  NGOAITRU_TUNGAY: 'Điều trị ngoại trú từ ngày',
+  NGOAITRU_DENNGAY: 'Điều trị ngoại trú đến ngày',
+  MA_DINH_CHI_THAI: 'Đình chỉ thai nghén',
+  NGUYENNHAN_DINHCHI: 'Nguyên nhân đình chỉ thai',
+  THOIGIAN_DINHCHI: 'Thời gian đình chỉ thai',
+  TUOI_THAI: 'Tuổi thai (tuần)',
+  NGAY_HEN_KL: 'Ngày hẹn khám lại',
+  SO_GIAYHEN_KL: 'Số giấy hẹn khám lại',
 };
 
 export interface Xml3176Row {
@@ -435,6 +512,7 @@ export interface Xml3176SignatureInfo {
   certificateBase64?: string;
   serialNumber?: string;
   signedHosoKey?: string; // Danh sách hosoIndex đã được ký trong gói này (VD: "0,1,2")
+  signedStandard?: XmlStandardVersion;
 }
 
 export interface Xml3176HosoSignState {
@@ -445,6 +523,7 @@ export interface Xml3176HosoSignState {
   subjectName?: string;
   rawChuKyDonViXml?: string;
   signedXmlContent?: string; // Lưu XML riêng nếu ký lẻ từng HS
+  signedStandard?: XmlStandardVersion;
 }
 
 export interface Xml3176ValidationError {
@@ -461,6 +540,7 @@ export interface Xml3176ValidationError {
 
 export interface Xml3176ParsedDoc {
   fileName: string;
+  detectedStandard: XmlStandardVersion;
   maCskcb: string;
   ngayLap: string;
   soLuongHoSo: number;
@@ -581,7 +661,7 @@ function parseInnerFileHosoXml(
   const meta = XML3176_TABLES.find(t => t.id === tableId) || XML3176_TABLES[0];
   const declMatch = decodedXml.match(/^\s*(<\?xml[^>]*\?>)/);
   const xmlDeclaration = declMatch ? declMatch[1] : '<?xml version="1.0" encoding="utf-8" ?>';
-  const body = decodedXml.replace(/^\s*<\?xml[^>]*\?>\s*/, '');
+  const body = decodedXml.replace(/^\s*<\?xml[^>]*\?>\s*/, '').trim();
 
   const rootMatch = body.match(/^<([A-Za-z0-9_]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>\s*$/);
   const rootTag = rootMatch ? rootMatch[1] : meta.rootTag;
@@ -640,11 +720,182 @@ function parseInnerFileHosoXml(
 }
 
 /**
+ * Tự động nhận diện chuẩn XML đầu vào (QĐ 3176/QĐ-BYT hay QĐ 3556/QĐ-BYT ngày 18/11/2026)
+ */
+export function detectXmlStandard(
+  tables: Record<Xml3176TableId, Xml3176Row[]>,
+  fileName?: string
+): XmlStandardVersion {
+  if (tables.XML1?.some(r => 'MA_BENH_KHAC' in r.fields || 'T_BNCCT_LK' in r.fields)) {
+    return '3556';
+  }
+  if (tables.XML7?.some(r => 'NGAY_VAO_NOI_TRU' in r.fields)) {
+    return '3556';
+  }
+  if (tables.XML13?.some(r => 'TINH_TRANG_CT' in r.fields)) {
+    return '3556';
+  }
+  if (/(?:^|[_-])355[36](?:[_.-]|$)/i.test(fileName || '')) {
+    return '3556';
+  }
+  return '3176';
+}
+
+function insertColumnAtPosition(
+  cols: string[],
+  colToAdd: string,
+  afterKey?: string,
+  beforeKey?: string
+): string[] {
+  if (cols.includes(colToAdd)) return cols;
+  const next = [...cols];
+  if (afterKey) {
+    const idx = next.indexOf(afterKey);
+    if (idx !== -1) {
+      next.splice(idx + 1, 0, colToAdd);
+      return next;
+    }
+  }
+  if (beforeKey) {
+    const idx = next.indexOf(beforeKey);
+    if (idx !== -1) {
+      next.splice(idx, 0, colToAdd);
+      return next;
+    }
+  }
+  next.push(colToAdd);
+  return next;
+}
+
+/**
+ * Lấy danh sách cột hiển thị/xuất Excel phù hợp với chuẩn đang chọn (3176 hoặc 3556)
+ */
+export function getDisplayColumnsForStandard(
+  doc: Xml3176ParsedDoc | null,
+  tableId: Xml3176TableId,
+  standard: XmlStandardVersion = '3176'
+): string[] {
+  const baseCols =
+    doc && doc.tableColumns[tableId] && doc.tableColumns[tableId].length > 0
+      ? [...doc.tableColumns[tableId]]
+      : getDefaultFieldsForStandard(tableId, standard);
+
+  if (standard === '3556') {
+    if (tableId === 'XML1') {
+      let cols = insertColumnAtPosition(baseCols, 'MA_BENH_KHAC', 'MA_BENH_KT', 'MA_BENH_YHCT');
+      cols = insertColumnAtPosition(cols, 'T_BNCCT_LK', 'T_BNTT', 'T_BNCCT');
+      return cols;
+    }
+    if (tableId === 'XML7') {
+      return insertColumnAtPosition(baseCols, 'NGAY_VAO_NOI_TRU', 'NGAY_VAO', 'NGAY_RA');
+    }
+    if (tableId === 'XML13') {
+      const filtered = baseCols.filter(c => c !== 'TEN_DICH_VU' && c !== 'TEN_THUOC' && c !== 'PP_DIEU_TRI');
+      return insertColumnAtPosition(filtered, 'TINH_TRANG_CT', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+    }
+    return baseCols;
+  }
+
+  // standard === '3176'
+  if (tableId === 'XML1') {
+    return baseCols.filter(c => c !== 'MA_BENH_KHAC' && c !== 'T_BNCCT_LK');
+  }
+  if (tableId === 'XML7') {
+    return baseCols.filter(c => c !== 'NGAY_VAO_NOI_TRU');
+  }
+  if (tableId === 'XML13') {
+    let cols = baseCols.filter(c => c !== 'TINH_TRANG_CT');
+    cols = insertColumnAtPosition(cols, 'TEN_DICH_VU', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+    cols = insertColumnAtPosition(cols, 'TEN_THUOC', 'TEN_DICH_VU', 'MA_LOAI_RV');
+    cols = insertColumnAtPosition(cols, 'PP_DIEU_TRI', 'TEN_THUOC', 'MA_LOAI_RV');
+    return cols;
+  }
+  return baseCols;
+}
+
+function transformRowForStandard(
+  tableId: Xml3176TableId,
+  row: Xml3176Row,
+  targetStandard?: XmlStandardVersion,
+  hosoFallback?: { tThuoc?: string; tVtyt?: string }
+): { keys: string[]; values: Record<string, string> } {
+  const baseKeys = [...row.fieldOrder];
+  for (const k of Object.keys(row.fields)) {
+    if (!baseKeys.includes(k)) baseKeys.push(k);
+  }
+  const values: Record<string, string> = { ...row.fields };
+
+  if (!targetStandard) {
+    return { keys: baseKeys, values };
+  }
+
+  if (targetStandard === '3556') {
+    if (tableId === 'XML1') {
+      let keys = insertColumnAtPosition(baseKeys, 'MA_BENH_KHAC', 'MA_BENH_KT', 'MA_BENH_YHCT');
+      keys = insertColumnAtPosition(keys, 'T_BNCCT_LK', 'T_BNTT', 'T_BNCCT');
+      values.MA_BENH_KHAC = values.MA_BENH_KHAC ?? '';
+      values.T_BNCCT_LK = values.T_BNCCT_LK ?? '';
+      // QĐ 3556: bỏ đơn vị hành chính cấp huyện và để trống T_THUOC, T_VTYT ở Bảng 1
+      values.MAHUYEN_CU_TRU = '';
+      values.T_THUOC = '';
+      values.T_VTYT = '';
+      return { keys, values };
+    }
+    if (tableId === 'XML7') {
+      const keys = insertColumnAtPosition(baseKeys, 'NGAY_VAO_NOI_TRU', 'NGAY_VAO', 'NGAY_RA');
+      values.NGAY_VAO_NOI_TRU = values.NGAY_VAO_NOI_TRU ?? '';
+      return { keys, values };
+    }
+    if (tableId === 'XML6' || tableId === 'XML9' || tableId === 'XML12') {
+      if ('MAHUYEN_CU_TRU' in values) {
+        values.MAHUYEN_CU_TRU = '';
+      }
+      return { keys: baseKeys, values };
+    }
+    if (tableId === 'XML13') {
+      const filtered = baseKeys.filter(c => c !== 'TEN_DICH_VU' && c !== 'TEN_THUOC' && c !== 'PP_DIEU_TRI');
+      const keys = insertColumnAtPosition(filtered, 'TINH_TRANG_CT', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+      values.TINH_TRANG_CT = values.TINH_TRANG_CT ?? '';
+      return { keys, values };
+    }
+    return { keys: baseKeys, values };
+  }
+
+  // targetStandard === '3176'
+  if (tableId === 'XML1') {
+    const keys = baseKeys.filter(c => c !== 'MA_BENH_KHAC' && c !== 'T_BNCCT_LK');
+    if ((values.T_THUOC ?? '').trim() === '' && hosoFallback?.tThuoc !== undefined) {
+      values.T_THUOC = hosoFallback.tThuoc;
+    }
+    if ((values.T_VTYT ?? '').trim() === '' && hosoFallback?.tVtyt !== undefined) {
+      values.T_VTYT = hosoFallback.tVtyt;
+    }
+    return { keys, values };
+  }
+  if (tableId === 'XML7') {
+    return { keys: baseKeys.filter(c => c !== 'NGAY_VAO_NOI_TRU'), values };
+  }
+  if (tableId === 'XML13') {
+    let keys = baseKeys.filter(c => c !== 'TINH_TRANG_CT');
+    keys = insertColumnAtPosition(keys, 'TEN_DICH_VU', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+    keys = insertColumnAtPosition(keys, 'TEN_THUOC', 'TEN_DICH_VU', 'MA_LOAI_RV');
+    keys = insertColumnAtPosition(keys, 'PP_DIEU_TRI', 'TEN_THUOC', 'MA_LOAI_RV');
+    values.TEN_DICH_VU = values.TEN_DICH_VU ?? '';
+    values.TEN_THUOC = values.TEN_THUOC ?? '';
+    values.PP_DIEU_TRI = values.PP_DIEU_TRI ?? '';
+    return { keys, values };
+  }
+  return { keys: baseKeys, values };
+}
+
+/**
  * Dựng lại chuỗi XML con của 1 FILEHOSO từ danh sách dòng hiện tại (đã bao gồm mọi chỉnh sửa của người dùng)
  */
 export function buildInnerFileHosoXml(
   node: Xml3176FileHosoNode,
-  rows: Xml3176Row[]
+  rows: Xml3176Row[],
+  targetStandard?: XmlStandardVersion,
+  hosoFallback?: { tThuoc?: string; tVtyt?: string }
 ): string {
   const meta = XML3176_TABLES.find(t => t.id === node.loaiHoso);
   const defaultCdata = new Set(meta?.defaultCdataFields || []);
@@ -668,11 +919,8 @@ export function buildInnerFileHosoXml(
     const itemsXml = rows
       .map(r => {
         const cdataSet = new Set(r.cdataTags);
-        const allKeys = [...r.fieldOrder];
-        for (const k of Object.keys(r.fields)) {
-          if (!allKeys.includes(k)) allKeys.push(k);
-        }
-        const lines = allKeys.map(k => renderFieldLine(k, r.fields[k] ?? '', cdataSet, '      '));
+        const { keys, values } = transformRowForStandard(node.loaiHoso, r, targetStandard, hosoFallback);
+        const lines = keys.map(k => renderFieldLine(k, values[k] ?? '', cdataSet, '      '));
         return `    <${itemTag}>\r\n${lines.join('\r\n')}\r\n    </${itemTag}>`;
       })
       .join('\r\n');
@@ -683,19 +931,20 @@ export function buildInnerFileHosoXml(
       return `${decl}\r\n<${rootTag} />`;
     }
     const cdataSet = new Set(r.cdataTags);
-    const allKeys = [...r.fieldOrder];
-    for (const k of Object.keys(r.fields)) {
-      if (!allKeys.includes(k)) allKeys.push(k);
-    }
-    const lines = allKeys.map(k => renderFieldLine(k, r.fields[k] ?? '', cdataSet, '  '));
+    const { keys, values } = transformRowForStandard(node.loaiHoso, r, targetStandard, hosoFallback);
+    const lines = keys.map(k => renderFieldLine(k, values[k] ?? '', cdataSet, '  '));
     return `${decl}\r\n<${rootTag}>\r\n${lines.join('\r\n')}\r\n</${rootTag}>`;
   }
 }
 
 /**
- * Kiểm tra logic & quy tắc chuẩn 3176/130 để hiển thị vào tab "Bảng lỗi"
+ * Kiểm tra logic & quy tắc chuẩn 3176 / 3556 để hiển thị vào tab "Bảng lỗi"
  */
-export function validateXml3176Doc(doc: Xml3176ParsedDoc): Xml3176ValidationError[] {
+export function validateXml3176Doc(
+  doc: Xml3176ParsedDoc,
+  standard?: XmlStandardVersion
+): Xml3176ValidationError[] {
+  const std: XmlStandardVersion = standard ?? doc.detectedStandard ?? '3176';
   const errors: Xml3176ValidationError[] = [];
   let errSeq = 1;
 
@@ -758,7 +1007,32 @@ export function validateXml3176Doc(doc: Xml3176ParsedDoc): Xml3176ValidationErro
     const tThuocXml1 = Number(f.T_THUOC || 0);
     const rowsXml2 = xml2ByHoso.get(row.hosoIndex) || [];
     const sumThuocXml2 = rowsXml2.reduce((acc, r2) => acc + Number(r2.fields.THANH_TIEN_BV || 0), 0);
-    if (Math.abs(tThuocXml1 - sumThuocXml2) > 1) {
+    if (std === '3556') {
+      if ((f.T_THUOC || '').trim() !== '' || (f.T_VTYT || '').trim() !== '') {
+        addError(
+          'warning',
+          'XML1',
+          row.hosoIndex,
+          maLk,
+          hoTen,
+          'T_THUOC',
+          'Theo QĐ 3556/QĐ-BYT, thẻ T_THUOC và T_VTYT ở Bảng 1 để giá trị rỗng (hệ thống tự bỏ trống khi xuất chuẩn 3556).',
+          row.rowId
+        );
+      }
+      if ((f.MAHUYEN_CU_TRU || '').trim() !== '') {
+        addError(
+          'warning',
+          'XML1',
+          row.hosoIndex,
+          maLk,
+          hoTen,
+          'MAHUYEN_CU_TRU',
+          'Theo QĐ 3556/QĐ-BYT, thẻ MAHUYEN_CU_TRU để giá trị rỗng (chỉ giữ Tỉnh và Xã; hệ thống tự bỏ trống khi xuất chuẩn 3556).',
+          row.rowId
+        );
+      }
+    } else if (Math.abs(tThuocXml1 - sumThuocXml2) > 1) {
       addError(
         'warning',
         'XML1',
@@ -982,13 +1256,23 @@ export function parseXml3176(xmlContent: string, fileName = 'HOSO_3176.xml'): Xm
     }
   }
 
+  const detectedStandard = detectXmlStandard(tables, fileName);
+
   const allHosoKey = Array.from({ length: hosoFiles.length }, (_, i) => i).join(',');
   if (isSigned) {
     signature.signedHosoKey = allHosoKey;
+    signature.signedStandard = detectedStandard;
+    for (const key of Object.keys(hosoSignStates)) {
+      const idx = Number(key);
+      if (hosoSignStates[idx]?.isSigned) {
+        hosoSignStates[idx].signedStandard = detectedStandard;
+      }
+    }
   }
 
   const parsedDoc: Xml3176ParsedDoc = {
     fileName,
+    detectedStandard,
     maCskcb: maCskcbMatch ? maCskcbMatch[1].trim() : (tables.XML1[0]?.fields.MA_CSKCB || '49917'),
     ngayLap: ngayLapMatch ? ngayLapMatch[1].trim() : new Date().toISOString().slice(0, 10).replace(/-/g, ''),
     soLuongHoSo: hosoFiles.length || (soLuongMatch ? Number(soLuongMatch[1].trim()) : 0),
@@ -1001,13 +1285,14 @@ export function parseXml3176(xmlContent: string, fileName = 'HOSO_3176.xml'): Xm
     errors: [],
   };
 
-  parsedDoc.errors = validateXml3176Doc(parsedDoc);
+  parsedDoc.errors = validateXml3176Doc(parsedDoc, detectedStandard);
   return parsedDoc;
 }
 
 /**
- * Xây dựng lại file XML 3176 chuẩn <GIAMDINHHS> (Có ký số hoặc Không ký số)
+ * Xây dựng lại file XML 3176 / 3556 chuẩn <GIAMDINHHS> (Có ký số hoặc Không ký số)
  * - LUÔN LUÔN lấy dữ liệu mới nhất đã được chỉnh sửa trong doc.tables (Bảng 1 -> Bảng 15) để dựng lại XML con & mã hóa Base64 UTF-8
+ * - Hỗ trợ chuyển đổi chuẩn đầu ra (targetStandard: '3176' | '3556')
  * - Hỗ trợ lọc theo danh sách hồ sơ được tích chọn ở Bảng 1 (selectedHosoIndices)
  * - Đặt thẻ <CHUKYDONVI /> hoặc <CHUKYDONVI><Signature>...</Signature></CHUKYDONVI> đúng vị trí cuối trước </GIAMDINHHS>
  */
@@ -1018,10 +1303,12 @@ export function buildXml3176(
     customChuKyDonViXml?: string;
     selectedHosoIndices?: number[];
     encodeBase64?: boolean; // Mặc định true (Base64 chuẩn cổng), nếu false sẽ xuất XML giải mã rõ toàn bộ các thẻ bên trong <NOIDUNGFILE>
+    targetStandard?: XmlStandardVersion;
   }
 ): string {
   const includeSig = options?.includeSignature ?? false;
   const shouldEncodeBase64 = options?.encodeBase64 ?? true;
+  const effectiveStandard: XmlStandardVersion = options?.targetStandard ?? doc.detectedStandard ?? '3176';
   const bom = doc.hasUtf8Bom ? '\uFEFF' : '';
   const selectedSet =
     options?.selectedHosoIndices && options.selectedHosoIndices.length > 0
@@ -1036,6 +1323,25 @@ export function buildXml3176(
     const filesInHoso = doc.hosoFiles[hIdx];
     if (!filesInHoso || filesInHoso.length === 0) continue;
 
+    let hosoFallback: { tThuoc?: string; tVtyt?: string } | undefined;
+    if (effectiveStandard === '3176') {
+      const rows2 = doc.tables.XML2.filter(x => x.hosoIndex === hIdx);
+      const rows3 = doc.tables.XML3.filter(x => x.hosoIndex === hIdx);
+      const sumThuoc = rows2.reduce((acc, x) => acc + parseMoney3176(x.fields.THANH_TIEN_BV, 0), 0);
+      const sumVtyt = rows3.reduce((acc, x) => {
+        const maNhom = (x.fields.MA_NHOM || '').trim();
+        const maVt = (x.fields.MA_VAT_TU || '').trim();
+        if (maNhom === '10' || maNhom === '11' || maVt !== '') {
+          return acc + parseMoney3176(x.fields.THANH_TIEN_BV, 0);
+        }
+        return acc;
+      }, 0);
+      hosoFallback = {
+        tThuoc: formatMoney3176(sumThuoc),
+        tVtyt: formatMoney3176(sumVtyt),
+      };
+    }
+
     const fileHosoXmlList: string[] = [];
 
     for (const fNode of filesInHoso) {
@@ -1047,8 +1353,8 @@ export function buildXml3176(
         continue;
       }
 
-      // LUÔN LUÔN dựng lại nội dung XML con từ dữ liệu hiện tại trên bảng (đảm bảo 100% nội dung xuất XML là nội dung đã được sửa)
-      const rebuiltInnerXml = buildInnerFileHosoXml(fNode, rowsForFile);
+      // LUÔN LUÔN dựng lại nội dung XML con từ dữ liệu hiện tại trên bảng theo chuẩn đích đã chọn
+      const rebuiltInnerXml = buildInnerFileHosoXml(fNode, rowsForFile, effectiveStandard, hosoFallback);
 
       if (shouldEncodeBase64) {
         // Chuẩn file đã lên cổng BHXH: Base64 nằm trên MỘT DÒNG duy nhất, các thẻ không thụt lề
@@ -1192,8 +1498,10 @@ export function mergeXml3176Docs(docs: Xml3176ParsedDoc[], mergedName?: string):
     signedHosoKey: undefined,
   };
 
+  const mergedStandard: XmlStandardVersion = docs.some(d => d.detectedStandard === '3556') ? '3556' : '3176';
   const merged: Xml3176ParsedDoc = {
     ...base,
+    detectedStandard: mergedStandard,
     fileName: mergedName || `${docs.length} file XML gop`,
     soLuongHoSo: hosoFiles.length,
     signature,
@@ -1203,7 +1511,7 @@ export function mergeXml3176Docs(docs: Xml3176ParsedDoc[], mergedName?: string):
     tableColumns,
     errors: [],
   };
-  merged.errors = validateXml3176Doc(merged);
+  merged.errors = validateXml3176Doc(merged, mergedStandard);
   return merged;
 }
 
@@ -1227,8 +1535,10 @@ function formatMoney3176(n: number): string {
  */
 export function recalculateXml3176HosoCosts(
   doc: Xml3176ParsedDoc,
-  targetHosoIndices?: number[]
+  targetHosoIndices?: number[],
+  standard?: XmlStandardVersion
 ): { nextDoc: Xml3176ParsedDoc; updatedHosoCount: number } {
+  const std: XmlStandardVersion = standard ?? doc.detectedStandard ?? '3176';
   const targetSet =
     targetHosoIndices && targetHosoIndices.length > 0
       ? new Set(targetHosoIndices)
@@ -1339,8 +1649,8 @@ export function recalculateXml3176HosoCosts(
 
     const f = {
       ...r.fields,
-      T_THUOC: formatMoney3176(sumThuoc),
-      T_VTYT: formatMoney3176(sumVtyt),
+      T_THUOC: std === '3556' ? '' : formatMoney3176(sumThuoc),
+      T_VTYT: std === '3556' ? '' : formatMoney3176(sumVtyt),
       T_TONGCHI_BV: formatMoney3176(sumTtBv),
       T_TONGCHI_BH: formatMoney3176(sumTtBh),
       T_BHTT: formatMoney3176(sumBhtt),
@@ -1370,7 +1680,7 @@ export function recalculateXml3176HosoCosts(
     hosoSignStates: nextHosoSignStates,
     signature: { ...doc.signature, isSigned: false },
   };
-  nextDoc.errors = validateXml3176Doc(nextDoc);
+  nextDoc.errors = validateXml3176Doc(nextDoc, std);
 
   return { nextDoc, updatedHosoCount };
 }

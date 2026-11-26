@@ -8,6 +8,7 @@ import {
 import {
   XML3176_TABLES,
   FIELD_LABELS_3176,
+  XmlStandardVersion,
   Xml3176TableId,
   Xml3176ParsedDoc,
   Xml3176Row,
@@ -17,6 +18,8 @@ import {
   buildInnerFileHosoXml,
   validateXml3176Doc,
   recalculateXml3176HosoCosts,
+  getDefaultFieldsForStandard,
+  getDisplayColumnsForStandard,
 } from '../lib/xml3176Service';
 import {
   getSmartCAConfig,
@@ -100,6 +103,7 @@ function getCompactXml3176ColumnWidth(col: string): number {
     case 'MA_KHOA_RV':
     case 'MA_BENH_CHINH':
     case 'MA_BENH_KT':
+    case 'MA_BENH_KHAC':
     case 'MA_BENH_YHCT':
     case 'MA_BS':
     case 'MA_TTDV':
@@ -174,6 +178,7 @@ function getCompactXml3176ColumnWidth(col: string): number {
     case 'NGUOI_THUC_HIEN':
     case 'NGUOI_CHU_TRI':
       return 134;
+    case 'TINH_TRANG_CT':
     case 'DIA_CHI':
     case 'NOI_DK_THUONGTRU_NND':
     case 'TEN_THUOC':
@@ -218,15 +223,24 @@ function getCompactXml3176ColumnWidth(col: string): number {
 }
 
 function normalizeCachedXml3176Doc(raw: any): Xml3176ParsedDoc | null {
-  if (raw?.tables?.XML1) return raw as Xml3176ParsedDoc;
-  if (raw?.nextDoc?.tables?.XML1) return raw.nextDoc as Xml3176ParsedDoc;
-  return null;
+  const candidate = raw?.tables?.XML1 ? raw : raw?.nextDoc?.tables?.XML1 ? raw.nextDoc : null;
+  if (!candidate) return null;
+  return {
+    ...candidate,
+    detectedStandard: candidate.detectedStandard || '3176',
+  } as Xml3176ParsedDoc;
 }
 
 export default function Xml3176Module() {
-  // Lưu cache dữ liệu XML 3176 trong phiên trình duyệt (giữ qua F5, tắt trình duyệt tự xóa)
+  // Lưu cache dữ liệu XML 3176 / 3556 trong phiên trình duyệt (giữ qua F5, tắt trình duyệt tự xóa)
   const [doc, setDoc] = useState<Xml3176ParsedDoc | null>(() =>
     normalizeCachedXml3176Doc(getSessionSync<any>('xml3176_doc_v1', null))
+  );
+  const [exportStandard, setExportStandard] = useState<XmlStandardVersion>(() =>
+    getSessionSync<XmlStandardVersion>(
+      'xml3176_export_standard_v1',
+      normalizeCachedXml3176Doc(getSessionSync<any>('xml3176_doc_v1', null))?.detectedStandard || '3176'
+    )
   );
   const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
     getSessionSync<ActiveTab>('xml3176_active_tab_v1', 'XML1')
@@ -278,7 +292,22 @@ export default function Xml3176Module() {
     }
     setSessionSync('xml3176_active_tab_v1', activeTab);
     setSessionSync('xml3176_selected_indices_v1', Array.from(selectedHosoIndices));
-  }, [cacheHydrated, doc, activeTab, selectedHosoIndices]);
+    setSessionSync('xml3176_export_standard_v1', exportStandard);
+  }, [cacheHydrated, doc, activeTab, selectedHosoIndices, exportStandard]);
+
+  const handleChangeExportStandard = (nextStd: XmlStandardVersion) => {
+    setExportStandard(nextStd);
+    if (doc) {
+      setDoc(prev =>
+        prev
+          ? {
+              ...prev,
+              errors: validateXml3176Doc(prev, nextStd),
+            }
+          : prev
+      );
+    }
+  };
 
   // Chỉnh sửa chi tiết 1 dòng
   const [editingRow, setEditingRow] = useState<Xml3176Row | null>(null);
@@ -485,9 +514,9 @@ export default function Xml3176Module() {
           signature: { ...doc.signature, isSigned: false },
         };
         if (affectedHosoSet.size > 0) {
-          nextDoc = recalculateXml3176HosoCosts(nextDoc, Array.from(affectedHosoSet)).nextDoc;
+          nextDoc = recalculateXml3176HosoCosts(nextDoc, Array.from(affectedHosoSet), exportStandard).nextDoc;
         } else {
-          nextDoc.errors = validateXml3176Doc(nextDoc);
+          nextDoc.errors = validateXml3176Doc(nextDoc, exportStandard);
         }
         setDoc(nextDoc);
       }
@@ -672,6 +701,7 @@ export default function Xml3176Module() {
       const parsed = mergeXml3176Docs(docs, docs.length > 1 ? `${docs.length} file XML (${docs[0].fileName}, ...)` : docs[0].fileName);
       if (failed.length > 0) alert(`Có ${failed.length} file đọc lỗi, đã bỏ qua:\n` + failed.join('\n'));
       setDoc(parsed);
+      setExportStandard(parsed.detectedStandard);
       // Mặc định tích chọn tất cả hồ sơ khi vừa đọc file
       const allIndices = new Set<number>();
       for (let i = 0; i < parsed.hosoFiles.length; i++) {
@@ -778,8 +808,22 @@ export default function Xml3176Module() {
         acc.bnttRaw += bnttRaw;
         acc.bncct += bncct;
         acc.bntt += bnttRaw + bncct;
-        acc.thuoc += parseXmlMoney(r.fields.T_THUOC);
-        acc.vtyt += parseXmlMoney(r.fields.T_VTYT);
+        const thuocVal = String(r.fields.T_THUOC ?? '').trim();
+        const vtytVal = String(r.fields.T_VTYT ?? '').trim();
+        acc.thuoc += thuocVal
+          ? parseXmlMoney(thuocVal)
+          : doc.tables.XML2.filter(r2 => r2.hosoIndex === r.hosoIndex).reduce(
+              (s, r2) => s + parseXmlMoney(r2.fields.THANH_TIEN_BV),
+              0
+            );
+        acc.vtyt += vtytVal
+          ? parseXmlMoney(vtytVal)
+          : doc.tables.XML3.filter(r3 => {
+              if (r3.hosoIndex !== r.hosoIndex) return false;
+              const maNhom = (r3.fields.MA_NHOM || '').trim();
+              const maVt = (r3.fields.MA_VAT_TU || '').trim();
+              return maNhom === '10' || maNhom === '11' || maVt !== '';
+            }).reduce((s, r3) => s + parseXmlMoney(r3.fields.THANH_TIEN_BV), 0);
         acc.count += 1;
         return acc;
       },
@@ -947,14 +991,22 @@ export default function Xml3176Module() {
         isSigned: false,
       },
     };
-    nextDoc.errors = validateXml3176Doc(nextDoc);
+    nextDoc.errors = validateXml3176Doc(nextDoc, exportStandard);
     setDoc(nextDoc);
   };
 
   // Mở modal chỉnh sửa toàn bộ trường của 1 dòng
   const openEditRowModal = (row: Xml3176Row) => {
     setEditingRow(row);
-    setEditingFieldsDraft({ ...row.fields });
+    const stdCols = getDisplayColumnsForStandard(doc, row.tableId, exportStandard);
+    const draft: Record<string, string> = {};
+    for (const col of stdCols) {
+      draft[col] = row.fields[col] ?? '';
+    }
+    for (const [k, v] of Object.entries(row.fields)) {
+      if (!(k in draft)) draft[k] = v ?? '';
+    }
+    setEditingFieldsDraft(draft);
     setNewFieldTagName('');
     setNewFieldValue('');
   };
@@ -1031,7 +1083,7 @@ export default function Xml3176Module() {
         isSigned: false,
       },
     };
-    nextDoc.errors = validateXml3176Doc(nextDoc);
+    nextDoc.errors = validateXml3176Doc(nextDoc, exportStandard);
     setDoc(nextDoc);
     setEditingRow(null);
   };
@@ -1045,7 +1097,7 @@ export default function Xml3176Module() {
     const defaultMaLk = hosoXml1?.fields.MA_LK || `LK_${Date.now()}`;
     const defaultHoTen = hosoXml1?.fields.HO_TEN || '';
 
-    const cols = doc.tableColumns[activeTab].length > 0 ? doc.tableColumns[activeTab] : meta.defaultFields;
+    const cols = getDisplayColumnsForStandard(doc, activeTab, exportStandard);
     const newFields: Record<string, string> = {};
     for (const c of cols) newFields[c] = '';
     if ('MA_LK' in newFields) newFields.MA_LK = defaultMaLk;
@@ -1124,7 +1176,7 @@ export default function Xml3176Module() {
         isSigned: false,
       },
     };
-    nextDoc.errors = validateXml3176Doc(nextDoc);
+    nextDoc.errors = validateXml3176Doc(nextDoc, exportStandard);
     setDoc(nextDoc);
     openEditRowModal(newRow);
   };
@@ -1167,7 +1219,7 @@ export default function Xml3176Module() {
         isSigned: false,
       },
     };
-    nextDoc.errors = validateXml3176Doc(nextDoc);
+    nextDoc.errors = validateXml3176Doc(nextDoc, exportStandard);
     setDoc(nextDoc);
   };
 
@@ -1196,7 +1248,7 @@ export default function Xml3176Module() {
     return Array.from({ length: doc.hosoFiles.length }, (_, i) => i);
   };
 
-  // Xuất XML Không ký số (cho các hồ sơ đã tích chọn ở Bảng 1, với nội dung đã sửa mới nhất)
+  // Xuất XML Không ký số (cho các hồ sơ đã tích chọn ở Bảng 1, theo chuẩn exportStandard đã chọn)
   const handleExportUnsignedXml = (singleHosoIdx?: number) => {
     if (!doc) return;
     if (typeof singleHosoIdx === 'number') {
@@ -1205,8 +1257,9 @@ export default function Xml3176Module() {
       const unsignedSingle = buildXml3176(doc, {
         includeSignature: false,
         selectedHosoIndices: [singleHosoIdx],
+        targetStandard: exportStandard,
       });
-      triggerDownloadXml(unsignedSingle, `${maLk}_KhongKySo`);
+      triggerDownloadXml(unsignedSingle, `${maLk}_${exportStandard}_KhongKySo`);
       return;
     }
 
@@ -1218,28 +1271,31 @@ export default function Xml3176Module() {
     const unsignedXml = buildXml3176(doc, {
       includeSignature: false,
       selectedHosoIndices: sortedSelectedIndices,
+      targetStandard: exportStandard,
     });
     const suffix =
       sortedSelectedIndices.length === doc.hosoFiles.length
-        ? 'All_KhongKySo'
-        : `${sortedSelectedIndices.length}HS_KhongKySo`;
+        ? `All_${exportStandard}_KhongKySo`
+        : `${sortedSelectedIndices.length}HS_${exportStandard}_KhongKySo`;
     triggerDownloadXml(unsignedXml, suffix);
   };
 
-  // Xuất XML KHÔNG MÃ HÓA Base64 (hiển thị đầy đủ rõ ràng toàn bộ các thẻ XML1..XML15 và thông tin trong XML)
+  // Xuất XML KHÔNG MÃ HÓA Base64 (hiển thị đầy đủ rõ ràng toàn bộ các thẻ XML1..XML15 theo chuẩn exportStandard)
   const handleExportUnencodedXml = (singleHosoIdx?: number) => {
     if (!doc) return;
     if (typeof singleHosoIdx === 'number') {
       const st = doc.hosoSignStates[singleHosoIdx];
       const rowXml1 = doc.tables.XML1.find(r => r.hosoIndex === singleHosoIdx);
       const maLk = rowXml1?.fields.MA_LK || `HS${singleHosoIdx + 1}`;
+      const sameStdSig = Boolean(st?.isSigned && !st?.isModified && (st.signedStandard ?? doc.detectedStandard) === exportStandard);
       const unencodedSingle = buildXml3176(doc, {
-        includeSignature: Boolean(st?.isSigned && !st?.isModified),
-        customChuKyDonViXml: st?.rawChuKyDonViXml,
+        includeSignature: sameStdSig,
+        customChuKyDonViXml: sameStdSig ? st?.rawChuKyDonViXml : undefined,
         selectedHosoIndices: [singleHosoIdx],
         encodeBase64: false,
+        targetStandard: exportStandard,
       });
-      triggerDownloadXml(unencodedSingle, `${maLk}_KhongMaHoa_ChiTiet`);
+      triggerDownloadXml(unencodedSingle, `${maLk}_${exportStandard}_KhongMaHoa_ChiTiet`);
       return;
     }
 
@@ -1248,38 +1304,44 @@ export default function Xml3176Module() {
       return;
     }
 
+    const sameCombinedSig = Boolean(
+      doc.signature.isSigned && (doc.signature.signedStandard ?? doc.detectedStandard) === exportStandard
+    );
     const unencodedXml = buildXml3176(doc, {
-      includeSignature: doc.signature.isSigned,
-      customChuKyDonViXml: doc.signature.rawChuKyDonViXml,
+      includeSignature: sameCombinedSig,
+      customChuKyDonViXml: sameCombinedSig ? doc.signature.rawChuKyDonViXml : undefined,
       selectedHosoIndices: sortedSelectedIndices,
       encodeBase64: false,
+      targetStandard: exportStandard,
     });
     const suffix =
       sortedSelectedIndices.length === doc.hosoFiles.length
-        ? 'All_KhongMaHoa_ChiTiet'
-        : `${sortedSelectedIndices.length}HS_KhongMaHoa_ChiTiet`;
+        ? `All_${exportStandard}_KhongMaHoa_ChiTiet`
+        : `${sortedSelectedIndices.length}HS_${exportStandard}_KhongMaHoa_ChiTiet`;
     triggerDownloadXml(unencodedXml, suffix);
   };
 
-  // Xuất XML Có ký số (cho các hồ sơ đã tích chọn ở Bảng 1, với nội dung đã sửa mới nhất)
+  // Xuất XML Có ký số (chỉ giữ chữ ký cũ nếu khớp chuẩn exportStandard và chưa sửa nội dung; nếu khác chuẩn sẽ mở ký lại)
   const handleExportSignedXml = (singleHosoIdx?: number) => {
     if (!doc) return;
     if (typeof singleHosoIdx === 'number') {
       const st = doc.hosoSignStates[singleHosoIdx];
       const rowXml1 = doc.tables.XML1.find(r => r.hosoIndex === singleHosoIdx);
       const maLk = rowXml1?.fields.MA_LK || `HS${singleHosoIdx + 1}`;
-      if (st?.isSigned && !st.isModified && (st.signedXmlContent || st.rawChuKyDonViXml)) {
+      const sameStd = (st?.signedStandard ?? doc.detectedStandard ?? '3176') === exportStandard;
+      if (st?.isSigned && !st.isModified && sameStd && (st.signedXmlContent || st.rawChuKyDonViXml)) {
         const signedSingle =
           st.signedXmlContent ||
           buildXml3176(doc, {
             includeSignature: true,
             customChuKyDonViXml: st.rawChuKyDonViXml,
             selectedHosoIndices: [singleHosoIdx],
+            targetStandard: exportStandard,
           });
-        triggerDownloadXml(signedSingle, `${maLk}_DaKySo`);
+        triggerDownloadXml(signedSingle, `${maLk}_${exportStandard}_DaKySo`);
         return;
       }
-      // Nếu hồ sơ này chưa ký hoặc vừa sửa nội dung -> mở hộp thoại ký riêng hồ sơ này rồi tự tải về
+      // Nếu hồ sơ này chưa ký, vừa sửa nội dung, hoặc đã đổi chuẩn -> mở hộp thoại ký riêng hồ sơ này rồi tự tải về
       setAutoDownloadAfterSign(true);
       openSignModal(singleHosoIdx);
       return;
@@ -1291,15 +1353,21 @@ export default function Xml3176Module() {
     }
 
     const selectedKey = sortedSelectedIndices.join(',');
-    const allSelectedAreSigned = sortedSelectedIndices.every(
-      idx => doc.hosoSignStates[idx]?.isSigned && !doc.hosoSignStates[idx]?.isModified
-    );
+    const allSelectedAreSignedSameStd = sortedSelectedIndices.every(idx => {
+      const st = doc.hosoSignStates[idx];
+      return Boolean(
+        st?.isSigned &&
+        !st.isModified &&
+        (st.signedStandard ?? doc.detectedStandard ?? '3176') === exportStandard
+      );
+    });
 
-    // Nếu chỉ tích chọn 1 hồ sơ và hồ sơ đó đã ký riêng
+    // Nếu chỉ tích chọn 1 hồ sơ và hồ sơ đó đã ký riêng đúng chuẩn exportStandard
     if (sortedSelectedIndices.length === 1) {
       const onlyIdx = sortedSelectedIndices[0];
       const st = doc.hosoSignStates[onlyIdx];
-      if (st?.isSigned && !st.isModified && (st.signedXmlContent || st.rawChuKyDonViXml)) {
+      const sameStd = (st?.signedStandard ?? doc.detectedStandard ?? '3176') === exportStandard;
+      if (st?.isSigned && !st.isModified && sameStd && (st.signedXmlContent || st.rawChuKyDonViXml)) {
         const rowXml1 = doc.tables.XML1.find(r => r.hosoIndex === onlyIdx);
         const maLk = rowXml1?.fields.MA_LK || `HS${onlyIdx + 1}`;
         const xmlOut =
@@ -1308,28 +1376,35 @@ export default function Xml3176Module() {
             includeSignature: true,
             customChuKyDonViXml: st.rawChuKyDonViXml,
             selectedHosoIndices: [onlyIdx],
+            targetStandard: exportStandard,
           });
-        triggerDownloadXml(xmlOut, `${maLk}_DaKySo`);
+        triggerDownloadXml(xmlOut, `${maLk}_${exportStandard}_DaKySo`);
         return;
       }
     }
 
-    // Nếu gói đang chọn trùng khớp với gói đã ký số và không có hồ sơ nào bị sửa sau khi ký
-    if (doc.signature.isSigned && doc.signature.signedHosoKey === selectedKey && allSelectedAreSigned) {
+    // Nếu gói đang chọn trùng khớp với gói đã ký số cùng chuẩn và không có hồ sơ nào bị sửa sau khi ký
+    if (
+      doc.signature.isSigned &&
+      doc.signature.signedHosoKey === selectedKey &&
+      (doc.signature.signedStandard ?? doc.detectedStandard ?? '3176') === exportStandard &&
+      allSelectedAreSignedSameStd
+    ) {
       const signedXml = buildXml3176(doc, {
         includeSignature: true,
         customChuKyDonViXml: doc.signature.rawChuKyDonViXml,
         selectedHosoIndices: sortedSelectedIndices,
+        targetStandard: exportStandard,
       });
       const suffix =
         sortedSelectedIndices.length === doc.hosoFiles.length
-          ? 'All_DaKySo'
-          : `${sortedSelectedIndices.length}HS_DaKySo`;
+          ? `All_${exportStandard}_DaKySo`
+          : `${sortedSelectedIndices.length}HS_${exportStandard}_DaKySo`;
       triggerDownloadXml(signedXml, suffix);
       return;
     }
 
-    // Nếu có hồ sơ chưa ký hoặc vừa chỉnh sửa nội dung -> Mở hộp thoại ký số trên đúng nội dung đã sửa và tự tải về
+    // Nếu có hồ sơ chưa ký, vừa chỉnh sửa nội dung, hoặc đã đổi chuẩn -> Mở hộp thoại ký số trên đúng nội dung đã chuyển chuẩn và tự tải về
     setAutoDownloadAfterSign(true);
     openSignModal('SELECTED');
   };
@@ -1361,13 +1436,14 @@ export default function Xml3176Module() {
     for (const meta of XML3176_TABLES) {
       const rows = (doc.tables[meta.id] || []).filter(r => !filterSet || filterSet.has(r.hosoIndex));
       if (rows.length === 0) continue;
+      const exportCols = getDisplayColumnsForStandard(doc, meta.id, exportStandard);
       const sheetRows = rows.map(r => {
         const obj: Record<string, string> = {};
         if (meta.id === 'XML1') {
           const st = doc.hosoSignStates[r.hosoIndex];
           obj['TRANG_THAI_KY_SO'] = st?.isSigned && !st.isModified ? 'Đã ký số' : 'Chưa ký số';
         }
-        for (const k of doc.tableColumns[meta.id]) {
+        for (const k of exportCols) {
           obj[k] = r.fields[k] ?? '';
         }
         return obj;
@@ -1376,8 +1452,8 @@ export default function Xml3176Module() {
       XLSX.utils.book_append_sheet(wb, ws, meta.id);
     }
 
-    const baseName = (doc.fileName || 'HOSO_3176').replace(/\.xml$/i, '');
-    XLSX.writeFile(wb, `${baseName}_3176_15Bang.xlsx`);
+    const baseName = (doc.fileName || `HOSO_${exportStandard}`).replace(/\.xml$/i, '');
+    XLSX.writeFile(wb, `${baseName}_${exportStandard}_15Bang.xlsx`);
   };
 
   // Mở modal ký số
@@ -1527,12 +1603,13 @@ export default function Xml3176Module() {
 
           setSignStatusMsg({
             ok: true,
-            text: `Đang ký hồ sơ ${i + 1}/${indicesToSign.length} (Mã LK: ${maLk})...`,
+            text: `Đang ký hồ sơ ${i + 1}/${indicesToSign.length} (Mã LK: ${maLk} • Chuẩn QĐ ${exportStandard})...`,
           });
 
           const unsignedSingle = buildXml3176(doc, {
             includeSignature: false,
             selectedHosoIndices: [hIdx],
+            targetStandard: exportStandard,
           });
 
           const signedXmlFull = await signSingleGiamDinhXml(unsignedSingle, maLk);
@@ -1558,6 +1635,7 @@ export default function Xml3176Module() {
             subjectName,
             rawChuKyDonViXml: rawChuKyBlock,
             signedXmlContent: signedXmlFull,
+            signedStandard: exportStandard,
           };
 
           lastChuKyBlock = rawChuKyBlock;
@@ -1570,10 +1648,11 @@ export default function Xml3176Module() {
             subjectName,
             certificateBase64: certMatch ? certMatch[1].trim() : undefined,
             signedHosoKey: String(hIdx),
+            signedStandard: exportStandard,
           };
 
           if (autoDownloadAfterSign) {
-            triggerDownloadXml(signedXmlFull, `${maLk}_DaKySo`);
+            triggerDownloadXml(signedXmlFull, `${maLk}_${exportStandard}_DaKySo`);
           }
 
           if (sendToGateway && gwTokens) {
@@ -1626,15 +1705,16 @@ export default function Xml3176Module() {
         void lastChuKyBlock;
         void lastSignedXml;
       } else {
-        // Ký gộp 1 gói <GIAMDINHHS> cho tất cả các hồ sơ đã chọn (với nội dung mới nhất đã sửa)
+        // Ký gộp 1 gói <GIAMDINHHS> cho tất cả các hồ sơ đã chọn (theo chuẩn exportStandard)
         const unsignedCombined = buildXml3176(doc, {
           includeSignature: false,
           selectedHosoIndices: indicesToSign,
+          targetStandard: exportStandard,
         });
 
         const signedXmlFull = await signSingleGiamDinhXml(
           unsignedCombined,
-          `${indicesToSign.length} hồ sơ`
+          `${indicesToSign.length} hồ sơ (QĐ ${exportStandard})`
         );
 
         const chuKyMatch = signedXmlFull.match(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/i);
@@ -1660,6 +1740,7 @@ export default function Xml3176Module() {
             signingTime,
             subjectName,
             rawChuKyDonViXml: rawChuKyBlock,
+            signedStandard: exportStandard,
           };
         }
 
@@ -1674,20 +1755,21 @@ export default function Xml3176Module() {
             subjectName,
             certificateBase64: certMatch ? certMatch[1].trim() : undefined,
             signedHosoKey: indicesToSign.join(','),
+            signedStandard: exportStandard,
           },
         };
 
         setDoc(updatedDoc);
         setSignStatusMsg({
           ok: true,
-          text: `Đã ký số thành công ${indicesToSign.length} hồ sơ vào đúng thẻ <CHUKYDONVI>!`,
+          text: `Đã ký số thành công ${indicesToSign.length} hồ sơ (Chuẩn QĐ ${exportStandard}) vào đúng thẻ <CHUKYDONVI>!`,
         });
 
         if (autoDownloadAfterSign) {
           const suffix =
             indicesToSign.length === doc.hosoFiles.length
-              ? 'All_DaKySo'
-              : `${indicesToSign.length}HS_DaKySo`;
+              ? `All_${exportStandard}_DaKySo`
+              : `${indicesToSign.length}HS_${exportStandard}_DaKySo`;
           triggerDownloadXml(signedXmlFull, suffix);
           setAutoDownloadAfterSign(false);
         }
@@ -1709,11 +1791,11 @@ export default function Xml3176Module() {
 
   const activeColumns = useMemo(() => {
     if (activeTab === 'ERRORS' || activeTab === 'MAU09BH') return [];
-    if (doc && doc.tableColumns[activeTab] && doc.tableColumns[activeTab].length > 0) {
-      return doc.tableColumns[activeTab];
+    if (doc) {
+      return getDisplayColumnsForStandard(doc, activeTab, exportStandard);
     }
-    return activeTableMeta?.defaultFields || [];
-  }, [doc, activeTab, activeTableMeta]);
+    return getDefaultFieldsForStandard(activeTab, exportStandard);
+  }, [doc, activeTab, exportStandard]);
 
   // Tùy chỉnh kéo rộng / thu hẹp độ rộng từng cột bằng chuột cho Bảng 1 -> Bảng 15
   const [customColWidths, setCustomColWidths] = useState<Record<string, number>>({});
@@ -1770,7 +1852,7 @@ export default function Xml3176Module() {
               <Layers className="w-4 h-4" />
             </div>
             <h2 className="text-xs sm:text-sm font-black text-slate-900">
-              ĐỌC, SỬA &amp; KÝ SỐ XML 3176 / 130 (BẢNG 1–15)
+              ĐỌC, SỬA &amp; KÝ SỐ XML 3176 / 3556 (BẢNG 1–15)
             </h2>
             <span className="hidden lg:inline-block px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
               Không lưu dữ liệu (F5 tự xóa)
@@ -1779,6 +1861,38 @@ export default function Xml3176Module() {
 
           {/* CÁC NÚT TÁC VỤ CHÍNH */}
           <div className="flex flex-wrap items-center gap-1">
+            {/* Bộ chọn chuẩn XML xuất & ký số song song: 3176 hoặc 3556 */}
+            <div
+              className="flex items-center gap-1 bg-slate-100 border border-slate-300 rounded-md p-0.5 mr-1"
+              title="Chọn chuẩn XML đầu ra khi kiểm tra, ký số và xuất file (hỗ trợ song song QĐ 3176 và QĐ 3556)"
+            >
+              <span className="text-[10px] font-extrabold text-slate-600 px-1.5 whitespace-nowrap">
+                Chuẩn xuất/ký:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleChangeExportStandard('3176')}
+                className={`px-2 py-0.5 rounded text-[11px] font-extrabold transition-colors cursor-pointer ${
+                  exportStandard === '3176'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-700 hover:bg-white'
+                }`}
+              >
+                3176
+              </button>
+              <button
+                type="button"
+                onClick={() => handleChangeExportStandard('3556')}
+                className={`px-2 py-0.5 rounded text-[11px] font-extrabold transition-colors cursor-pointer ${
+                  exportStandard === '3556'
+                    ? 'bg-violet-600 text-white shadow-2xs'
+                    : 'text-slate-700 hover:bg-white'
+                }`}
+              >
+                3556
+              </button>
+            </div>
+
             <input
               ref={fileInputRef}
               type="file"
@@ -1792,7 +1906,7 @@ export default function Xml3176Module() {
               className="flex items-center gap-1 px-2 py-1 rounded-md border border-transparent bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
             >
               <Upload className="w-3 h-3" />
-              {isLoading ? 'Đang đọc...' : 'Mở XML 3176'}
+              {isLoading ? 'Đang đọc...' : 'Mở XML 3176 / 3556'}
             </button>
 
             {doc && (
@@ -1926,10 +2040,10 @@ export default function Xml3176Module() {
                 <Upload className="w-6 h-6" />
               </div>
               <h3 className="text-sm font-bold text-slate-800">
-                Bấm vào đây để chọn file XML theo chuẩn 3176 / 130 (.xml)
+                Bấm vào đây để chọn file XML theo chuẩn 3176 hoặc 3556 (.xml)
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Hệ thống sẽ tự động giải mã Base64 và tách riêng từng bảng (Bảng lỗi, Bảng 1 → Bảng 15) để bạn kiểm tra, chỉnh sửa nội dung, tích chọn ký số từng hồ sơ hoặc tất cả và xuất XML chuẩn.
+                Hệ thống tự động nhận diện chuẩn QĐ 3176/QĐ-BYT và QĐ 3556/QĐ-BYT, giải mã Base64 và tách riêng từng bảng (Bảng lỗi, Bảng 1 → Bảng 15). Bạn có thể chuyển đổi qua lại, ký số và chọn xuất ra chuẩn <b>3176</b> hoặc <b>3556</b> bất kỳ lúc nào.
               </p>
             </div>
           </div>
@@ -1966,6 +2080,24 @@ export default function Xml3176Module() {
                 <span className="text-[11px] font-semibold text-slate-700 truncate max-w-[140px]" title={doc.fileName}>
                   {doc.fileName}
                 </span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold border whitespace-nowrap ${
+                    doc.detectedStandard === '3556'
+                      ? 'bg-violet-100 text-violet-800 border-violet-300'
+                      : 'bg-blue-100 text-blue-800 border-blue-300'
+                  }`}
+                  title="Chuẩn dữ liệu được hệ thống tự động nhận diện từ file XML đầu vào"
+                >
+                  Đầu vào: QĐ {doc.detectedStandard || '3176'}
+                </span>
+                {exportStandard !== (doc.detectedStandard || '3176') && (
+                  <span
+                    className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-amber-100 text-amber-800 border border-amber-300 whitespace-nowrap"
+                    title="Hệ thống sẽ tự động chuyển đổi cấu trúc trường dữ liệu sang chuẩn xuất đã chọn khi Xem/Ký/Xuất XML"
+                  >
+                    Chuyển ➔ QĐ {exportStandard}
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200">
@@ -2205,7 +2337,7 @@ export default function Xml3176Module() {
                         onClick={() => {
                           if (!doc) return;
                           const targetIndices = Array.from(selectedHosoIndices) as number[];
-                          const { nextDoc } = recalculateXml3176HosoCosts(doc, targetIndices);
+                          const { nextDoc } = recalculateXml3176HosoCosts(doc, targetIndices, exportStandard);
                           setDoc(nextDoc);
                         }}
                         className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
@@ -2230,7 +2362,7 @@ export default function Xml3176Module() {
                         : selectedHosoIndices.size > 0
                         ? (Array.from(selectedHosoIndices) as number[])
                         : undefined;
-                    const { nextDoc } = recalculateXml3176HosoCosts(doc, targetIndices);
+                    const { nextDoc } = recalculateXml3176HosoCosts(doc, targetIndices, exportStandard);
                     setDoc(nextDoc);
                   }}
                   className="ml-2 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold flex items-center gap-1 shadow-xs cursor-pointer transition"
@@ -3477,10 +3609,10 @@ export default function Xml3176Module() {
                 <ShieldCheck className="w-6 h-6" />
                 <div>
                   <h3 className="text-base font-bold">
-                    Ký Số Hồ Sơ XML 3176 (Chuẩn &lt;GIAMDINHHS&gt; — &lt;CHUKYDONVI&gt;)
+                    Ký Số Hồ Sơ XML 3176 / 3556 (Chuẩn &lt;GIAMDINHHS&gt; — &lt;CHUKYDONVI&gt;)
                   </h3>
                   <p className="text-xs text-emerald-100">
-                    Ký trên nội dung XML mới nhất đã được chỉnh sửa • Dùng chung cấu hình SmartCA / USB Token
+                    Ký trên nội dung XML mới nhất đã được chỉnh sửa • Chuẩn xuất đang chọn: QĐ {exportStandard}
                   </p>
                 </div>
               </div>
@@ -3493,8 +3625,37 @@ export default function Xml3176Module() {
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Chọn phạm vi hồ sơ ký */}
+              {/* Chọn phạm vi & chuẩn XML ký số */}
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                  <span className="text-xs font-bold uppercase text-slate-600">
+                    Chuẩn XML đầu ra để ký số:
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleChangeExportStandard('3176')}
+                      className={`px-3 py-1 rounded-lg text-xs font-extrabold border cursor-pointer ${
+                        exportStandard === '3176'
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      Chuẩn QĐ 3176/QĐ-BYT
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleChangeExportStandard('3556')}
+                      className={`px-3 py-1 rounded-lg text-xs font-extrabold border cursor-pointer ${
+                        exportStandard === '3556'
+                          ? 'bg-violet-600 text-white border-violet-600'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      Chuẩn QĐ 3556/QĐ-BYT (18/11/2026)
+                    </button>
+                  </div>
+                </div>
                 <label className="block text-xs font-bold uppercase text-slate-500">
                   1. Phạm vi hồ sơ cần ký số
                 </label>
@@ -3854,7 +4015,7 @@ export default function Xml3176Module() {
                     onChange={e => setSendToGateway(e.target.checked)}
                     className="accent-sky-600 w-4 h-4"
                   />
-                  3. Ký xong tự động GỬI từng hồ sơ lên Cổng BHXH (API guiHoSoXmlQD3176 • loaiHoSo=130)
+                  3. Ký xong tự động GỬI từng hồ sơ lên Cổng BHXH (API guiHoSoXmlQD3176 • Chuẩn 3176 / 3556 • loaiHoSo=130)
                 </label>
                 {sendToGateway && (() => {
                   const o = getOrgConfig();
@@ -3961,15 +4122,38 @@ export default function Xml3176Module() {
               <div className="flex items-center gap-2">
                 <FileCode2 className="w-5 h-5 text-blue-400" />
                 <h3 className="text-sm font-bold">
-                  Kiểm tra Cấu trúc XML 3176 (Theo nội dung đã sửa & các hồ sơ đã chọn)
+                  Kiểm tra Cấu trúc XML {exportStandard} (Đầu vào: QĐ {doc.detectedStandard || '3176'})
                 </h3>
               </div>
-              <button
-                onClick={() => setShowXmlPreviewModal(false)}
-                className="p-1 rounded-lg hover:bg-white/10 text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-lg p-0.5">
+                  <span className="text-[10px] font-bold text-slate-300 px-1.5">Chuẩn xem:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleChangeExportStandard('3176')}
+                    className={`px-2 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
+                      exportStandard === '3176' ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    3176
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChangeExportStandard('3556')}
+                    className={`px-2 py-0.5 rounded text-[11px] font-extrabold cursor-pointer ${
+                      exportStandard === '3556' ? 'bg-violet-600 text-white' : 'text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    3556
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowXmlPreviewModal(false)}
+                  className="p-1 rounded-lg hover:bg-white/10 text-white cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="px-5 py-2.5 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
@@ -4045,16 +4229,23 @@ export default function Xml3176Module() {
               <pre className="whitespace-pre-wrap break-all">
                 {previewMode === 'OUTER_UNENCODED' &&
                   buildXml3176(doc, {
-                    includeSignature: doc.signature.isSigned,
-                    customChuKyDonViXml: doc.signature.rawChuKyDonViXml,
+                    includeSignature:
+                      doc.signature.isSigned &&
+                      (doc.signature.signedStandard ?? doc.detectedStandard) === exportStandard,
+                    customChuKyDonViXml:
+                      (doc.signature.signedStandard ?? doc.detectedStandard) === exportStandard
+                        ? doc.signature.rawChuKyDonViXml
+                        : undefined,
                     selectedHosoIndices: sortedSelectedIndices,
                     encodeBase64: false,
+                    targetStandard: exportStandard,
                   })}
                 {previewMode === 'OUTER_UNSIGNED' &&
                   (() => {
                     const txt = buildXml3176(doc, {
                       includeSignature: false,
                       selectedHosoIndices: sortedSelectedIndices,
+                      targetStandard: exportStandard,
                     });
                     return txt.length > 15000
                       ? txt.slice(0, 12000) +
@@ -4065,8 +4256,10 @@ export default function Xml3176Module() {
                 {previewMode === 'OUTER_SIGNED' &&
                   (() => {
                     const txt = buildXml3176(doc, {
-                      includeSignature: true,
+                      includeSignature:
+                        (doc.signature.signedStandard ?? doc.detectedStandard) === exportStandard,
                       selectedHosoIndices: sortedSelectedIndices,
+                      targetStandard: exportStandard,
                     });
                     return txt.length > 15000
                       ? txt.slice(0, 8000) +
@@ -4084,7 +4277,7 @@ export default function Xml3176Module() {
                       const rows = doc.tables[fNode.loaiHoso].filter(
                         r => r.hosoIndex === fNode.hosoIndex && r.fileHosoIndex === fNode.fileHosoIndex
                       );
-                      return `<!-- ==================== ${fNode.loaiHoso} (Hồ sơ #${previewHosoIdx + 1}) ==================== -->\n${buildInnerFileHosoXml(fNode, rows)}`;
+                      return `<!-- ==================== ${fNode.loaiHoso} (Chuẩn QĐ ${exportStandard} • Hồ sơ #${previewHosoIdx + 1}) ==================== -->\n${buildInnerFileHosoXml(fNode, rows, exportStandard)}`;
                     })
                     .join('\n\n')}
               </pre>

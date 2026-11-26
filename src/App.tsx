@@ -1638,7 +1638,7 @@ export default function App() {
               )}
             >
               <FileCode2 className="w-3.5 h-3.5 shrink-0" />
-              <span>ĐỌC & KÝ XML 3176</span>
+              <span>ĐỌC VÀ KÝ XML 3176 - 3556</span>
               <span className={cn("text-[9px] px-1 py-px rounded border", mainTab === 'XML_3176' ? "bg-white/20 text-white border-white/30" : "bg-amber-50 text-amber-800 border-amber-200")}>15 BẢNG</span>
             </button>
             <button
@@ -1774,7 +1774,7 @@ export default function App() {
                 className="flex items-center gap-2.5 bg-amber-600/95 hover:bg-amber-600 text-white font-extrabold px-5 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 backdrop-blur-sm cursor-pointer text-sm"
               >
                 <FileCode2 className="w-5 h-5 shrink-0" />
-                <span>ĐỌC & KÝ XML 3176</span>
+                <span>ĐỌC VÀ KÝ XML 3176 - 3556</span>
                 <span className="bg-white/20 text-[10px] px-2 py-0.5 rounded font-bold">15 BẢNG</span>
               </button>
               <button
