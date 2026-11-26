@@ -433,12 +433,13 @@ export default function Xml3176Module() {
       return next;
     });
 
-    // Nếu người dùng tích chọn Đồng bộ cập nhật thông tin đã sửa vào dữ liệu XML 3176 đang mở
+    // Nếu người dùng tích chọn Đồng bộ cập nhật thông tin đã sửa vào dữ liệu XML 3176 / 3556 đang mở
     if (syncTo3176Doc && doc) {
       const nextTables = { ...doc.tables };
       const nextHosoSignStates = { ...doc.hosoSignStates };
       let anyChanged = false;
       const affectedHosoSet = new Set<number>();
+      const modifiedFileKeys = new Set<string>();
 
       for (const rec of savedDrafts) {
         let recCostChanged = false;
@@ -447,17 +448,21 @@ export default function Xml3176Module() {
         const modifiedXml1 = rec.xml1FieldsDraft.filter(isXml1FieldAdjusted);
         if (modifiedXml1.length > 0) {
           anyChanged = true;
+          modifiedFileKeys.add(`${rec.hosoIndex}:XML1`);
           nextTables.XML1 = nextTables.XML1.map(r => {
             if (r.hosoIndex !== rec.hosoIndex) return r;
             const nextFields = { ...r.fields };
+            const addedEdited: string[] = [];
             modifiedXml1.forEach(mf => {
               nextFields[mf.field] = mf.ttDieuChinh;
+              addedEdited.push(mf.field);
             });
             return {
               ...r,
               maLk: nextFields.MA_LK || r.maLk,
               hoTen: nextFields.HO_TEN || r.hoTen,
               fields: nextFields,
+              editedFields: Array.from(new Set([...(r.editedFields || []), ...addedEdited])),
             };
           });
         }
@@ -469,7 +474,8 @@ export default function Xml3176Module() {
             anyChanged = true;
             recCostChanged = true;
             affectedHosoSet.add(rec.hosoIndex);
-            // Khi thu hồi đề nghị thanh toán 1 dịch vụ / thuốc, loại bỏ dòng đó khỏi bảng XML2/XML3 đang mở (hoặc đưa tiền về 0) để tổng đơn khớp
+            modifiedFileKeys.add(`${rec.hosoIndex}:${cRow.tableId}`);
+            // Khi thu hồi đề nghị thanh toán 1 dịch vụ / thuốc, loại bỏ dòng đó khỏi bảng XML2/XML3 đang mở để tổng đơn khớp
             nextTables[cRow.tableId] = (nextTables[cRow.tableId] || []).filter(
               r => r.rowId !== cRow.sourceRowId
             );
@@ -479,6 +485,7 @@ export default function Xml3176Module() {
           const modFields = cRow.fieldDrafts.filter(isCostFieldAdjusted);
           if (modFields.length > 0) {
             anyChanged = true;
+            modifiedFileKeys.add(`${rec.hosoIndex}:${cRow.tableId}`);
             if (cRow.tableId === 'XML2' || cRow.tableId === 'XML3') {
               recCostChanged = true;
               affectedHosoSet.add(rec.hosoIndex);
@@ -486,12 +493,15 @@ export default function Xml3176Module() {
             nextTables[cRow.tableId] = (nextTables[cRow.tableId] || []).map(r => {
               if (r.rowId !== cRow.sourceRowId) return r;
               const nextFields = { ...r.fields };
+              const addedEdited: string[] = [];
               modFields.forEach(mf => {
                 nextFields[mf.field] = mf.ttDieuChinh;
+                addedEdited.push(mf.field);
               });
               return {
                 ...r,
                 fields: nextFields,
+                editedFields: Array.from(new Set([...(r.editedFields || []), ...addedEdited])),
               };
             });
           }
@@ -502,14 +512,22 @@ export default function Xml3176Module() {
             ...(nextHosoSignStates[rec.hosoIndex] || { hosoIndex: rec.hosoIndex }),
             isSigned: false,
             isModified: true,
+            signedXmlContent: undefined,
+            rawChuKyDonViXml: undefined,
           };
         }
       }
 
       if (anyChanged) {
+        const nextHosoFiles = doc.hosoFiles.map((files, hIdx) =>
+          files.map(fn =>
+            modifiedFileKeys.has(`${hIdx}:${fn.loaiHoso}`) ? { ...fn, isModified: true } : fn
+          )
+        );
         let nextDoc: Xml3176ParsedDoc = {
           ...doc,
           tables: nextTables,
+          hosoFiles: nextHosoFiles,
           hosoSignStates: nextHosoSignStates,
           signature: { ...doc.signature, isSigned: false },
         };
@@ -931,33 +949,41 @@ export default function Xml3176Module() {
     });
   };
 
-  // Cập nhật trực tiếp 1 ô trên bảng (và tự động đánh dấu hồ sơ đó đã sửa -> cần ký lại nếu trước đó đã ký)
+  // Cập nhật trực tiếp 1 ô trên bảng (ghi nhận trường đã sửa để ưu tiên khi xuất XML, và xóa chữ ký cũ của hồ sơ)
   const handleInlineFieldChange = (row: Xml3176Row, fieldKey: string, newValue: string) => {
     if (!doc) return;
     const nextTables = { ...doc.tables };
     const nextRows = nextTables[row.tableId].map(r => {
       if (r.rowId !== row.rowId) return r;
       const updatedFields = { ...r.fields, [fieldKey]: newValue };
+      const updatedEdited = Array.from(new Set([...(r.editedFields || []), fieldKey]));
       return {
         ...r,
         maLk: fieldKey === 'MA_LK' ? newValue : r.maLk,
         hoTen: fieldKey === 'HO_TEN' ? newValue : r.hoTen,
         fields: updatedFields,
+        editedFields: updatedEdited,
       };
     });
     nextTables[row.tableId] = nextRows;
 
+    const syncedChildTables = new Set<Xml3176TableId>();
     // Nếu sửa HO_TEN hoặc MA_LK ở XML1, đồng bộ hiển thị cho các bảng con cùng hosoIndex
     if (row.tableId === 'XML1' && (fieldKey === 'HO_TEN' || fieldKey === 'MA_LK')) {
       for (const tId of Object.keys(nextTables) as Xml3176TableId[]) {
         if (tId === 'XML1') continue;
         nextTables[tId] = nextTables[tId].map(r => {
           if (r.hosoIndex !== row.hosoIndex) return r;
+          const childHasMaLk = fieldKey === 'MA_LK' && 'MA_LK' in r.fields;
+          if (childHasMaLk) syncedChildTables.add(tId);
           return {
             ...r,
             maLk: fieldKey === 'MA_LK' ? newValue : r.maLk,
             hoTen: fieldKey === 'HO_TEN' ? newValue : r.hoTen,
-            fields: fieldKey === 'MA_LK' && 'MA_LK' in r.fields ? { ...r.fields, MA_LK: newValue } : r.fields,
+            fields: childHasMaLk ? { ...r.fields, MA_LK: newValue } : r.fields,
+            editedFields: childHasMaLk
+              ? Array.from(new Set([...(r.editedFields || []), 'MA_LK']))
+              : r.editedFields,
           };
         });
       }
@@ -966,7 +992,8 @@ export default function Xml3176Module() {
     const nextHosoFiles = doc.hosoFiles.map((files, hIdx) => {
       if (hIdx !== row.hosoIndex) return files;
       return files.map(f =>
-        f.fileHosoIndex === row.fileHosoIndex && f.loaiHoso === row.tableId
+        (f.fileHosoIndex === row.fileHosoIndex && f.loaiHoso === row.tableId) ||
+        syncedChildTables.has(f.loaiHoso)
           ? { ...f, isModified: true }
           : f
       );
@@ -978,6 +1005,8 @@ export default function Xml3176Module() {
         ...(doc.hosoSignStates[row.hosoIndex] || { hosoIndex: row.hosoIndex }),
         isSigned: false,
         isModified: true,
+        signedXmlContent: undefined,
+        rawChuKyDonViXml: undefined,
       },
     };
 
@@ -1013,35 +1042,62 @@ export default function Xml3176Module() {
 
   const saveEditRowModal = () => {
     if (!doc || !editingRow) return;
-    const allKeys = [...editingRow.fieldOrder];
+    const changedKeys = new Set<string>();
     for (const k of Object.keys(editingFieldsDraft)) {
-      if (!allKeys.includes(k)) allKeys.push(k);
+      const prevVal = editingRow.fields[k] ?? '';
+      const nextVal = editingFieldsDraft[k] ?? '';
+      if (nextVal !== prevVal) {
+        changedKeys.add(k);
+      }
     }
+
+    const allKeys = [...editingRow.fieldOrder];
+    const cleanFields: Record<string, string> = {};
+    for (const k of Object.keys(editingFieldsDraft)) {
+      const existedOriginally = k in editingRow.fields;
+      const val = editingFieldsDraft[k] ?? '';
+      if (existedOriginally || changedKeys.has(k) || val !== '') {
+        cleanFields[k] = val;
+        if (!allKeys.includes(k)) allKeys.push(k);
+      }
+    }
+
+    const mergedEditedFields = Array.from(
+      new Set([...(editingRow.editedFields || []), ...Array.from(changedKeys)])
+    );
 
     const nextTables = { ...doc.tables };
     nextTables[editingRow.tableId] = nextTables[editingRow.tableId].map(r => {
       if (r.rowId !== editingRow.rowId) return r;
       return {
         ...r,
-        maLk: editingFieldsDraft.MA_LK ?? r.maLk,
-        hoTen: editingFieldsDraft.HO_TEN ?? r.hoTen,
-        fields: { ...editingFieldsDraft },
+        maLk: cleanFields.MA_LK ?? r.maLk,
+        hoTen: cleanFields.HO_TEN ?? r.hoTen,
+        fields: cleanFields,
         fieldOrder: allKeys,
+        editedFields: mergedEditedFields,
       };
     });
 
+    const syncedChildTables = new Set<Xml3176TableId>();
     if (editingRow.tableId === 'XML1') {
-      const newMaLk = editingFieldsDraft.MA_LK;
-      const newHoTen = editingFieldsDraft.HO_TEN;
+      const newMaLk = cleanFields.MA_LK;
+      const newHoTen = cleanFields.HO_TEN;
+      const maLkChanged = changedKeys.has('MA_LK');
       for (const tId of Object.keys(nextTables) as Xml3176TableId[]) {
         if (tId === 'XML1') continue;
         nextTables[tId] = nextTables[tId].map(r => {
           if (r.hosoIndex !== editingRow.hosoIndex) return r;
+          const updateChildMaLk = maLkChanged && newMaLk !== undefined && 'MA_LK' in r.fields;
+          if (updateChildMaLk) syncedChildTables.add(tId);
           return {
             ...r,
             maLk: newMaLk !== undefined ? newMaLk : r.maLk,
             hoTen: newHoTen !== undefined ? newHoTen : r.hoTen,
-            fields: newMaLk !== undefined && 'MA_LK' in r.fields ? { ...r.fields, MA_LK: newMaLk } : r.fields,
+            fields: updateChildMaLk ? { ...r.fields, MA_LK: newMaLk } : r.fields,
+            editedFields: updateChildMaLk
+              ? Array.from(new Set([...(r.editedFields || []), 'MA_LK']))
+              : r.editedFields,
           };
         });
       }
@@ -1057,7 +1113,8 @@ export default function Xml3176Module() {
     const nextHosoFiles = doc.hosoFiles.map((files, hIdx) => {
       if (hIdx !== editingRow.hosoIndex) return files;
       return files.map(f =>
-        f.fileHosoIndex === editingRow.fileHosoIndex && f.loaiHoso === editingRow.tableId
+        (f.fileHosoIndex === editingRow.fileHosoIndex && f.loaiHoso === editingRow.tableId) ||
+        syncedChildTables.has(f.loaiHoso)
           ? { ...f, isModified: true }
           : f
       );
@@ -1069,6 +1126,8 @@ export default function Xml3176Module() {
         ...(doc.hosoSignStates[editingRow.hosoIndex] || { hosoIndex: editingRow.hosoIndex }),
         isSigned: false,
         isModified: true,
+        signedXmlContent: undefined,
+        rawChuKyDonViXml: undefined,
       },
     };
 
@@ -1121,7 +1180,9 @@ export default function Xml3176Module() {
         loaiHoso: activeTab,
         originalBase64: '',
         decodedXml: '',
-        xmlDeclaration: '<?xml version="1.0" encoding="utf-8" ?>',
+        xmlDeclaration: exportStandard === '3556' ? '' : '<?xml version="1.0" encoding="utf-8"?>',
+        hasXmlDeclaration: exportStandard === '3176',
+        sourceStandard: exportStandard,
         rootTag: meta.rootTag,
         listTag: meta.listTag,
         itemTag: meta.itemTag,
@@ -1148,7 +1209,7 @@ export default function Xml3176Module() {
       hoTen: defaultHoTen,
       fields: newFields,
       fieldOrder: [...cols],
-      cdataTags: [...meta.defaultCdataFields],
+      cdataTags: exportStandard === '3556' ? [] : [...meta.defaultCdataFields],
     };
 
     const nextTables = {
@@ -1162,6 +1223,8 @@ export default function Xml3176Module() {
         ...(doc.hosoSignStates[targetHosoIdx] || { hosoIndex: targetHosoIdx }),
         isSigned: false,
         isModified: true,
+        signedXmlContent: undefined,
+        rawChuKyDonViXml: undefined,
       },
     };
 
@@ -1206,6 +1269,8 @@ export default function Xml3176Module() {
         ...(doc.hosoSignStates[row.hosoIndex] || { hosoIndex: row.hosoIndex }),
         isSigned: false,
         isModified: true,
+        signedXmlContent: undefined,
+        rawChuKyDonViXml: undefined,
       },
     };
 
@@ -1445,7 +1510,7 @@ export default function Xml3176Module() {
         }
         for (const k of exportCols) {
           let val = r.fields[k] ?? '';
-          if (meta.id === 'XML1') {
+          if (meta.id === 'XML1' && !r.editedFields?.includes(k)) {
             if (exportStandard === '3556' && (k === 'T_THUOC' || k === 'T_VTYT' || k === 'MAHUYEN_CU_TRU')) {
               val = '';
             } else if (exportStandard === '3176' && val.trim() === '') {
@@ -3213,7 +3278,13 @@ export default function Xml3176Module() {
                     pagedRows.map(row => {
                       const isRowSelected = selectedHosoIndices.has(row.hosoIndex);
                       const signState = doc.hosoSignStates[row.hosoIndex];
-                      const isSigned = signState?.isSigned && !signState?.isModified;
+                      const signedStd = signState?.signedStandard ?? doc.detectedStandard ?? '3176';
+                      const isSignedSameStd = Boolean(
+                        signState?.isSigned && !signState?.isModified && signedStd === exportStandard
+                      );
+                      const isSignedDiffStd = Boolean(
+                        signState?.isSigned && !signState?.isModified && signedStd !== exportStandard
+                      );
                       const isModified = signState?.isModified;
 
                       return (
@@ -3238,17 +3309,25 @@ export default function Xml3176Module() {
                           {/* Ô Trạng thái ký số ở Bảng 1 */}
                           {activeTab === 'XML1' && (
                             <td className="border-r border-slate-200 px-1 py-1 text-center whitespace-nowrap">
-                              {isSigned ? (
+                              {isSignedSameStd ? (
                                 <span
                                   className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300"
                                   title={
                                     signState?.subjectName
-                                      ? `Đã ký bởi: ${signState.subjectName} (${signState.signingTime || ''})`
-                                      : 'Hồ sơ đã có chữ ký số hợp lệ'
+                                      ? `Đã ký chuẩn QĐ ${signedStd} bởi: ${signState.subjectName} (${signState.signingTime || ''})`
+                                      : `Hồ sơ đã có chữ ký số hợp lệ (QĐ ${signedStd})`
                                   }
                                 >
                                   <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  Đã ký
+                                  Đã ký ({signedStd})
+                                </span>
+                              ) : isSignedDiffStd ? (
+                                <span
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-400"
+                                  title={`Chữ ký hiện tại là của chuẩn QĐ ${signedStd}. Bạn đang chọn xuất chuẩn QĐ ${exportStandard} — cần ký lại trước khi xuất Đã Ký để đảm bảo hợp lệ.`}
+                                >
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                  Ký lại ({exportStandard})
                                 </span>
                               ) : isModified ? (
                                 <span
@@ -3308,15 +3387,15 @@ export default function Xml3176Module() {
                                 <>
                                   <button
                                     onClick={() =>
-                                      isSigned
+                                      isSignedSameStd
                                         ? handleExportSignedXml(row.hosoIndex)
                                         : handleExportUnsignedXml(row.hosoIndex)
                                     }
                                     className="px-1 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] flex items-center gap-0.5 cursor-pointer"
                                     title={
-                                      isSigned
-                                        ? 'Tải file XML chuẩn (Base64) Đã ký số của riêng hồ sơ này (theo nội dung đã sửa)'
-                                        : 'Tải file XML chuẩn (Base64) Không ký số của riêng hồ sơ này (theo nội dung đã sửa)'
+                                      isSignedSameStd
+                                        ? `Tải file XML chuẩn QĐ ${exportStandard} Đã ký số của riêng hồ sơ này`
+                                        : `Tải file XML chuẩn QĐ ${exportStandard} Không ký số của riêng hồ sơ này`
                                     }
                                   >
                                     <Download className="w-2.5 h-2.5" />
@@ -3353,14 +3432,36 @@ export default function Xml3176Module() {
 
                           {activeColumns.map(col => {
                             const val = row.fields[col] ?? '';
+                            const isUserEdited = row.editedFields?.includes(col);
+                            let placeholder = '';
+                            let cellTitle = val;
+                            if (row.tableId === 'XML1') {
+                              if (exportStandard === '3176' && val.trim() === '' && !isUserEdited) {
+                                if (col === 'T_THUOC') {
+                                  placeholder = 'Tự cộng B2';
+                                  cellTitle = 'Khi xuất chuẩn 3176, hệ thống sẽ tự cộng tổng THANH_TIEN_BV từ Bảng 2 (nếu bạn không tự nhập giá trị khác)';
+                                } else if (col === 'T_VTYT') {
+                                  placeholder = 'Tự cộng B3';
+                                  cellTitle = 'Khi xuất chuẩn 3176, hệ thống sẽ tự cộng tiền VTYT từ Bảng 3 (nếu bạn không tự nhập giá trị khác)';
+                                }
+                              } else if (
+                                exportStandard === '3556' &&
+                                !isUserEdited &&
+                                val.trim() !== '' &&
+                                (col === 'T_THUOC' || col === 'T_VTYT' || col === 'MAHUYEN_CU_TRU')
+                              ) {
+                                cellTitle = `${val} (Khi xuất chuẩn 3556 sẽ tự bỏ trống trừ khi bạn tự sửa ô này)`;
+                              }
+                            }
                             return (
                               <td key={col} className="border-r border-slate-200 p-0">
                                 <input
                                   type="text"
                                   value={val}
-                                  title={val}
+                                  placeholder={placeholder}
+                                  title={cellTitle}
                                   onChange={e => handleInlineFieldChange(row, col, e.target.value)}
-                                  className="w-full px-1.5 py-1 text-[11px] bg-transparent focus:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500 font-medium text-slate-800"
+                                  className="w-full px-1.5 py-1 text-[11px] bg-transparent placeholder:text-slate-400 placeholder:italic focus:bg-amber-50 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500 font-medium text-slate-800"
                                 />
                               </td>
                             );

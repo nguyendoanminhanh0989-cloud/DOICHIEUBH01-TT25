@@ -139,12 +139,12 @@ export const XML3176_TABLES: Xml3176TableMeta[] = [
     shortTitle: 'Giấy ra viện (XML7)',
     fullTitle: 'Bảng 7 (XML7): Chỉ tiêu dữ liệu giấy ra viện',
     rootTag: 'CHI_TIEU_DU_LIEU_GIAY_RA_VIEN',
-    defaultCdataFields: ['CHAN_DOAN_RV', 'PP_DIEUTRI', 'GHI_CHU', 'HO_TEN_CHA', 'HO_TEN_ME', 'NGUOI_DAI_DIEN'],
+    defaultCdataFields: ['CHAN_DOAN_RV', 'PP_DIEUTRI', 'GHI_CHU'],
     defaultFields: [
       'MA_LK', 'SO_LUU_TRU', 'MA_YTE', 'MA_KHOA_RV', 'NGAY_VAO', 'NGAY_RA',
       'MA_DINH_CHI_THAI', 'NGUYENNHAN_DINHCHI', 'THOIGIAN_DINHCHI', 'TUOI_THAI',
-      'CHAN_DOAN_RV', 'PP_DIEUTRI', 'SO_NGAY_DTRI', 'MA_LOAI_RV', 'GHI_CHU',
-      'MA_TTDV', 'NGAY_CT', 'MA_THE_TAM', 'HO_TEN_CHA', 'HO_TEN_ME', 'MA_THE_ME',
+      'CHAN_DOAN_RV', 'PP_DIEUTRI', 'GHI_CHU', 'MA_TTDV', 'MA_BS', 'TEN_BS', 'NGAY_CT',
+      'MA_CHA', 'MA_ME', 'MA_THE_TAM', 'HO_TEN_CHA', 'HO_TEN_ME',
       'SO_NGAY_NGHI', 'NGOAITRU_TUNGAY', 'NGOAITRU_DENNGAY', 'DU_PHONG'
     ]
   },
@@ -488,6 +488,7 @@ export interface Xml3176Row {
   fields: Record<string, string>;
   fieldOrder: string[];
   cdataTags: string[];
+  editedFields?: string[]; // Các trường người dùng đã chủ động chỉnh sửa (ưu tiên giữ nguyên khi chuyển chuẩn)
 }
 
 export interface Xml3176FileHosoNode {
@@ -497,6 +498,9 @@ export interface Xml3176FileHosoNode {
   originalBase64: string;
   decodedXml: string;
   xmlDeclaration: string;
+  hasXmlDeclaration?: boolean;
+  sourceStandard?: XmlStandardVersion;
+  originalRowCount?: number;
   rootTag: string;
   listTag?: string;
   itemTag?: string;
@@ -653,6 +657,7 @@ function parseInnerFileHosoXml(
   fileHosoIndex: number
 ): {
   xmlDeclaration: string;
+  hasXmlDeclaration: boolean;
   rootTag: string;
   listTag?: string;
   itemTag?: string;
@@ -660,7 +665,8 @@ function parseInnerFileHosoXml(
 } {
   const meta = XML3176_TABLES.find(t => t.id === tableId) || XML3176_TABLES[0];
   const declMatch = decodedXml.match(/^\s*(<\?xml[^>]*\?>)/);
-  const xmlDeclaration = declMatch ? declMatch[1] : '<?xml version="1.0" encoding="utf-8" ?>';
+  const hasXmlDeclaration = Boolean(declMatch);
+  const xmlDeclaration = declMatch ? declMatch[1] : '';
   const body = decodedXml.replace(/^\s*<\?xml[^>]*\?>\s*/, '').trim();
 
   const rootMatch = body.match(/^<([A-Za-z0-9_]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>\s*$/);
@@ -716,14 +722,14 @@ function parseInnerFileHosoXml(
     }
   }
 
-  return { xmlDeclaration, rootTag, listTag, itemTag, rows };
+  return { xmlDeclaration, hasXmlDeclaration, rootTag, listTag, itemTag, rows };
 }
 
 /**
  * Tự động nhận diện chuẩn XML đầu vào (QĐ 3176/QĐ-BYT hay QĐ 3556/QĐ-BYT ngày 18/11/2026)
  */
 export function detectXmlStandard(
-  tables: Record<Xml3176TableId, Xml3176Row[]>,
+  tables: Partial<Record<Xml3176TableId, Xml3176Row[]>>,
   fileName?: string
 ): XmlStandardVersion {
   if (tables.XML1?.some(r => 'MA_BENH_KHAC' in r.fields || 'T_BNCCT_LK' in r.fields)) {
@@ -741,29 +747,33 @@ export function detectXmlStandard(
   return '3176';
 }
 
-function insertColumnAtPosition(
+function ensureColumnAtPosition(
   cols: string[],
-  colToAdd: string,
+  colToPlace: string,
   afterKey?: string,
   beforeKey?: string
 ): string[] {
-  if (cols.includes(colToAdd)) return cols;
-  const next = [...cols];
+  const next = cols.filter(c => c !== colToPlace);
   if (afterKey) {
     const idx = next.indexOf(afterKey);
     if (idx !== -1) {
-      next.splice(idx + 1, 0, colToAdd);
+      next.splice(idx + 1, 0, colToPlace);
       return next;
     }
   }
   if (beforeKey) {
     const idx = next.indexOf(beforeKey);
     if (idx !== -1) {
-      next.splice(idx, 0, colToAdd);
+      next.splice(idx, 0, colToPlace);
       return next;
     }
   }
-  next.push(colToAdd);
+  const duPhongIdx = next.indexOf('DU_PHONG');
+  if (duPhongIdx !== -1) {
+    next.splice(duPhongIdx, 0, colToPlace);
+    return next;
+  }
+  next.push(colToPlace);
   return next;
 }
 
@@ -782,16 +792,16 @@ export function getDisplayColumnsForStandard(
 
   if (standard === '3556') {
     if (tableId === 'XML1') {
-      let cols = insertColumnAtPosition(baseCols, 'MA_BENH_KHAC', 'MA_BENH_KT', 'MA_BENH_YHCT');
-      cols = insertColumnAtPosition(cols, 'T_BNCCT_LK', 'T_BNTT', 'T_BNCCT');
+      let cols = ensureColumnAtPosition(baseCols, 'MA_BENH_KHAC', 'MA_BENH_KT', 'MA_BENH_YHCT');
+      cols = ensureColumnAtPosition(cols, 'T_BNCCT_LK', 'T_BNTT', 'T_BNCCT');
       return cols;
     }
     if (tableId === 'XML7') {
-      return insertColumnAtPosition(baseCols, 'NGAY_VAO_NOI_TRU', 'NGAY_VAO', 'NGAY_RA');
+      return ensureColumnAtPosition(baseCols, 'NGAY_VAO_NOI_TRU', 'NGAY_VAO', 'NGAY_RA');
     }
     if (tableId === 'XML13') {
       const filtered = baseCols.filter(c => c !== 'TEN_DICH_VU' && c !== 'TEN_THUOC' && c !== 'PP_DIEU_TRI');
-      return insertColumnAtPosition(filtered, 'TINH_TRANG_CT', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+      return ensureColumnAtPosition(filtered, 'TINH_TRANG_CT', 'MA_BENH_YHCT', 'MA_LOAI_RV');
     }
     return baseCols;
   }
@@ -805,9 +815,9 @@ export function getDisplayColumnsForStandard(
   }
   if (tableId === 'XML13') {
     let cols = baseCols.filter(c => c !== 'TINH_TRANG_CT');
-    cols = insertColumnAtPosition(cols, 'TEN_DICH_VU', 'MA_BENH_YHCT', 'MA_LOAI_RV');
-    cols = insertColumnAtPosition(cols, 'TEN_THUOC', 'TEN_DICH_VU', 'MA_LOAI_RV');
-    cols = insertColumnAtPosition(cols, 'PP_DIEU_TRI', 'TEN_THUOC', 'MA_LOAI_RV');
+    cols = ensureColumnAtPosition(cols, 'TEN_DICH_VU', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+    cols = ensureColumnAtPosition(cols, 'TEN_THUOC', 'TEN_DICH_VU', 'MA_LOAI_RV');
+    cols = ensureColumnAtPosition(cols, 'PP_DIEU_TRI', 'TEN_THUOC', 'MA_LOAI_RV');
     return cols;
   }
   return baseCols;
@@ -824,6 +834,7 @@ function transformRowForStandard(
     if (!baseKeys.includes(k)) baseKeys.push(k);
   }
   const values: Record<string, string> = { ...row.fields };
+  const editedSet = new Set(row.editedFields || []);
 
   if (!targetStandard) {
     return { keys: baseKeys, values };
@@ -831,30 +842,30 @@ function transformRowForStandard(
 
   if (targetStandard === '3556') {
     if (tableId === 'XML1') {
-      let keys = insertColumnAtPosition(baseKeys, 'MA_BENH_KHAC', 'MA_BENH_KT', 'MA_BENH_YHCT');
-      keys = insertColumnAtPosition(keys, 'T_BNCCT_LK', 'T_BNTT', 'T_BNCCT');
+      let keys = ensureColumnAtPosition(baseKeys, 'MA_BENH_KHAC', 'MA_BENH_KT', 'MA_BENH_YHCT');
+      keys = ensureColumnAtPosition(keys, 'T_BNCCT_LK', 'T_BNTT', 'T_BNCCT');
       values.MA_BENH_KHAC = values.MA_BENH_KHAC ?? '';
       values.T_BNCCT_LK = values.T_BNCCT_LK ?? '';
-      // QĐ 3556: bỏ đơn vị hành chính cấp huyện và để trống T_THUOC, T_VTYT ở Bảng 1
-      values.MAHUYEN_CU_TRU = '';
-      values.T_THUOC = '';
-      values.T_VTYT = '';
+      // QĐ 3556: bỏ đơn vị hành chính cấp huyện và để trống T_THUOC, T_VTYT ở Bảng 1 (trừ khi người dùng chủ động sửa)
+      if (!editedSet.has('MAHUYEN_CU_TRU')) values.MAHUYEN_CU_TRU = '';
+      if (!editedSet.has('T_THUOC')) values.T_THUOC = '';
+      if (!editedSet.has('T_VTYT')) values.T_VTYT = '';
       return { keys, values };
     }
     if (tableId === 'XML7') {
-      const keys = insertColumnAtPosition(baseKeys, 'NGAY_VAO_NOI_TRU', 'NGAY_VAO', 'NGAY_RA');
+      const keys = ensureColumnAtPosition(baseKeys, 'NGAY_VAO_NOI_TRU', 'NGAY_VAO', 'NGAY_RA');
       values.NGAY_VAO_NOI_TRU = values.NGAY_VAO_NOI_TRU ?? '';
       return { keys, values };
     }
     if (tableId === 'XML6' || tableId === 'XML9' || tableId === 'XML12') {
-      if ('MAHUYEN_CU_TRU' in values) {
+      if ('MAHUYEN_CU_TRU' in values && !editedSet.has('MAHUYEN_CU_TRU')) {
         values.MAHUYEN_CU_TRU = '';
       }
       return { keys: baseKeys, values };
     }
     if (tableId === 'XML13') {
       const filtered = baseKeys.filter(c => c !== 'TEN_DICH_VU' && c !== 'TEN_THUOC' && c !== 'PP_DIEU_TRI');
-      const keys = insertColumnAtPosition(filtered, 'TINH_TRANG_CT', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+      const keys = ensureColumnAtPosition(filtered, 'TINH_TRANG_CT', 'MA_BENH_YHCT', 'MA_LOAI_RV');
       values.TINH_TRANG_CT = values.TINH_TRANG_CT ?? '';
       return { keys, values };
     }
@@ -864,10 +875,10 @@ function transformRowForStandard(
   // targetStandard === '3176'
   if (tableId === 'XML1') {
     const keys = baseKeys.filter(c => c !== 'MA_BENH_KHAC' && c !== 'T_BNCCT_LK');
-    if ((values.T_THUOC ?? '').trim() === '' && hosoFallback?.tThuoc !== undefined) {
+    if ((values.T_THUOC ?? '').trim() === '' && !editedSet.has('T_THUOC') && hosoFallback?.tThuoc !== undefined) {
       values.T_THUOC = hosoFallback.tThuoc;
     }
-    if ((values.T_VTYT ?? '').trim() === '' && hosoFallback?.tVtyt !== undefined) {
+    if ((values.T_VTYT ?? '').trim() === '' && !editedSet.has('T_VTYT') && hosoFallback?.tVtyt !== undefined) {
       values.T_VTYT = hosoFallback.tVtyt;
     }
     return { keys, values };
@@ -877,9 +888,9 @@ function transformRowForStandard(
   }
   if (tableId === 'XML13') {
     let keys = baseKeys.filter(c => c !== 'TINH_TRANG_CT');
-    keys = insertColumnAtPosition(keys, 'TEN_DICH_VU', 'MA_BENH_YHCT', 'MA_LOAI_RV');
-    keys = insertColumnAtPosition(keys, 'TEN_THUOC', 'TEN_DICH_VU', 'MA_LOAI_RV');
-    keys = insertColumnAtPosition(keys, 'PP_DIEU_TRI', 'TEN_THUOC', 'MA_LOAI_RV');
+    keys = ensureColumnAtPosition(keys, 'TEN_DICH_VU', 'MA_BENH_YHCT', 'MA_LOAI_RV');
+    keys = ensureColumnAtPosition(keys, 'TEN_THUOC', 'TEN_DICH_VU', 'MA_LOAI_RV');
+    keys = ensureColumnAtPosition(keys, 'PP_DIEU_TRI', 'TEN_THUOC', 'MA_LOAI_RV');
     values.TEN_DICH_VU = values.TEN_DICH_VU ?? '';
     values.TEN_THUOC = values.TEN_THUOC ?? '';
     values.PP_DIEU_TRI = values.PP_DIEU_TRI ?? '';
@@ -898,19 +909,26 @@ export function buildInnerFileHosoXml(
   hosoFallback?: { tThuoc?: string; tVtyt?: string }
 ): string {
   const meta = XML3176_TABLES.find(t => t.id === node.loaiHoso);
-  const defaultCdata = new Set(meta?.defaultCdataFields || []);
-  const decl = node.xmlDeclaration || '<?xml version="1.0" encoding="utf-8" ?>';
   const rootTag = node.rootTag || meta?.rootTag || node.loaiHoso;
   const listTag = node.listTag || meta?.listTag;
   const itemTag = node.itemTag || meta?.itemTag;
+  const effectiveStd: XmlStandardVersion = targetStandard ?? node.sourceStandard ?? '3176';
+  const decl =
+    effectiveStd === '3556'
+      ? node.hasXmlDeclaration && node.xmlDeclaration
+        ? `${node.xmlDeclaration}\r\n`
+        : ''
+      : `${node.xmlDeclaration || '<?xml version="1.0" encoding="utf-8"?>'}\r\n`;
 
   const renderFieldLine = (tag: string, val: string, cdataSet: Set<string>, indent: string): string => {
     const safeVal = val ?? '';
     if (safeVal === '') {
-      return `${indent}<${tag} />`;
+      // Toàn bộ 657 file mẫu 3176 & 3556 của BHXH đều dùng cặp thẻ đóng mở <TAG></TAG> thay cho <TAG />
+      return `${indent}<${tag}></${tag}>`;
     }
-    if (cdataSet.has(tag) || defaultCdata.has(tag)) {
-      return `${indent}<${tag}><![CDATA[${safeVal}]]></${tag}>`;
+    if (effectiveStd !== '3556' && cdataSet.has(tag)) {
+      const safeCdata = safeVal.replace(/\]\]>/g, ']]]]><![CDATA[>');
+      return `${indent}<${tag}><![CDATA[${safeCdata}]]></${tag}>`;
     }
     return `${indent}<${tag}>${escapeXmlText(safeVal)}</${tag}>`;
   };
@@ -924,16 +942,16 @@ export function buildInnerFileHosoXml(
         return `    <${itemTag}>\r\n${lines.join('\r\n')}\r\n    </${itemTag}>`;
       })
       .join('\r\n');
-    return `${decl}\r\n<${rootTag}>\r\n  <${listTag}>\r\n${itemsXml}\r\n  </${listTag}>\r\n</${rootTag}>`;
+    return `${decl}<${rootTag}>\r\n  <${listTag}>\r\n${itemsXml}\r\n  </${listTag}>\r\n</${rootTag}>`;
   } else {
     const r = rows[0];
     if (!r) {
-      return `${decl}\r\n<${rootTag} />`;
+      return `${decl}<${rootTag}></${rootTag}>`;
     }
     const cdataSet = new Set(r.cdataTags);
     const { keys, values } = transformRowForStandard(node.loaiHoso, r, targetStandard, hosoFallback);
     const lines = keys.map(k => renderFieldLine(k, values[k] ?? '', cdataSet, '  '));
-    return `${decl}\r\n<${rootTag}>\r\n${lines.join('\r\n')}\r\n</${rootTag}>`;
+    return `${decl}<${rootTag}>\r\n${lines.join('\r\n')}\r\n</${rootTag}>`;
   }
 }
 
@@ -1195,6 +1213,8 @@ export function parseXml3176(xmlContent: string, fileName = 'HOSO_3176.xml'): Xm
         originalBase64,
         decodedXml,
         xmlDeclaration: parsedInner.xmlDeclaration,
+        hasXmlDeclaration: parsedInner.hasXmlDeclaration,
+        originalRowCount: parsedInner.rows.length,
         rootTag: parsedInner.rootTag,
         listTag: parsedInner.listTag,
         itemTag: parsedInner.itemTag,
@@ -1202,6 +1222,16 @@ export function parseXml3176(xmlContent: string, fileName = 'HOSO_3176.xml'): Xm
       });
 
       fileIdx++;
+    }
+
+    const hosoTablesSlice: Partial<Record<Xml3176TableId, Xml3176Row[]>> = {
+      XML1: tables.XML1.filter(r => r.hosoIndex === hosoIdx),
+      XML7: tables.XML7.filter(r => r.hosoIndex === hosoIdx),
+      XML13: tables.XML13.filter(r => r.hosoIndex === hosoIdx),
+    };
+    const hosoSourceStandard = detectXmlStandard(hosoTablesSlice, fileName);
+    for (const fn of fileNodesForHoso) {
+      fn.sourceStandard = hosoSourceStandard;
     }
 
     if (hosoMaLk || hosoHoTen) {
@@ -1331,12 +1361,26 @@ export function buildXml3176(
         continue;
       }
 
-      // LUÔN LUÔN dựng lại nội dung XML con từ dữ liệu hiện tại trên bảng theo chuẩn đích đã chọn
-      const rebuiltInnerXml = buildInnerFileHosoXml(fNode, rowsForFile, effectiveStandard, hosoFallback);
+      const nodeSourceStd = fNode.sourceStandard ?? doc.detectedStandard ?? '3176';
+      const hasRowEdits = rowsForFile.some(r => (r.editedFields?.length || 0) > 0);
+      const rowCountChanged =
+        fNode.originalRowCount !== undefined && rowsForFile.length !== fNode.originalRowCount;
+      const canPreserveOriginal =
+        shouldEncodeBase64 &&
+        Boolean(fNode.originalBase64) &&
+        !fNode.isModified &&
+        !hasRowEdits &&
+        !rowCountChanged &&
+        nodeSourceStd === effectiveStandard;
 
       if (shouldEncodeBase64) {
-        // Chuẩn file đã lên cổng BHXH: Base64 nằm trên MỘT DÒNG duy nhất, các thẻ không thụt lề
-        const b64Content = encodeUtf8Base64(rebuiltInnerXml, false);
+        // Chuẩn file đã lên cổng BHXH: Base64 nằm trên MỘT DÒNG duy nhất; nếu bảng không sửa & cùng chuẩn thì giữ nguyên 100% Base64 gốc
+        const b64Content = canPreserveOriginal
+          ? fNode.originalBase64.replace(/\s+/g, '')
+          : encodeUtf8Base64(
+              buildInnerFileHosoXml(fNode, rowsForFile, effectiveStandard, hosoFallback),
+              false
+            );
         fileHosoXmlList.push(
           `<FILEHOSO>\n` +
           `<LOAIHOSO>${fNode.loaiHoso}</LOAIHOSO>\n` +
@@ -1344,6 +1388,7 @@ export function buildXml3176(
           `</FILEHOSO>`
         );
       } else {
+        const rebuiltInnerXml = buildInnerFileHosoXml(fNode, rowsForFile, effectiveStandard, hosoFallback);
         // Xuất XML KHÔNG MÃ HÓA: hiển thị trực tiếp đầy đủ các thẻ XML của Bảng 1..15 bên trong <NOIDUNGFILE>
         const innerWithoutDecl = rebuiltInnerXml
           .replace(/^\s*<\?xml[^>]*\?>\s*/, '')
@@ -1544,8 +1589,12 @@ export function recalculateXml3176HosoCosts(
       f.T_BHTT = formatMoney3176(bhtt);
       f.T_BNCCT = formatMoney3176(bncct);
       f.T_BNTT = formatMoney3176(bntt);
+      const edited = Array.from(
+        new Set([...(r.editedFields || []), 'THANH_TIEN_BV', 'THANH_TIEN_BH', 'T_BHTT', 'T_BNCCT', 'T_BNTT'])
+      );
+      return { ...r, fields: f, editedFields: edited };
     }
-    return { ...r, fields: f };
+    return r;
   });
 
   const nextXml3 = doc.tables.XML3.map(r => {
@@ -1577,8 +1626,12 @@ export function recalculateXml3176HosoCosts(
       f.T_BHTT = formatMoney3176(bhtt);
       f.T_BNCCT = formatMoney3176(bncct);
       f.T_BNTT = formatMoney3176(bntt);
+      const edited = Array.from(
+        new Set([...(r.editedFields || []), 'THANH_TIEN_BV', 'THANH_TIEN_BH', 'T_BHTT', 'T_BNCCT', 'T_BNTT'])
+      );
+      return { ...r, fields: f, editedFields: edited };
     }
-    return { ...r, fields: f };
+    return r;
   });
 
   let updatedHosoCount = 0;
@@ -1637,14 +1690,38 @@ export function recalculateXml3176HosoCosts(
       T_NGUONKHAC: formatMoney3176(sumNk),
     };
 
+    const editedXml1 = Array.from(
+      new Set([
+        ...(r.editedFields || []),
+        'T_TONGCHI_BV',
+        'T_TONGCHI_BH',
+        'T_BHTT',
+        'T_BNCCT',
+        'T_BNTT',
+        'T_NGUONKHAC',
+        ...(std === '3176' ? ['T_THUOC', 'T_VTYT'] : []),
+      ])
+    );
+
     updatedHosoCount++;
     nextHosoSignStates[r.hosoIndex] = {
       ...(nextHosoSignStates[r.hosoIndex] || { hosoIndex: r.hosoIndex }),
       isSigned: false,
       isModified: true,
+      signedXmlContent: undefined,
+      rawChuKyDonViXml: undefined,
     };
 
-    return { ...r, fields: f };
+    return { ...r, fields: f, editedFields: editedXml1 };
+  });
+
+  const nextHosoFiles = doc.hosoFiles.map((files, hIdx) => {
+    if (!targetSet.has(hIdx)) return files;
+    return files.map(fn =>
+      fn.loaiHoso === 'XML1' || fn.loaiHoso === 'XML2' || fn.loaiHoso === 'XML3'
+        ? { ...fn, isModified: true }
+        : fn
+    );
   });
 
   const nextDoc: Xml3176ParsedDoc = {
@@ -1655,6 +1732,7 @@ export function recalculateXml3176HosoCosts(
       XML2: nextXml2,
       XML3: nextXml3,
     },
+    hosoFiles: nextHosoFiles,
     hosoSignStates: nextHosoSignStates,
     signature: { ...doc.signature, isSigned: false },
   };
