@@ -332,8 +332,9 @@ export function finalizeKskRecord(
       err(`Định dạng ${key} không hợp lệ`, key);
     }
   };
-  fixDate('NGAY_VAO', type === 'ChildUnder' ? '12' : '8');
-  fixDate('NGAY_SINH', '8');
+  // Theo tài liệu đặc tả + file mẫu đã lên cổng: NGAY_SINH & NGAY_VAO = yyyymmddHHMM (12 ký tự), NGAYCAP_CCCD = yyyymmdd
+  fixDate('NGAY_VAO', '12');
+  fixDate('NGAY_SINH', '12');
   fixDate('NGAYCAP_CCCD', '8');
 
   // 5b. Chuẩn hóa DOI_TUONG (trích mã số 1..16 phân cách bằng ';', mặc định '16')
@@ -346,7 +347,7 @@ export function finalizeKskRecord(
   // 6. BMI tự tính (0.## theo KSK_ToanDan.exe)
   if (data.CHI_SO_BMI === undefined && data.BMI === undefined) {
     const h = parseFloat(data.CHIEU_CAO), w = parseFloat(data.CAN_NANG);
-    if (h > 0 && w > 0) data.CHI_SO_BMI = Number((w / Math.pow(h / 100, 2)).toFixed(2)).toString();
+    if (h > 0 && w > 0) data.CHI_SO_BMI = (w / Math.pow(h / 100, 2)).toFixed(1);
   }
 
   // 7. Mã liên kết

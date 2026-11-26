@@ -1,4 +1,4 @@
-/**
+﻿/**
  * XML BUILDER THEO ĐÚNG CHUẨN PHỤ LỤC 02 - BHXH VIỆT NAM
  * Tài liệu: CV về triển khai cổng tiếp nhận PL2 (Thông tư 25/2025/TT-BHYT)
  * 
@@ -23,7 +23,7 @@
  */
 
 import { parseDateStr, parseShortDateStr } from './data-utils';
-import { buildKskXml, buildBytKskSignatureBase64, setKskCksTagsInXml } from './kskXmlBuilder';
+import { buildKskXml } from './kskXmlBuilder';
 
 export type DocType = 'CT03' | 'CT04' | 'CT05' | 'CT06' | 'CT07' | 'GIAYDIEUTRINOITRU' | 'GIAYDIEUTRIVOSINH' | 'GIAYSUCKHOEME' | 'KHAM_SUC_KHOE';
 
@@ -669,18 +669,13 @@ export async function prepareXmlForSigning(
   hashToSign: string;
   buildSignedXml: (signatureBase64: string) => string;
 }> {
-  // Đối với hồ sơ Khám sức khỏe (12 bảng chuẩn QĐ 2062/QĐ-BYT):
-  // Ký 2 bước chuẩn BYT (CKS_NGUOI_KET_LUAN + CKS_BENH_VIEN) dưới dạng Base64 XMLDSig
+  // Đối với hồ sơ Khám sức khỏe (12 bảng chuẩn Bộ Y Tế)
   if (xmlString.includes('<KHAMSUCKHOE')) {
-    const cleanKskXml = xmlString.replace(
-      /<CKS_(?:NGUOI_KET_LUAN|BENH_VIEN)(?:\s*\/>|>[\s\S]*?<\/CKS_(?:NGUOI_KET_LUAN|BENH_VIEN)>)/g,
-      m => (m.startsWith('<CKS_NGUOI_KET_LUAN') ? '<CKS_NGUOI_KET_LUAN></CKS_NGUOI_KET_LUAN>' : '<CKS_BENH_VIEN></CKS_BENH_VIEN>')
-    );
+    const cleanKskXml = xmlString.replace(/\s*<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/g, '');
     const hashToSign = await computeXmlHashBase64(cleanKskXml);
     return {
       hashToSign,
-      buildSignedXml: (sig: string) =>
-        embedSignatureInXml(xmlString, sig, certInfo.rawCertBase64, hashToSign, certInfo.subject),
+      buildSignedXml: (sig: string) => embedSignatureInXml(cleanKskXml, sig, certInfo.rawCertBase64, undefined, certInfo.subject),
     };
   }
 
@@ -833,37 +828,11 @@ export function embedSignatureInXml(
 ): string {
   if (xmlString.includes('<KHAMSUCKHOE')) {
     const cleanSig = signatureBase64.replace(/\s+/g, '');
-    // Nếu cleanSig đã là Base64 của <Signature ...> (bắt đầu bằng PFNpZ25hdHVyZ = "<Signature") thì gán trực tiếp,
-    // nếu là raw RSA SignatureValue từ USB Token / SmartCA thì bọc vào phong bì <Signature xmlns="http://www.w3.org/2000/09/xmldsig#"> rồi Base64 theo chuẩn QĐ 2062/QĐ-BYT
-    let cks1 = cleanSig;
-    let cks2 = cleanSig;
-    if (!cleanSig.startsWith('PFNpZ25hdHVyZ')) {
-      const cnMatch = (subjectDN || '').match(/CN=([^,]+)/i);
-      const oMatch = (subjectDN || '').match(/O=([^,]+)/i);
-      const macskcbMatch = xmlString.match(/<MACSKCB>([^<]+)<\/MACSKCB>/i);
-      const orgName = (oMatch?.[1] || cnMatch?.[1] || macskcbMatch?.[1] || 'CSKCB').trim();
-      const signerName = (cnMatch?.[1] || 'BS. Trưởng khoa Khám bệnh').trim();
-      const digest = digestBase64 || '47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=';
-      cks1 = buildBytKskSignatureBase64({
-        signerName,
-        orgName,
-        certType: 'ChungThuSoCaNhan_BacSi',
-        hashHex: '',
-        digestBase64: digest,
-        customSignatureValueBase64: cleanSig,
-        rawCertBase64: certBase64,
-      });
-      cks2 = buildBytKskSignatureBase64({
-        signerName: orgName,
-        orgName,
-        certType: 'ChungThuSoToChuc_CSKCB',
-        hashHex: '',
-        digestBase64: digest,
-        customSignatureValueBase64: cleanSig,
-        rawCertBase64: certBase64,
-      });
+    const kskSigBlock = `  <CHUKYDONVI>\n    <CKS_NGUOI_KET_LUAN>${cleanSig}</CKS_NGUOI_KET_LUAN>\n    <CKS_BENH_VIEN>${cleanSig}</CKS_BENH_VIEN>\n  </CHUKYDONVI>`;
+    if (xmlString.includes('<CHUKYDONVI>')) {
+      return xmlString.replace(/<CHUKYDONVI>[\s\S]*?<\/CHUKYDONVI>/, kskSigBlock.trim());
     }
-    return setKskCksTagsInXml(xmlString, cks1, cks2);
+    return xmlString.replace('</KHAMSUCKHOE>', kskSigBlock + '\n</KHAMSUCKHOE>');
   }
 
   const cleanCert = (certBase64 || '').replace(/-----[^\n]+-----/g, '').replace(/\s+/g, '');

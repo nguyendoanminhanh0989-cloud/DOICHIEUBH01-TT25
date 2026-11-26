@@ -67,9 +67,6 @@ export default function KySoModal({
   const [smartCaNotice, setSmartCaNotice] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const [signMethod, setSignMethod] = useState<SignMethod>(() => {
-    if (records.some(r => r.type === 'KHAM_SUC_KHOE')) {
-      return 'AUTO_UNIT_CERT';
-    }
     const cfg = getSmartCAConfig();
     if (cfg.clientId && cfg.clientSecret && cfg.userId) {
       return cfg.signMode === 'APP' ? 'SMARTCA_APP' : 'SMARTCA_TOTP';
@@ -558,9 +555,9 @@ export default function KySoModal({
                             {
                               id: 'AUTO_UNIT_CERT' as SignMethod,
                               icon: <ShieldCheck className="w-5 h-5" />,
-                              badge: 'Chuẩn QĐ 2062',
-                              label: 'Ký số 2 bước BYT (Bác sĩ + CSKCB)',
-                              sub: 'Tự động băm C14N SHA-256 & ký 2 bước tuần tự (CKS_NGUOI_KET_LUAN + CKS_BENH_VIEN) khớp 100% KSK_ToanDan.exe',
+                              badge: 'Thử nghiệm',
+                              label: 'Ký 2 bước dạng KSK_ToanDan (không dùng chứng thư thật)',
+                              sub: 'Chỉ để đối chiếu với KSK_ToanDan.exe. Cổng chỉ ghi nhận chữ ký thật → nên dùng USB Token / VNPT SmartCA để đẩy cổng',
                             },
                           ]
                         : []),

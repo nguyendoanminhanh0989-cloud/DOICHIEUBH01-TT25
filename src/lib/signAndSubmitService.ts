@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SERVICE KÝ SỐ VÀ ĐẨY CỔNG BHXH
  * Tích hợp: VNPT SmartCA (TOTP/APP) và USB Token
  * API Cổng: POST /api/chungtugw/GuiHoSoChungTu2025
@@ -10,7 +10,6 @@
 import { signSmartCAHash, getSmartCAConfig, SmartCAConfig, getSmartCaCertificate, DEFAULT_VNPT_CERT, DEFAULT_VNPT_SUBJECT } from './vnptSmartCaService';
 import { bhxhGetToken, bhxhSubmitDocument } from './bhxhService';
 import { computeXmlHashBase64, embedSignatureInXml, prepareXmlForSigning, xmlToBase64, LOAI_HS_MAP, DocType } from './xmlBuilder';
-import { signKskXmlByt2Steps } from './kskXmlBuilder';
 import { signXmlWithUsbToken } from './localTokenSignerService';
 
 export interface OrganizationConfig {
@@ -109,48 +108,17 @@ export async function signOneRecord(
     throw new Error('Hồ sơ chưa có nội dung XML. Hãy tạo XML trước khi ký số.');
   }
 
-  const attachKskSigToRaw = (rawData: Record<string, any>, cksBs: string, cksBv?: string) => {
+  const attachKskSigToRaw = (rawData: Record<string, any>, sig: string) => {
     if (record.type !== 'KHAM_SUC_KHOE') return rawData;
-    const cleanBs = (cksBs || '').replace(/\s+/g, '');
-    const cleanBv = (cksBv || cksBs || '').replace(/\s+/g, '');
+    const cleanSig = (sig || '').replace(/\s+/g, '');
     return {
       ...rawData,
-      CKS_NGUOI_KET_LUAN: cleanBs,
-      CKS_BENH_VIEN: cleanBv,
+      CKS_NGUOI_KET_LUAN: cleanSig,
+      CKS_BENH_VIEN: cleanSig,
     };
   };
 
   if (method === 'AUTO_UNIT_CERT') {
-    if (record.type === 'KHAM_SUC_KHOE') {
-      onProgress?.('🔐 Đang ký số 2 bước chuẩn QĐ 2062/QĐ-BYT (Bác sĩ kết luận + Cơ sở KCB)...');
-      const org = getOrgConfig();
-      const doctorName =
-        record.rawData?.NGUOI_KET_LUAN ||
-        record.nguoiKy ||
-        'BS. Trưởng khoa Khám bệnh';
-      const orgName =
-        org.ten_cskcb ||
-        record.rawData?.TEN_CSKCB ||
-        record.rawData?.MA_CSKCB ||
-        org.ma_cskcb ||
-        'CƠ SỞ KHÁM CHỮA BỆNH';
-      const bytRes = await signKskXmlByt2Steps(record.xmlContent, {
-        doctorName,
-        orgName,
-        maCskcb: record.rawData?.MA_CSKCB || org.ma_cskcb,
-      });
-      onProgress?.('✅ Ký số 2 bước chuẩn BYT hoàn tất!');
-      return {
-        ...record,
-        trangThai: 'SIGNED',
-        xmlContent: bytRes.signedXml,
-        signatureBase64: bytRes.cksBenhVien,
-        certBase64: DEFAULT_VNPT_CERT,
-        rawData: attachKskSigToRaw(record.rawData, bytRes.cksNguoiKetLuan, bytRes.cksBenhVien),
-        errorMessage: undefined,
-      };
-    }
-
     onProgress?.('🔐 Đang ký số bằng Chứng thư số Đơn vị / Private Key...');
     const certInfo = {
       rawCertBase64: DEFAULT_VNPT_CERT,
@@ -173,30 +141,14 @@ export async function signOneRecord(
   if (method === 'USB_TOKEN') {
     onProgress?.('🔐 Đang giao tiếp với USB Token...');
     const result = await signXmlWithUsbToken(record.xmlContent, onProgress);
-    let finalXml = result.signedXml;
-    let cksBs = result.signatureBase64;
-    let cksBv = result.signatureBase64;
-    if (record.type === 'KHAM_SUC_KHOE' && record.xmlContent.includes('<KHAMSUCKHOE')) {
-      const org = getOrgConfig();
-      const bytRes = await signKskXmlByt2Steps(record.xmlContent, {
-        doctorName: record.rawData?.NGUOI_KET_LUAN || record.nguoiKy || 'BS. Trưởng khoa Khám bệnh',
-        orgName: org.ten_cskcb || record.rawData?.MA_CSKCB || org.ma_cskcb,
-        maCskcb: record.rawData?.MA_CSKCB || org.ma_cskcb,
-        customSignatureValueBase64: result.signatureBase64,
-        rawCertBase64: result.rawCertBase64,
-      });
-      finalXml = bytRes.signedXml;
-      cksBs = bytRes.cksNguoiKetLuan;
-      cksBv = bytRes.cksBenhVien;
-    }
     onProgress?.('✅ Ký số USB Token hoàn tất!');
     return {
       ...record,
       trangThai: 'SIGNED',
-      xmlContent: finalXml,
-      signatureBase64: cksBv,
+      xmlContent: result.signedXml,
+      signatureBase64: result.signatureBase64,
       certBase64: result.rawCertBase64,
-      rawData: attachKskSigToRaw(record.rawData, cksBs, cksBv),
+      rawData: attachKskSigToRaw(record.rawData, result.signatureBase64),
       errorMessage: undefined,
     };
   }
@@ -230,30 +182,15 @@ export async function signOneRecord(
   const signatureBase64 = await signSmartCAHash(effectiveCfg, hashToSign, onProgress);
 
   onProgress?.('✅ Ký số thành công! Đang nhúng chữ ký số vào XML...');
-  let signedXml = buildSignedXml(signatureBase64);
-  let cksBs = signatureBase64;
-  let cksBv = signatureBase64;
-  if (record.type === 'KHAM_SUC_KHOE' && record.xmlContent.includes('<KHAMSUCKHOE')) {
-    const org = getOrgConfig();
-    const bytRes = await signKskXmlByt2Steps(record.xmlContent, {
-      doctorName: record.rawData?.NGUOI_KET_LUAN || record.nguoiKy || 'BS. Trưởng khoa Khám bệnh',
-      orgName: org.ten_cskcb || record.rawData?.MA_CSKCB || org.ma_cskcb,
-      maCskcb: record.rawData?.MA_CSKCB || org.ma_cskcb,
-      customSignatureValueBase64: signatureBase64,
-      rawCertBase64: certInfo.rawCertBase64,
-    });
-    signedXml = bytRes.signedXml;
-    cksBs = bytRes.cksNguoiKetLuan;
-    cksBv = bytRes.cksBenhVien;
-  }
+  const signedXml = buildSignedXml(signatureBase64);
 
   return {
     ...record,
     trangThai: 'SIGNED',
     xmlContent: signedXml,
-    signatureBase64: cksBv,
+    signatureBase64,
     certBase64: certInfo.rawCertBase64,
-    rawData: attachKskSigToRaw(record.rawData, cksBs, cksBv),
+    rawData: attachKskSigToRaw(record.rawData, signatureBase64),
     errorMessage: undefined,
   };
 }
