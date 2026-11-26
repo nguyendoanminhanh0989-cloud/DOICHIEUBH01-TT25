@@ -1444,7 +1444,29 @@ export default function Xml3176Module() {
           obj['TRANG_THAI_KY_SO'] = st?.isSigned && !st.isModified ? 'Đã ký số' : 'Chưa ký số';
         }
         for (const k of exportCols) {
-          obj[k] = r.fields[k] ?? '';
+          let val = r.fields[k] ?? '';
+          if (meta.id === 'XML1') {
+            if (exportStandard === '3556' && (k === 'T_THUOC' || k === 'T_VTYT' || k === 'MAHUYEN_CU_TRU')) {
+              val = '';
+            } else if (exportStandard === '3176' && val.trim() === '') {
+              if (k === 'T_THUOC') {
+                const s2 = doc.tables.XML2.filter(x => x.hosoIndex === r.hosoIndex).reduce(
+                  (acc, x) => acc + parseXmlMoney(x.fields.THANH_TIEN_BV),
+                  0
+                );
+                val = String(Math.round((s2 + Number.EPSILON) * 100) / 100);
+              } else if (k === 'T_VTYT') {
+                const s3 = doc.tables.XML3.filter(x => {
+                  if (x.hosoIndex !== r.hosoIndex) return false;
+                  const mn = (x.fields.MA_NHOM || '').trim();
+                  const mv = (x.fields.MA_VAT_TU || '').trim();
+                  return mn === '10' || mn === '11' || mv !== '';
+                }).reduce((acc, x) => acc + parseXmlMoney(x.fields.THANH_TIEN_BV), 0);
+                val = String(Math.round((s3 + Number.EPSILON) * 100) / 100);
+              }
+            }
+          }
+          obj[k] = val;
         }
         return obj;
       });

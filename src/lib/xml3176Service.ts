@@ -1007,8 +1007,9 @@ export function validateXml3176Doc(
     const tThuocXml1 = Number(f.T_THUOC || 0);
     const rowsXml2 = xml2ByHoso.get(row.hosoIndex) || [];
     const sumThuocXml2 = rowsXml2.reduce((acc, r2) => acc + Number(r2.fields.THANH_TIEN_BV || 0), 0);
-    if (std === '3556') {
-      if ((f.T_THUOC || '').trim() !== '' || (f.T_VTYT || '').trim() !== '') {
+    if (std === '3176') {
+      const hasExplicitTThuoc = (f.T_THUOC || '').trim() !== '';
+      if (hasExplicitTThuoc && Math.abs(tThuocXml1 - sumThuocXml2) > 1) {
         addError(
           'warning',
           'XML1',
@@ -1016,33 +1017,10 @@ export function validateXml3176Doc(
           maLk,
           hoTen,
           'T_THUOC',
-          'Theo QĐ 3556/QĐ-BYT, thẻ T_THUOC và T_VTYT ở Bảng 1 để giá trị rỗng (hệ thống tự bỏ trống khi xuất chuẩn 3556).',
+          `Lệch tiền thuốc: T_THUOC ở Bảng 1 (${tThuocXml1.toLocaleString('vi-VN')}) ≠ Tổng THANH_TIEN_BV ở Bảng 2 (${sumThuocXml2.toLocaleString('vi-VN')})`,
           row.rowId
         );
       }
-      if ((f.MAHUYEN_CU_TRU || '').trim() !== '') {
-        addError(
-          'warning',
-          'XML1',
-          row.hosoIndex,
-          maLk,
-          hoTen,
-          'MAHUYEN_CU_TRU',
-          'Theo QĐ 3556/QĐ-BYT, thẻ MAHUYEN_CU_TRU để giá trị rỗng (chỉ giữ Tỉnh và Xã; hệ thống tự bỏ trống khi xuất chuẩn 3556).',
-          row.rowId
-        );
-      }
-    } else if (Math.abs(tThuocXml1 - sumThuocXml2) > 1) {
-      addError(
-        'warning',
-        'XML1',
-        row.hosoIndex,
-        maLk,
-        hoTen,
-        'T_THUOC',
-        `Lệch tiền thuốc: T_THUOC ở Bảng 1 (${tThuocXml1.toLocaleString('vi-VN')}) ≠ Tổng THANH_TIEN_BV ở Bảng 2 (${sumThuocXml2.toLocaleString('vi-VN')})`,
-        row.rowId
-      );
     }
 
     const tTongChiBv = Number(f.T_TONGCHI_BV || 0);
